@@ -10,7 +10,7 @@
 - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 徽章，含 collab-task key 保留作旧数据条目渲染兜底；无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+主题记忆面板
 - `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录（打开 backups/ 根目录）+ 逐项运行 loading + 调度级最近失败红字行）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/无变化跳过浅色提示/最近失败红字/立即备份 + 备份列表展开与恢复 showConfirm（快照还原语义：确认文案明示「快照内不存在的新增文件将被删除」，成功 toast 追加删除计数）；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（五分类元数据，默认值从主进程 BACKUP_CATEGORY_DEFAULTS 导入、tipc client 类型推导、格式化）
-- `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、「寻找设备」按钮（scanNow 手动扫描，scanning loading）、设备卡（已配对常驻：在线/离线 Badge、离线也可发起同步、下拉解除配对 confirm）、同步范围设置（同步项开关+冲突副本+stocks/feishu 可选目录+工作区启停）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
+- `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、「寻找设备」按钮（scanNow 手动扫描，scanning loading）、设备卡（已配对常驻：在线/离线 Badge、离线也可发起同步、下拉解除配对 confirm）、同步范围设置三分组——应用数据（同步项开关含 tasks/articles+冲突副本+stocks/feishu 可选目录+工作区启停）/用户文件（per-workspace 目录树勾选 userSyncPaths，sync-user-paths + sync-user-paths-tree 组件，勾选时异步统计子树规模防巨型误勾，有 .git 提示「走你自己的 git」）/生成物（置灰，自动识别二期）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
 - `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/登录站点数）+ 常驻准确性提示（误报可移除）+「我的登录」区（login-observer 检测的登录清单：证据徽章/最近登录时间，每条登出=本地清全量数据不通知服务器/清除数据/移除误报）+「其他站点数据」折叠区（仅清除数据）+ 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询；主进程服务与路由见 browser.md
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
 - `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/扩展能力/触发器）、CustomAbilityMatrix（扩展能力矩阵：五 extension 包，四包整包开关跟随/固化 toolPacksOverride、code-workflow 开关+6 skill 勾选写 skillsOverride；getAbilityPacks+listToolPacks 取数）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）
@@ -34,7 +34,7 @@
 
 ## 应用数据备份（services/backup-service/ + data-registry）
 
-- `data-registry.ts` — 应用数据清单唯一事实源：DataItem 23 条全集（含 `{wsid}` 占位与 `__ws-external__` 外部锚点虚拟路径约定）、`backupSourcesFor`/`sensitiveRelPaths`/`toArchiveRelPath`/`resolveArchiveRelPath` 派生；备份分类 scope（BACKUP_CATEGORY_SCOPES）与同步项（registrySyncItems）都从它派生；已下线文件（dashboard.md 等）不收录（测试锁定）
+- `data-registry.ts` — 应用数据清单唯一事实源：DataItem 23 条全集（含 `{wsid}` 占位与 `__ws-external__` 外部锚点虚拟路径约定，ws-tasks/ws-articles 即虚拟条目且带 syncItemId）、`backupSourcesFor`/`sensitiveRelPaths`/`toArchiveRelPath`/`resolveArchiveRelPath` 派生；同步侧反解原语 `resolveExternalRelPath`+`externalWorkspaceIndex`（虚拟路径→工作区真实路径，未注册 wsid → null 由调用方 skipped 警告）；备份分类 scope（BACKUP_CATEGORY_SCOPES）与同步项（registrySyncItems）都从它派生；已下线文件（dashboard.md 等）不收录（测试锁定）
 - `categories.ts` — 五备份分类（notes-groups/memory/tasks/sessions/app-config）；BACKUP_CATEGORIES 由 registry scopes × settings-types BACKUP_CATEGORY_DEFAULTS 派生，仅显示名本地
 - `index.ts` — runBackup（enqueue 队列同 scope+category 串行互斥，成败均记 last-run）/runBackupAll（调度入口只跑到期分类，onlyDue 无变化跳过打 zip、记 skipped）/restoreBackup（快照还原：空 zip 拒绝、sessions 恢复前检查运行中会话、预备份用用户 keep、写回后删 registry 源边界内 zip 外文件）/getBackupStatus（行级 lastError/lastSkippedAt + scheduler 调度级状态）
 - `zip-pack.ts` — 打包编排：主进程做锚点反解+stat 产出条目 → zip-pack-worker 线程纯打包（60s 超时）→ 失败/超时回退主进程分片 packEntriesSharded；zip 条目用虚拟前缀路径，恢复时反解写回真实位置
@@ -46,19 +46,22 @@
 
 ## 设备同步（services/sync/）
 
-- `protocol.ts` — 同步协议 v3（SYNC_PROTOCOL_VERSION）：manifest 清单交换 + GET/POST /file + DELETE /file（墓碑删除传播），manifest 请求/响应可携 tombstones
+- `protocol.ts` — 同步协议 v4（SYNC_PROTOCOL_VERSION）：v3 的 manifest 清单交换 + GET/POST /file + DELETE /file（墓碑删除传播，manifest 请求/响应可携 tombstones）+ 工作区数据虚拟路径条目（`__ws-external__/{wsid}/...`）；对端 <4 时虚拟条目收发整体过滤（防旧端把它当普通路径落到 configDir 成垃圾目录）
 - `lan-sync-service.ts` — 服务生命周期：mDNS 发现（discovery）+ HTTP server 启停 + 状态/peers 快照广播
 - `discovery.ts` — mDNS 设备发现（30s requery + 90s 剔除，仅未配对）+ scanNow 手动扫描（mDNS 窗口 ~2s + 已配对设备 lastHost 地址 fetchPeerInfo 3s 探测，并发防抖）+ getDeviceSnapshot 合并快照（mDNS 在线 ∪ 探测在线 ∪ 离线已配对常驻，deviceId 去重 mDNS 优先）；peersChanged 广播携合并快照（合帧防乱序）
 - `pairing.ts` / `device.ts` — 配对码双端确认流程与设备身份；地址记忆（配对确认/runSync 收尾/探测成功写 lastHost·lastPort，仅成功路径）与 unpairDevice 解除配对（同步进行中拒绝，仅删 pairedDevices 条目，sync-state.peers 保留供重新配对续用）
-- `manifest.ts` — 清单构建与 diff：`isExcluded` 唯一排除判定入口（冲突副本/shadowGit/disabledItems/stocks·feishu optionalDirs）；`tombstoneCandidates` 墓碑候选（基线有现无，排除 settings/excludes/暂停工作区）
-- `orchestrator.ts` — 主动同步编排：buildManifest → diff → pull/push/skip 执行 → SyncReport（含 deleted/deleteConflicts）；对端协议 <3 时删除传播整体禁用（退 v2 行为）
-- `server.ts` — 被动端点：/manifest（回清单+被动端墓碑落盘+响应携墓碑）/file pull/POST push（落盘前 push-guard 校验）/DELETE（expectedHash 二次校验防误删）
-- `push-guard.ts` — push 接收端校验链：引擎自身路径/敏感文件（login-accounts.json）/外部锚点/排除项/工作区 enabled → 403+reason
-- `apply.ts` — 文件写回与冲突处理（冲突留底副本 `.conflict-*` 带 rand4，COPYFILE_EXCL 防覆盖）；settings.json 走字段级三方合并
+- `workspace-map.ts` — per-peer 工作区映射（对端 wsid ↔ 本端 wsid，sync-state 持久化）：toLocalView/toRemoteRelPath 双向折算（虚拟条目同样翻 wsid）、learnReverseWorkspaceMap 反向学习、enabledWorkspaceIdsOf 映射开关、buildRemoteManifestView 折算视图（未映射虚拟条目进待映射清单驱动 UI 建映射）
+- `manifest.ts` — 清单构建与 diff：`isExcluded` 唯一排除判定入口（冲突副本/shadowGit/disabledItems/stocks·feishu optionalDirs）；虚拟条目收集（registry ws-tasks/ws-articles 条目 + workspaces.json 注册表 + settings.syncOptions.userSyncPaths 勾选子树驱动，`__ws-external__` 形式；tasks/articles 开关关时不收）；hashEntries 虚拟条目反解后 hash（注册表快照一次预读复用）；`tombstoneCandidates` 墓碑候选（基线有现无，排除 settings/excludes/暂停工作区）
+- `orchestrator.ts` — 主动同步编排：buildManifest → diff → pull/push/skip 执行 → SyncReport（含 deleted/deleteConflicts）；peerSupportsVirtual 版本 gating（对端 <4 虚拟条目不进收发流）；mergedFiles 基线重算走统一反解；对端协议 <3 时删除传播整体禁用（退 v2 行为）
+- `server.ts` — 被动端点：/manifest（回清单+被动端墓碑落盘+响应携墓碑）/file pull/POST push（落盘前 push-guard 校验，guard 输入携注册 wsid 集与 userSyncPaths）/DELETE（expectedHash 二次校验防误删）；GET/DELETE /file 走统一反解，可定位工作区真实文件
+- `push-guard.ts` — push 接收端校验链（403+reason）：引擎自身路径/敏感文件（login-accounts.json）全拒；`__ws-external__` 白名单放行（isRegisteredVirtualPath：注册 wsid × tasks.json 及其 `.conflict-*` 副本形态/articles 子树/userSyncPaths 勾选子树），其余虚拟路径（未注册 wsid/.dogear 其他文件/树外/穿越段/畸形）仍拒；放行后仍过 isExcluded 与映射 enabled 检查
+- `apply.ts` — 文件写回与冲突处理（冲突留底副本 `.conflict-*` 带 rand4，COPYFILE_EXCL 防覆盖）；统一解析入口 resolveIncomingRelPath（虚拟前缀反解到工作区真实路径，其余限 configDir 内；写入/读取/副本/推盘/墓碑跟随全走此口）；tasks.json 条目级合并（mergeArrayFile 按 id，version 取大）；settings.json 字段级三方合并改白名单传播制（仅 SETTINGS_SYNC_FIELDS 逐字段与基线比，白名单外保本端）；syncOptions 重建时 userSyncPaths 走 rev-LWW 整组
+- `merge-records.ts` — JSON 记录级合并原语（mergeRecordMapFile 键控挑新/mergeArrayFile 按 id 挑新/mergeWorkspacesFile 工作区注册表合并）；workspaces.json 先例，tasks.json 同构复用
 - `sync-state.ts` — sync-state.json（deviceId/per-peer 基线与选项/地址记忆 lastHost·lastPort/全局 tombstones 90 天 TTL 上限 2000），withSyncStateLock 进程锁
-- `tombstone.ts` — 删除传播执行单元：applyPeerTombstones（对端删本端跟随）/propagateLocalDeletes（本端删驱动对端）；删改冲突保守保留修改侧、不参与冲突裁决
+- `tombstone.ts` — 删除传播执行单元：applyPeerTombstones（对端删本端跟随，虚拟条目经统一反解删工作区真实文件）/propagateLocalDeletes（本端删驱动对端）；删改冲突保守保留修改侧、不参与冲突裁决
+- `ws-tree.ts` — 同步范围工作区目录树服务：单层懒加载 listWorkspaceDirForSync + 子树规模统计 statWorkspaceDirForSync（2 万文件上限截断）+ hasGitDir；段安全校验与 manifest 同规则，隐藏 .git/.dogear/dotfile，symlink 跳过，node_modules/dist 显示（一期无自动识别，靠 UI 大小提醒兜底）
 
-不变量：settings.json 永不参与墓碑与覆盖删除（含配对密钥）；墓碑生成两处对称（orchestrator 主动端 + server handleManifest 被动端，共用 tombstoneCandidates）；isExcluded 是清单/diff/apply/push guard 四处唯一排除判定
+不变量：settings.json 永不参与墓碑与覆盖删除（含配对密钥），且白名单外顶层字段（snapshot/backup/ui/profiles/browserProxyServer/migrated/webMcpApiKey 及未知新字段）一律保本端，syncOptions 内部走 rev 组 LWW 特判；墓碑生成两处对称（orchestrator 主动端 + server handleManifest 被动端，共用 tombstoneCandidates）；isExcluded 是清单/diff/apply/push guard 四处唯一排除判定；`__ws-external__` 落盘/读盘唯一入口 resolveIncomingRelPath（未注册 wsid skipped 警告不落垃圾目录）
 
 ## 统一运行注册表（services/）
 

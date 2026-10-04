@@ -26,7 +26,7 @@ import {
   type SyncReport,
 } from '../services/sync/orchestrator.js';
 import { readSyncState, writeSyncState, getDataDir, withSyncStateLock } from '../services/sync/sync-state.js';
-import { resolveWithinDataDir } from '../services/sync/apply.js';
+import { resolveIncomingRelPath } from '../services/sync/apply.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { applySyncOptionsPatch, loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
 import { listWorkspaceDirForSync, statWorkspaceDirForSync, type SyncDirListing, type SyncDirStats } from '../services/sync/ws-tree.js';
@@ -109,12 +109,19 @@ export const syncRouter = {
       );
     }),
 
-  /** 在系统文件管理器中定位数据目录内文件（冲突副本换回用）：relPath 必须落在数据目录内，防路径逃逸 */
+  /** 在系统文件管理器中定位同步文件（冲突副本换回用）：虚拟条目反解到工作区真实路径，其余限数据目录内 */
   revealSyncFile: t.procedure
     .input<{ relPath: string }>()
     .action(async ({ input }) => {
-      const abs = resolveWithinDataDir(getDataDir(), input.relPath);
-      if (!abs) return { success: false as const, error: 'unsafe path' };
+      const abs = await resolveIncomingRelPath(getDataDir(), input.relPath);
+      if (!abs) {
+        return {
+          success: false as const,
+          error: input.relPath.startsWith('__ws-external__/')
+            ? '该虚拟路径对应的工作区未注册或路径不安全'
+            : 'unsafe path',
+        };
+      }
       shell.showItemInFolder(abs);
       return { success: true as const };
     }),

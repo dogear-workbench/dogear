@@ -34,10 +34,10 @@
 
 ## 服务与类型
 
-- `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、browser-parse 内置模板按全集补缺失键——存量 Profile 自动并入新增的 web/article、旧描述按 LEGACY 已知值识别迁移、webAiSites 归一（normalizeWebAiSites，空列表回退 DEFAULT_WEB_AI_SITES））
+- `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、browser-parse 内置模板按全集补缺失键——存量 Profile 自动并入新增的 web/article、旧描述按 LEGACY 已知值识别迁移、webAiSites 归一（normalizeWebAiSites，空列表回退 DEFAULT_WEB_AI_SITES）；applySyncOptionsPatch 同步选项补丁（disabledSyncItems 白名单清洗、userSyncPaths 归一，六个 rev 组字段实际变化才 syncOptionsRev++））
 - `services/workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`），增删触发 workspace-watcher 起停；getAll 默认过滤保留字 personal（includePersonal 拼合成条目，归档 timer 用）
 - `services/workspace-config-service.ts` — 工作区能力配置（`workspaces/{id}/config.json`）；personal 读取时合并 PERSONAL_DEFAULT_CONFIG 最小能力集（仅联网搜索，stored 可逐包覆盖）
-- `types/settings.ts` — AppSettings/ModelProfile/ModelTier/SubAgentProfile/WebAiSite/permissionMode 等与 DEFAULT_SETTINGS（与 electron/main/services/settings-types.ts 主进程镜像双份，共享类型改需两处同步）
+- `types/settings.ts` — AppSettings/ModelProfile/ModelTier/SubAgentProfile/WebAiSite/permissionMode 等与 DEFAULT_SETTINGS（与 electron/main/services/settings-types.ts 主进程镜像双份，共享类型改需两处同步）；主进程 settings-types.ts 另有 SETTINGS_SYNC_FIELDS 跨设备传播白名单（9 项通用偏好，白名单外含未知新字段一律保本端）
 
 ## 注意
 

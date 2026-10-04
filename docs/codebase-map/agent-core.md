@@ -60,7 +60,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 协作任务后端（services/）
 
-- `task-store.ts` — 任务存储（`.dogear/tasks.json`）：八状态机（plan/backlog/queued/running/review/done/rejected/interrupted）、upsert 创建、申报制回写 reportTaskResult；Task.execProfile（default/code-impl，存量无字段=default，default 不落盘）
+- `task-store.ts` — 任务存储（`.dogear/tasks.json`）：八状态机（plan/backlog/queued/running/review/done/rejected/interrupted）、upsert 创建、申报制回写 reportTaskResult；Task.execProfile（default/code-impl，存量无字段=default，default 不落盘）；planPath 存工作区相对路径（version 2→3 迁移，读写侧 ensureMigrated 链式归一，工作区根外异常历史路径保持绝对，读侧 join 本端工作区根）；文件可被同步引擎经 `__ws-external__` 虚拟条目条目级合并直写（不经 withFileLock，与 plans.json 既有竞态模式一致）
 - `task-service.ts` — 广播包装层（tasksChanged）；进 review 三通道通知（系统通知+提示音+通知中心）
 - `task-queue.ts` — 串行队列执行器：planPath 预检→origin 会话带退避查询→创建执行会话→申报制结算（review 唯一入口是执行会话申报，队列不判断成功）；执行提示词统一走 buildExecutionPrompt 通用模板+非空 mountedSkills 挂载行（语境差异由 skill 全文承载），code-impl 传 skillsOverride=['staged-execution']（走 skillsOverride 绕过工作区 enabledSkills 与包总闸）；超时 Promise.race 强制放行
 

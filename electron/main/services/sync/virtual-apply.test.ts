@@ -10,7 +10,7 @@ mock.module('electron', () => ({
   nativeTheme: {},
 }));
 
-const { applyIncoming, pushOutgoing, matchMergePattern } = await import('./apply.js');
+const { applyIncoming, pushOutgoing, matchMergePattern, resolveIncomingRelPath } = await import('./apply.js');
 const { applyPeerTombstones } = await import('./tombstone.js');
 const { hashEntries, sha256File, excludesFromSyncOptions } = await import('./manifest.js');
 const { startSyncServer } = await import('./server.js');
@@ -411,5 +411,20 @@ test('server POST /file：disabledSyncItems 关闭 tasks 时虚拟 tasks 条目 
     }
   } finally {
     await cleanup([configDir, wsRoot]);
+  }
+});
+
+// ── resolveIncomingRelPath：revealSyncFile 定位语义（虚拟反解 / 未注册降级 / 普通限界）──
+
+test('resolveIncomingRelPath：虚拟已注册反解真实路径；未注册 null；普通路径限 configDir；穿越拒绝', async () => {
+  const { configDir, wsRoot, wsUnregistered } = await makeTempData();
+  try {
+    expect(await resolveIncomingRelPath(configDir, TASKS_REL)).toBe(path.join(wsRoot, '.dogear', 'tasks.json'));
+    expect(await resolveIncomingRelPath(configDir, '__ws-external__/ghost-ws/.dogear/tasks.json')).toBeNull();
+    expect(await resolveIncomingRelPath(configDir, 'workspaces/ws-a/f.txt')).toBe(path.join(configDir, 'workspaces', 'ws-a', 'f.txt'));
+    expect(await resolveIncomingRelPath(configDir, '../escape.json')).toBeNull();
+    expect(await resolveIncomingRelPath(configDir, '__ws-external__/ws-a/.dogear/../../evil.txt')).toBeNull();
+  } finally {
+    await cleanup([configDir, wsRoot, wsUnregistered]);
   }
 });
