@@ -17,6 +17,19 @@
 
 Step 4/5/6 与 Step 1-3 相互独立，可穿插执行；Step 2/3 依赖 Step 1。
 
+## 完成总结
+
+六个 step 全部完成，逐 step 提交（56b1089f / 9546b36d / 72040371 / bedc53c8 / 5902750c / 046e109d），每步验收 lint / build:electron / bun test 全绿（542 pass 基线不变）。
+
+- **能力体系拆三包**（step 1/2）：browser 收窄内嵌单通道，新增 browser-extension（dogear-extension 工具组，沿用 Profile ab.extension 字段）与 browser-methodology（browser-exploration skill，非自治沿 code-workflow 模式）；存量配置读时迁移三包默认全开；场景页三行/能力页三卡数据驱动自动出，派遣页拆双开关 + 方法论 skill 细选。
+- **SKILL.md 双通道重写**（step 3）：四段方法论结构，修正旧文案「熔断换通道」与 site-policy 实现的冲突；WEB_RESEARCH_GUIDANCE 触发加 browser-extension 且内容通道无关化。
+- **tab 生命周期闭环**（step 4/5）：被动 tab（target=_blank）经 opener 判断自动入组并推快照，上限 8→16；会话销毁（_destroySession 收口）批量关组内未移交 tab，一键移交页记豁免集合保留，新增 close_group_tabs NM 命令（双侧同步），清理动作进浏览器面板动作流。
+- **站点档案可见**（step 6）：数据中心浏览器数据面板新增站点档案区块（列表/Dialog 全文/确认删除），存储与 agent 工具语义未动。
+
+**实施中的关键拍板**：迁移落点从 settings-service 改到 workspace-config-service（abilityOverrides 真身在 workspace config）；被动入组不做上限拒绝（拒收会游离失控）；收尾清理挂 PiSessionManager._destroySession（extension-ownership 释放链无可靠会话结束语义）；豁免集合跨扩展重连保留。
+
+**待用户执行**：重载扩展 + 重启应用后真机验证（详见各 step 交付文档遗留区）。
+
 ## 全局决策
 
 - **包 key**：`browser`（保留，收窄为内嵌单通道）/ `browser-extension` / `browser-methodology`；展示名内嵌浏览器 / 浏览器扩展 / 浏览器方法论。
