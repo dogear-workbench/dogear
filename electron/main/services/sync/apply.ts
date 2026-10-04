@@ -8,6 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
+import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
 import { loadSettings, saveSettings, type AppSettings, type PairedDevice } from '../settings-service.js';
 import { normalizeSyncOptions, type SyncOptions } from '../settings-types.js';
 import { getOrCreateDeviceId } from './device.js';
@@ -401,6 +402,12 @@ export async function applyIncoming(
     // 在 merge 路由之前判断：被排除的记录文件也不进条目级合并
     if (isExcluded(entry.relPath, excludes)) {
       report.skipped.push({ relPath: entry.relPath, reason: '本端同步范围已排除，丢弃对端推送' });
+      continue;
+    }
+    // 虚拟路径条目应用侧尚未支持反解落盘（Step 4 接管，替换为工作区真实路径写入），
+    // 先行拒绝防 resolveWithinDataDir 把它落成 configDir 下的垃圾目录
+    if (entry.relPath.startsWith(`${EXTERNAL_ANCHOR_PREFIX}/`)) {
+      report.skipped.push({ relPath: entry.relPath, reason: '虚拟路径条目应用侧未支持，丢弃' });
       continue;
     }
     const remoteRelPath = item.remoteRelPath ?? entry.relPath;

@@ -60,7 +60,7 @@ function syncOpts(over: Partial<SyncOptions> = {}): SyncOptions {
 }
 
 function helloOf(deviceId: string, deviceName: string) {
-  return { appId: 'dogear', protocolVersion: 3, appVersion: 'test', deviceId, deviceName };
+  return { appId: 'dogear', protocolVersion: 4, appVersion: 'test', deviceId, deviceName };
 }
 
 async function seedSettings(paired: Array<{ deviceId: string; deviceName?: string; secret: string }>): Promise<void> {

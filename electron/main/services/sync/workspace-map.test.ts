@@ -1,8 +1,17 @@
-import { test, expect } from 'bun:test';
+import { test, expect, mock } from 'bun:test';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
-import {
+import type { SyncState } from './sync-state.js';
+import type { WorkspaceMapEntry } from './workspace-map.js';
+
+// manifest/workspace-map 经 data-registry 拉起 settings-service → electron 链，先 mock 再动态加载
+mock.module('electron', () => ({
+  default: { app: { getPath: () => tmpdir() }, nativeTheme: {} },
+  app: { getPath: () => tmpdir() },
+  nativeTheme: {},
+}));
+const {
   buildRemoteManifestView,
   buildWorkspaceMapContext,
   encodeFlatCwd,
@@ -11,10 +20,9 @@ import {
   localSessionsFlatDir,
   toLocalView,
   toRemoteRelPath,
-  type WorkspaceMapEntry,
-} from './workspace-map.js';
-import { buildManifest } from './manifest.js';
-import type { SyncState } from './sync-state.js';
+  isWorkspacePathSyncEnabled,
+} = await import('./workspace-map.js');
+const { buildManifest } = await import('./manifest.js');
 
 const DATA_DIR = '/home/alice/.dogear';
 const PEER_DATA_DIR = 'C:\\Users\\bob\\.dogear';

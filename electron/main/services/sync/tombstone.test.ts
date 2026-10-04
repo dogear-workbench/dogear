@@ -239,7 +239,7 @@ const { excludesFromSyncOptions } = await import('./manifest.js');
 const server = await startSyncServer({
   port: 0,
   dataDir,
-  getSelfHello: () => ({ appId: 'dogear', protocolVersion: 3, appVersion: 'test', deviceId: 'self-device-1' }),
+  getSelfHello: () => ({ appId: 'dogear', protocolVersion: 4, appVersion: 'test', deviceId: 'self-device-1' }),
   getManifestOptions: async () => ({
     excludes: excludesFromSyncOptions({
       deviceName: 'receiver',
@@ -278,7 +278,7 @@ function postManifest(body: Record<string, unknown>): Promise<Response> {
   });
 }
 
-const manifestHello = { appId: 'dogear', protocolVersion: 3, appVersion: 'test', deviceId: PEER_ID, deviceName: 'peer' };
+const manifestHello = { appId: 'dogear', protocolVersion: 4, appVersion: 'test', deviceId: PEER_ID, deviceName: 'peer' };
 
 test('DELETE /file：hash 一致 → 删除文件 + 记墓碑 + 基线条目移除', async () => {
   const res = await deleteFile(NOTE_REL, noteHash);

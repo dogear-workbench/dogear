@@ -18,6 +18,7 @@ import {
 } from './apply.js';
 import { fetchManifest, pullFile, pushFile, deletePeerFile, type PeerEndpoint } from './client.js';
 import { getDataDir, mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
+import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
 import { ensureSelfHello } from './pairing.js';
 import {
   buildRemoteManifestView,
@@ -195,8 +196,9 @@ async function runSyncInternal(
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerState?.workspaceMap),
     // 同步范围排除来自 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit /
     // optionalDirs），与被动响应侧 getManifestOptions 共用同一转换；buildNextBaseline 透传同一 options，
-    // 基线与新清单口径一致
+    // 基线与新清单口径一致。userSyncPaths 驱动 __ws-external__ 虚拟条目（勾选子树）收集
     excludes: excludesFromSyncOptions(settings.syncOptions),
+    userSyncPaths: settings.syncOptions?.userSyncPaths,
   };
 
   const local = await buildManifest(dataDir, manifestOptions);
@@ -261,7 +263,14 @@ async function runSyncInternal(
     dataDir,
     remoteManifest.hello.dataDirPath,
   );
-  const remoteView = buildRemoteManifestView(mapCtx, remoteManifest.entries, remoteManifest.workspaceMeta);
+  // 版本 gating：旧版本对端不认识 __ws-external__ 语义，其清单/推送条目若照收会被当普通路径
+  // 落到 configDir 下成垃圾目录，故拉取方向先滤掉再折算；推送方向同理不推虚拟条目
+  const peerSupportsVirtual = remoteManifest.hello.protocolVersion >= SYNC_PROTOCOL_VERSION;
+  const virtualPrefix = `${EXTERNAL_ANCHOR_PREFIX}/`;
+  const remoteEntriesForView = peerSupportsVirtual
+    ? remoteManifest.entries
+    : remoteManifest.entries.filter((e) => !e.relPath.startsWith(virtualPrefix));
+  const remoteView = buildRemoteManifestView(mapCtx, remoteEntriesForView, remoteManifest.workspaceMeta);
   const remotePathByLocal = new Map(remoteView.views.map((v) => [v.entry.relPath, v.remoteRelPath]));
   const candidateHashByRemote = new Map(remoteManifest.candidateHashes.map((c) => [c.relPath, c.hash]));
   const remoteEntries: FileEntry[] = remoteView.views.map((v) => {
@@ -306,6 +315,10 @@ async function runSyncInternal(
   // 推送条目折算为对端视角路径（读盘仍用本端路径）；未映射的本端工作区理论上已被 manifest 过滤，防御性跳过
   const pushEntries: OutgoingPushItem[] = [];
   for (const localEntry of diff.push) {
+    if (!peerSupportsVirtual && localEntry.relPath.startsWith(virtualPrefix)) {
+      skipped.push({ relPath: localEntry.relPath, reason: '对端协议版本较低，虚拟路径条目不推送' });
+      continue;
+    }
     const remoteRelPath = toRemoteRelPath(mapCtx, localEntry.relPath);
     if (remoteRelPath === null) {
       skipped.push({ relPath: localEntry.relPath, reason: '本端工作区未建映射，推送跳过' });

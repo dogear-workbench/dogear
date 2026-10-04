@@ -12,10 +12,12 @@ import {
   HandshakeHelloSchema,
   ManifestRequestBodySchema,
   PairRequestBodySchema,
+  SYNC_PROTOCOL_VERSION,
   type HandshakeHello,
   type PairRequestBody,
 } from './protocol.js';
 import { buildManifest, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
+import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
 import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
 import { mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
@@ -242,7 +244,13 @@ async function handleManifest(
     ...(await opts.getManifestOptions(auth.deviceId)),
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerMap),
   };
-  const local = await buildManifest(opts.dataDir, manifestOptions);
+  let local = await buildManifest(opts.dataDir, manifestOptions);
+  // 响应侧版本 gating：旧版本请求方不认识 __ws-external__ 语义，若收进清单会把它当普通路径
+  // 落到 configDir 下成垃圾目录，故按请求方 hello.protocolVersion 过滤虚拟路径条目
+  if (body.hello.protocolVersion < SYNC_PROTOCOL_VERSION) {
+    const virtualPrefix = `${EXTERNAL_ANCHOR_PREFIX}/`;
+    local = local.filter((e) => !e.relPath.startsWith(virtualPrefix));
+  }
   // 被动端墓碑生成：本端实时清单 vs 对该请求方的基线——基线有、现无 = 本端（被动期间）发生过删除。
   // 被动端不跑 orchestrator 收尾，这是删除事实落盘的唯一时机；与历史墓碑合并后随响应携回请求方
   const freshDeletes = tombstoneCandidates(peerLastManifest ?? [], local, {

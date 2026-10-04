@@ -15,6 +15,7 @@
 import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { safeJsonRead } from '../safe-json.js';
+import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
 import type { SyncState } from './sync-state.js';
 import type { FileEntry } from './protocol.js';
 
@@ -106,11 +107,22 @@ export type LocalViewResult =
  * 对端 relPath → 本端视角 relPath。
  * - 非 workspaces/ 前缀（全局数据）或 workspaces/ 下直接落文件（如 workspaces.json、其冲突副本，
  *   路径仅两段）→ pass 原样：全局数据恒同步，不走映射过滤。
- * - workspaces/<remote>/...：命中 enabled 映射 → 折算 <local> 并重写 sessions flat-cwd 目录名；
- *   未命中 → unmapped（进待映射清单）；在忽略列表 → ignored（静默跳过，映射优先于忽略）。
+ * - workspaces/<remote>/... 与 __ws-external__/<remote>/...：命中 enabled 映射 → 折算 <local>
+ *   （workspaces/ 额外重写 sessions flat-cwd 目录名）；未命中 → unmapped（进待映射清单）；
+ *   在忽略列表 → ignored（静默跳过，映射优先于忽略）。
  */
 export function toLocalView(ctx: WorkspaceMapContext, relPath: string): LocalViewResult {
   const segs = relPath.split('/');
+  if (segs[0] === EXTERNAL_ANCHOR_PREFIX && segs.length >= 2) {
+    const remoteWsid = segs[1];
+    const localWsid = ctx.remoteToLocal.get(remoteWsid);
+    if (localWsid === undefined) {
+      return ctx.ignoredRemote.has(remoteWsid)
+        ? { kind: 'ignored', remoteWsid }
+        : { kind: 'unmapped', remoteWsid };
+    }
+    return { kind: 'map', localRelPath: [EXTERNAL_ANCHOR_PREFIX, localWsid, ...segs.slice(2)].join('/') };
+  }
   if (segs[0] !== 'workspaces' || segs.length < 3) {
     return { kind: 'pass', localRelPath: relPath };
   }
@@ -136,6 +148,12 @@ export function toLocalView(ctx: WorkspaceMapContext, relPath: string): LocalVie
  */
 export function toRemoteRelPath(ctx: WorkspaceMapContext, relPath: string): string | null {
   const segs = relPath.split('/');
+  if (segs[0] === EXTERNAL_ANCHOR_PREFIX && segs.length >= 2) {
+    const localWsid = segs[1];
+    const remoteWsid = ctx.localToRemote.get(localWsid);
+    if (remoteWsid === undefined) return null;
+    return [EXTERNAL_ANCHOR_PREFIX, remoteWsid, ...segs.slice(2)].join('/');
+  }
   if (segs[0] !== 'workspaces' || segs.length < 3) return relPath;
   const localWsid = segs[1];
   const remoteWsid = ctx.localToRemote.get(localWsid);
@@ -179,15 +197,20 @@ export function learnReverseWorkspaceMap(
 
 /**
  * push 接收端校验（D1）：发送端推来的路径已按它的 localToRemote 折算成接收端视角，
- * workspaces/<wsid>/ 前缀中 wsid 即接收端本端 wsid，只需查该键在本端 per-peer 映射中 enabled
- * （未建映射/已暂停都拒绝）；非 workspaces/ 前缀或两段形态（workspaces/workspaces.json 等）
- * 为全局数据，不走映射（与 toLocalView 的 pass 语义一致）。
+ * workspaces/<wsid>/ 与 __ws-external__/<wsid>/ 前缀中 wsid 即接收端本端 wsid，只需查该键在本端
+ * per-peer 映射中 enabled（未建映射/已暂停都拒绝）；畸形虚拟路径（不足 3 段）同样拒绝；
+ * 非 workspaces/ 前缀或两段形态（workspaces/workspaces.json 等）为全局数据，不走映射
+ * （与 toLocalView 的 pass 语义一致）。
  */
 export function isWorkspacePathSyncEnabled(
   workspaceMap: Record<string, WorkspaceMapEntry> | undefined,
   relPath: string,
 ): boolean {
   const segs = relPath.split('/');
+  if (segs[0] === EXTERNAL_ANCHOR_PREFIX) {
+    if (segs.length < 3) return false;
+    return workspaceMap?.[segs[1]]?.enabled === true;
+  }
   if (segs[0] !== 'workspaces' || segs.length < 3) return true;
   return workspaceMap?.[segs[1]]?.enabled === true;
 }

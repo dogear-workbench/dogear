@@ -70,10 +70,11 @@ async function startLanSyncInternal(): Promise<void> {
       // workspaces/ 按请求方的映射表过滤（enabled=true 的本端 wsid）；未建映射 → 全部工作区目录不同步
       const state = await readSyncState();
       // 同步范围排除来自本端 settings.syncOptions（含 stocks/feishu optionalDirs），
-      // 与主动发起侧（orchestrator）共用同一转换
+      // 与主动发起侧（orchestrator）共用同一转换；userSyncPaths 驱动 __ws-external__ 虚拟条目收集
       return {
         enabledWorkspaceIds: enabledWorkspaceIdsOf(state.peers[requesterDeviceId]?.workspaceMap),
         excludes: excludesFromSyncOptions(current.syncOptions),
+        userSyncPaths: current.syncOptions?.userSyncPaths,
       };
     },
     handlePairRequest: handleIncomingPairRequest,

@@ -42,8 +42,8 @@ const WSID_TOKEN = '{wsid}';
 
 export const EXTERNAL_ANCHOR_PREFIX = '__ws-external__';
 
-const EXTERNAL_TASKS_REL = '.dogear/tasks.json';
-const EXTERNAL_ARTICLES_REL = '.dogear/articles';
+export const EXTERNAL_TASKS_REL = '.dogear/tasks.json';
+export const EXTERNAL_ARTICLES_REL = '.dogear/articles';
 
 export const DATA_ITEMS: readonly DataItem[] = [
   { id: 'ws-notes', paths: ['workspaces/{wsid}/notes'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
@@ -82,14 +82,15 @@ export function assertRegistryScope(scope: BackupScope): void {
   }
 }
 
-interface RegisteredWorkspace {
+export interface RegisteredWorkspace {
   id: string;
   path: string;
 }
 
-async function readRegisteredWorkspaces(): Promise<RegisteredWorkspace[]> {
+/** workspaces.json 注册工作区（id + 磁盘绝对路径）；configDir 缺省取应用配置目录（sync manifest 测试注入临时目录） */
+export async function readRegisteredWorkspaces(configDir?: string): Promise<RegisteredWorkspace[]> {
   const file = await safeJsonRead<{ version?: number; workspaces?: Array<{ id?: unknown; path?: unknown }> } | null>(
-    path.join(getConfigDir(), 'workspaces', 'workspaces.json'),
+    path.join(configDir ?? getConfigDir(), 'workspaces', 'workspaces.json'),
     null,
   );
   if (!file || !Array.isArray(file.workspaces)) return [];

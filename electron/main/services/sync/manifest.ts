@@ -2,6 +2,13 @@ import path from 'node:path';
 import fsp from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
+import {
+  EXTERNAL_ANCHOR_PREFIX,
+  EXTERNAL_ARTICLES_REL,
+  EXTERNAL_TASKS_REL,
+  readRegisteredWorkspaces,
+  type RegisteredWorkspace,
+} from '../data-registry.js';
 import type { DiffResult, FileEntry, HashedFileEntry, SkippedEntry } from './protocol.js';
 import type { SyncOptions } from '../settings-types.js';
 
@@ -26,10 +33,13 @@ export interface ManifestOptions {
   /**
    * workspaces/ 下只收这些本端 wsid 目录（映射表中 enabled=true 者，per-peer）。
    * undefined = 不过滤（全量，向后兼容）；空数组 = 全部工作区目录不同步（首次使用即受控，全局数据恒同步）。
+   * __ws-external__ 虚拟路径条目按同一集合过滤（未建映射的工作区外部数据不同步）。
    */
   enabledWorkspaceIds?: string[];
   /** 同步范围排除（含 stocks/feishu 可选目录开关）；缺省 = 全放行（现状行为） */
   excludes?: ManifestExcludes;
+  /** 用户勾选跨设备同步的工作区子树（wsid → 工作区相对路径列表），虚拟路径 __ws-external__/{wsid}/<rel>/ 收集用；勾选即开，不进 disabledSyncItems 体系 */
+  userSyncPaths?: Record<string, string[]>;
 }
 
 const ALWAYS_SYNC_DIRS = ['workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history'] as const;
@@ -99,6 +109,11 @@ export function isExcluded(relPath: string, excludes?: ManifestExcludes): boolea
       const dirSegment = relPath.slice(0, slash);
       if (EXCLUDABLE_DIR_ITEMS.has(dirSegment) && items.has(dirSegment)) return true;
     }
+    // 虚拟路径条目：registry 声明的 tasks/articles 分别匹配；用户勾选子树（.dogear 之外）不在 disabledSyncItems 体系，勾选即开
+    if (first === EXTERNAL_ANCHOR_PREFIX && segments.length >= 4 && segments[2] === '.dogear') {
+      if (segments.length === 4 && segments[3] === 'tasks.json' && items.has('tasks')) return true;
+      if (segments[3] === 'articles' && items.has('articles')) return true;
+    }
   }
   return false;
 }
@@ -124,9 +139,56 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
     if (isExcluded(dir, excludes)) continue;
     jobs.push(walkDir(root, dir, entries, excludes));
   }
+  // 虚拟路径条目：workspaces.json 注册表 × registry 声明（tasks/articles）× userSyncPaths 勾选子树，
+  // 按 per-peer 映射 enabled 过滤（未建映射的工作区外部数据不同步，与 workspaces/ 目录同一口径）
+  jobs.push(collectVirtualEntries(root, options.userSyncPaths, options.enabledWorkspaceIds === undefined ? undefined : new Set(options.enabledWorkspaceIds), entries, excludes));
   await Promise.all(jobs);
   entries.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
   return entries;
+}
+
+/**
+ * 注册工作区的外部数据收集：读盘在工作区真实根（ws.path）下，产出 relPath 为 __ws-external__/{wsid}/ 虚拟形式。
+ * 注册表不可读/工作区已注销时静默返回（清单条目来源驱动：注册表即全集）。
+ */
+async function collectVirtualEntries(
+  root: string,
+  userSyncPaths: Record<string, string[]> | undefined,
+  enabledIds: Set<string> | undefined,
+  out: FileEntry[],
+  excludes?: ManifestExcludes,
+): Promise<void> {
+  let registered: RegisteredWorkspace[];
+  try {
+    registered = await readRegisteredWorkspaces(root);
+  } catch {
+    return;
+  }
+  await Promise.all(registered.map(async (ws) => {
+    if (enabledIds && !enabledIds.has(ws.id)) return;
+    const anchor = `${EXTERNAL_ANCHOR_PREFIX}/${ws.id}`;
+    const tasksAbs = path.join(ws.path, ...EXTERNAL_TASKS_REL.split('/'));
+    await statAbs(tasksAbs, `${anchor}/${EXTERNAL_TASKS_REL}`, out, excludes);
+    await walkAbsDir(path.join(ws.path, ...EXTERNAL_ARTICLES_REL.split('/')), `${anchor}/${EXTERNAL_ARTICLES_REL}`, out, excludes);
+    for (const rel of userSyncPaths?.[ws.id] ?? []) {
+      if (!isCleanRelSegs(rel)) continue;
+      const abs = path.join(ws.path, ...rel.split('/'));
+      let st;
+      try {
+        st = await fsp.stat(abs);
+      } catch {
+        continue;
+      }
+      if (st.isFile()) await statAbs(abs, `${anchor}/${rel}`, out, excludes);
+      else if (st.isDirectory()) await walkAbsDir(abs, `${anchor}/${rel}`, out, excludes);
+    }
+  }));
+}
+
+/** 工作区相对勾选路径防御校验（settings 层已清洗，此处防注入构造的读盘路径逃逸工作区根） */
+function isCleanRelSegs(rel: string): boolean {
+  if (rel === '' || rel.includes('\\') || rel.startsWith('/')) return false;
+  return rel.split('/').every((seg) => seg !== '' && seg !== '.' && seg !== '..');
 }
 
 /** walkDir 的 workspaces/ 特化版：一级目录按映射表 wsid 过滤，文件与已启用 wsid 子树照常收 */
@@ -152,34 +214,43 @@ async function walkWorkspacesDir(root: string, enabledIds: Set<string>, out: Fil
 }
 
 async function walkDir(root: string, relDir: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
+  return walkAbsDir(path.join(root, relDir), relDir, out, excludes);
+}
+
+/** 绝对目录遍历，产出 relPath 前缀与读盘目录解耦（虚拟路径收集：读工作区真实路径、产 __ws-external__ 形式） */
+async function walkAbsDir(absDir: string, relPrefix: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
   let dirents;
   try {
-    dirents = await fsp.readdir(path.join(root, relDir), { withFileTypes: true });
+    dirents = await fsp.readdir(absDir, { withFileTypes: true });
   } catch {
     return;
   }
   await Promise.all(dirents.map(async (dirent) => {
     const name = dirent.name;
-    const childRel = `${relDir}/${name}`;
+    const childRel = `${relPrefix}/${name}`;
     if (dirent.isDirectory()) {
       if (IGNORE_DIR_NAMES.has(name.toLowerCase())) return;
       if (isExcluded(childRel, excludes)) return; // 目录命中剪枝（如 workspaces/<wsid>/shadow-git/ 整树）
-      await walkDir(root, childRel, out, excludes);
+      await walkAbsDir(path.join(absDir, name), childRel, out, excludes);
       return;
     }
     if (!dirent.isFile() || dirent.isSymbolicLink()) return;
-    await statFile(root, childRel, out, excludes);
+    await statAbs(path.join(absDir, name), childRel, out, excludes);
   }));
 }
 
 async function statFile(root: string, relPath: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
+  return statAbs(path.join(root, relPath), relPath, out, excludes);
+}
+
+async function statAbs(absPath: string, relPath: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
   if (isExcluded(relPath, excludes)) return;
   const lower = relPath.toLowerCase();
   const base = lower.slice(lower.lastIndexOf('/') + 1);
   if (IGNORE_BASENAMES.has(base)) return;
   if (IGNORE_FILE_SUFFIXES.some((suffix) => base.endsWith(suffix))) return;
   try {
-    const st = await fsp.stat(path.join(root, relPath));
+    const st = await fsp.stat(absPath);
     if (!st.isFile()) return;
     out.push({ relPath, size: st.size, mtimeMs: st.mtimeMs });
   } catch {
@@ -254,7 +325,15 @@ export function tombstoneCandidates(
     if (relPath === 'settings.json') continue;
     if (isExcluded(relPath, options?.excludes)) continue;
     const segs = relPath.split('/');
-    if (enabled !== undefined && segs[0] === 'workspaces' && segs.length >= 3 && !enabled.has(segs[1])) continue;
+    // 未 enabled 工作区的路径消失是开关/映射状态而非删除事实（含 __ws-external__ 虚拟条目），不产墓碑
+    if (
+      enabled !== undefined &&
+      segs.length >= 3 &&
+      (segs[0] === 'workspaces' || segs[0] === EXTERNAL_ANCHOR_PREFIX) &&
+      !enabled.has(segs[1])
+    ) {
+      continue;
+    }
     out.push(relPath);
   }
   return out;
