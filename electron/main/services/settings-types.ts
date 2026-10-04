@@ -137,20 +137,35 @@ export interface SnapshotRetention {
 export interface SnapshotSettings {
   /** 单文件大小阈值（字节），超过不进快照 */
   maxFileSizeBytes: number;
-  /** 排除目录名（相对工作区根，任意层级生效）；整列表覆盖默认，不与默认并集 */
-  excludeDirs: string[];
+  /** 按工作区的排除路径清单：键为工作区 id，值为相对该工作区根的顶层锚定路径（命中即整子树不进快照）；未列工作区视为空 */
+  excludedPaths: Record<string, string[]>;
   retention: SnapshotRetention;
   /** 关闭快照的工作区 id；缺省/空 = 全部开启 */
   disabledWorkspaces?: string[];
+  /** 名字级 → 路径级对照扫描迁移已完成标记；真值后启动迁移不再重扫 */
+  exclusionScanDone?: boolean;
 }
 
 /** 影子快照默认配置唯一源：shadow.ts 与前端设置页均从此导入 */
 export const SNAPSHOT_SETTING_DEFAULTS: SnapshotSettings = {
   maxFileSizeBytes: 8 * 1024 * 1024,
-  excludeDirs: ['node_modules', 'out', 'dist', 'release', 'release2', 'update-server', 'tmp', '.dogear', '.git'],
+  excludedPaths: {},
   retention: { recentDays: 7, totalDays: 30 },
   disabledWorkspaces: [],
 };
+
+/** 名字级时代的默认排除名单，仅作对照扫描种子（迁移/新工作区注册/恢复默认重扫），不参与运行时判定 */
+export const DEFAULT_SNAPSHOT_DIR_NAMES = [
+  'node_modules',
+  'out',
+  'dist',
+  'release',
+  'tmp',
+  '.dogear',
+  '.git',
+  'update-server',
+  'release2',
+] as const;
 
 /** 已配对的同步对端；secret 为两端共享的 hex 密钥，之后请求经 header 校验 */
 export interface PairedDevice {
@@ -410,7 +425,10 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
 
 /**
  * snapshot 节归一化：非法输入归一为全默认，单字段非法回落默认，不丢弃其他合法字段；
- * excludeDirs/disabledWorkspaces 清洗非空字符串并按首现顺序去重；retention.totalDays 不低于 recentDays
+ * excludedPaths 按工作区归一：值非数组的键回落空数组（不丢弃其他键），条目反斜杠转斜杠、剥 ./ 前缀、
+ * 去首尾斜杠、去重，否则段前缀判定与 pathspec 拼接会静默失效；
+ * 旧名字级 excludeDirs 字段直接忽略（对照迁移由启动扫描承担，不在此转换）；
+ * disabledWorkspaces 清洗非空字符串并按首现顺序去重；retention.totalDays 不低于 recentDays
  */
 export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
   const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -427,8 +445,8 @@ export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
     typeof retentionRaw.totalDays === 'number' && Number.isInteger(retentionRaw.totalDays) && retentionRaw.totalDays >= 1
       ? retentionRaw.totalDays
       : def.retention.totalDays;
-  const cleanStringList = (value: unknown, fallback: string[]): string[] => {
-    if (!Array.isArray(value)) return fallback;
+  const cleanStringList = (value: unknown): string[] => {
+    if (!Array.isArray(value)) return [];
     const seen = new Set<string>();
     for (const item of value) {
       if (typeof item !== 'string' || item === '' || seen.has(item)) continue;
@@ -436,14 +454,33 @@ export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
     }
     return [...seen];
   };
+  const pathsRaw =
+    obj.excludedPaths && typeof obj.excludedPaths === 'object' && !Array.isArray(obj.excludedPaths)
+      ? (obj.excludedPaths as Record<string, unknown>)
+      : {};
+  const excludedPaths: Record<string, string[]> = {};
+  for (const [wsId, value] of Object.entries(pathsRaw)) {
+    if (wsId === '') continue;
+    const seen = new Set<string>();
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item !== 'string') continue;
+        const p = item.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/^\/+|\/+$/g, '');
+        if (p === '' || seen.has(p)) continue;
+        seen.add(p);
+      }
+    }
+    excludedPaths[wsId] = [...seen];
+  }
   return {
     maxFileSizeBytes:
       typeof obj.maxFileSizeBytes === 'number' && Number.isInteger(obj.maxFileSizeBytes) && obj.maxFileSizeBytes >= 1
         ? obj.maxFileSizeBytes
         : def.maxFileSizeBytes,
-    excludeDirs: cleanStringList(obj.excludeDirs, [...def.excludeDirs]),
+    excludedPaths,
     retention: { recentDays, totalDays: Math.max(totalDaysRaw, recentDays) },
-    disabledWorkspaces: cleanStringList(obj.disabledWorkspaces, []),
+    disabledWorkspaces: cleanStringList(obj.disabledWorkspaces),
+    ...(obj.exclusionScanDone === true ? { exclusionScanDone: true } : {}),
   };
 }
 

@@ -100,8 +100,8 @@ async function execShadow(gitDir: string, workspacePath: string, args: string[])
   return execGit(workspacePath, shadowArgs(gitDir, workspacePath, args));
 }
 
-function excludePathspecs(excludeDirs: string[]): string[] {
-  return excludeDirs.flatMap((dir) => [`:(exclude)${dir}`, `:(exclude)**/${dir}`]);
+function excludePathspecs(paths: string[]): string[] {
+  return paths.map((p) => `:(exclude)./${p}`);
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -191,7 +191,10 @@ export async function takeSnapshot(
   await ensureShadowRepo(workspaceId, workspacePath);
   const gitDir = shadowGitDir(workspaceId);
   await enqueue(workspaceId, async () => {
-    await execShadow(gitDir, workspacePath, ['add', '-A', '-f', '--', '.', ...excludePathspecs(snapshotSettings.excludeDirs)]);
+    await execShadow(gitDir, workspacePath, [
+      'add', '-A', '-f', '--', '.',
+      ...excludePathspecs(snapshotSettings.excludedPaths[workspaceId] ?? []),
+    ]);
     await unstageOversized(gitDir, workspacePath, snapshotSettings.maxFileSizeBytes);
     if (await hasStagedChanges(gitDir, workspacePath)) {
       await execShadow(gitDir, workspacePath, ['commit', '-m', buildSnapshotMessage(source, relPath, conversationId)]);
@@ -205,7 +208,7 @@ export async function slimShadowRepoInQueue(workspaceId: string, workspacePath: 
   if (!(await hasGit())) throw gitMissingError();
   const settings = (await loadSettings()).snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
   const gitDir = shadowGitDir(workspaceId);
-  return enqueue(workspaceId, () => slimShadowRepo(gitDir, workspacePath, settings));
+  return enqueue(workspaceId, () => slimShadowRepo(workspaceId, gitDir, workspacePath, settings));
 }
 
 function parseLogEntries(stdout: string): SnapshotEntry[] {

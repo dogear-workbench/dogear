@@ -12,7 +12,7 @@ const gitAvailable = await hasGit();
 
 const SETTINGS = {
   maxFileSizeBytes: 800 * 1024,
-  excludeDirs: ['dist', 'node_modules'],
+  excludedPaths: { ws: ['dist', 'node_modules'] },
   retention: { recentDays: 7, totalDays: 30 },
   disabledWorkspaces: [],
 };
@@ -85,7 +85,7 @@ test.skipIf(!gitAvailable)(
     const nestedBlob = gitIn(dir, [...gitArgs, 'rev-parse', `${c1}:sub/dist/lib.js`]);
     const sizeBefore = await dirSizeBytes(gitDir);
 
-    const result = await slimShadowRepo(gitDir, dir, SETTINGS);
+    const result = await slimShadowRepo('ws', gitDir, dir, SETTINGS);
 
     expect(result.status).toBe('done');
     expect(result.commitsBefore).toBe(3);
@@ -100,7 +100,7 @@ test.skipIf(!gitAvailable)(
     expect(gitIn(dir, [...gitArgs, 'rev-list', '--max-parents=0', 'HEAD']).split('\n')).toHaveLength(1);
     gitIn(dir, [...gitArgs, 'fsck', '--connectivity-only']);
 
-    for (const hash of [appBlob, distBlob, nestedBlob]) {
+    for (const hash of [appBlob, distBlob]) {
       mustBeMissing(dir, hash);
     }
 
@@ -109,11 +109,13 @@ test.skipIf(!gitAvailable)(
     expect(gitShowRaw(dir, `${tip}:src/main.ts`)).toBe('export const v = 3;\n');
     expect(gitShowRaw(dir, `${tipParent}:src/main.ts`)).toBe('export const v = 2;\n');
     expect(gitShowRaw(dir, `${tipParent}:keep.dat`)).toBe('keep-v2');
-    for (const spec of [`${tip}:dist/out.js`, `${tip}:sub/dist/lib.js`, `${tip}:app.bin`]) {
+    for (const spec of [`${tip}:dist/out.js`, `${tip}:app.bin`]) {
       mustBeMissing(dir, spec);
     }
+    // 路径级锚定：排除 dist 只覆盖顶层，sub/dist 不再受牵连，blob 必须原样保留
+    expect(gitIn(dir, [...gitArgs, 'rev-parse', `${tip}:sub/dist/lib.js`])).toBe(nestedBlob);
 
-    const rerun = await slimShadowRepo(gitDir, dir, SETTINGS);
+    const rerun = await slimShadowRepo('ws', gitDir, dir, SETTINGS);
     expect(rerun.status).toBe('noop');
     expect(rerun.commitsBefore).toBe(2);
     expect(rerun.commitsAfter).toBe(2);
@@ -135,7 +137,7 @@ test.skipIf(!gitAvailable)('slimShadowRepo：tree 全合规时仅做保留窗口
   await fsp.writeFile(path.join(dir, 'common.txt'), 'v2');
   await commitAll(dir, '[snapshot] agent-write fresh', 0);
 
-  const result = await slimShadowRepo(gitDir, dir, SETTINGS);
+  const result = await slimShadowRepo('ws', gitDir, dir, SETTINGS);
   expect(result.status).toBe('done');
   expect(result.commitsBefore).toBe(2);
   expect(result.commitsAfter).toBe(1);
@@ -155,7 +157,7 @@ test.skipIf(!gitAvailable)('slimShadowRepo：历史已合规且全在窗口内�
   await fsp.writeFile(path.join(dir, 'b.txt'), 'b');
   const head = await commitAll(dir, '[snapshot] agent-write b', 0);
 
-  const result = await slimShadowRepo(gitDir, dir, SETTINGS);
+  const result = await slimShadowRepo('ws', gitDir, dir, SETTINGS);
   expect(result.status).toBe('noop');
   expect(gitIn(dir, [...gitArgs, 'rev-parse', 'HEAD'])).toBe(head);
   expect(Number(gitIn(dir, [...gitArgs, 'rev-list', '--count', 'HEAD']))).toBe(2);
@@ -163,7 +165,7 @@ test.skipIf(!gitAvailable)('slimShadowRepo：历史已合规且全在窗口内�
 
 test.skipIf(!gitAvailable)('slimShadowRepo：空仓库/unborn HEAD 安全 no-op', async () => {
   const dir = await makeRepo();
-  const result = await slimShadowRepo(path.join(dir, '.git'), dir, SETTINGS);
+  const result = await slimShadowRepo('ws', path.join(dir, '.git'), dir, SETTINGS);
   expect(result.status).toBe('noop');
   expect(result.commitsBefore).toBe(0);
   expect(result.commitsAfter).toBe(0);
@@ -177,7 +179,7 @@ test.skipIf(!gitAvailable)('slimShadowRepo：链上混入非快照 commit 时保
   await fsp.writeFile(path.join(dir, 'app.bin'), randomBytes(1_000_000));
   const head = await commitAll(dir, 'manual work');
 
-  const result = await slimShadowRepo(gitDir, dir, SETTINGS);
+  const result = await slimShadowRepo('ws', gitDir, dir, SETTINGS);
   expect(result.status).toBe('skipped');
   expect(gitIn(dir, [...gitArgs, 'rev-parse', 'HEAD'])).toBe(head);
   expect(() => gitIn(dir, [...gitArgs, 'cat-file', '-e', gitIn(dir, [...gitArgs, 'rev-parse', 'HEAD:app.bin'])])).not.toThrow();

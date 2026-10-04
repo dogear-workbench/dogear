@@ -8,6 +8,7 @@ import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
 import type { SnapshotSettings } from '../settings-types.js';
+import { isExcludedRelPath } from './shadow-protection.js';
 import { execGit, execGitCode, execGitInput, GitServiceError } from './exec.js';
 import { listSnapshotChain, pruneSnapshotHistory } from './shadow-prune.js';
 
@@ -33,7 +34,7 @@ interface SlimContext {
   cwd: string;
   gitDir: string;
   maxBytes: number;
-  excludeDirs: Set<string>;
+  excludedPaths: string[];
   /** tree hash → 直接条目（预扫描全量收集，重写决策纯内存） */
   treeData: Map<string, TreeEntry[]>;
   /** blob hash → 字节大小（cat-file --batch-check 批量查询） */
@@ -65,20 +66,9 @@ export async function dirSizeBytes(dir: string): Promise<number> {
   return total;
 }
 
-/** 对齐 takeSnapshot 的 pathspec 语义：单段名匹配任意层级同名目录，嵌套名（a/b）匹配任意层级的连续段序列 */
-function isExcludedDir(fullRel: string, name: string, excludeDirs: Set<string>): boolean {
-  const segs = fullRel.split('/');
-  for (const dir of excludeDirs) {
-    const dSegs = dir.split('/');
-    if (dSegs.length === 1) {
-      if (name === dir) return true;
-      continue;
-    }
-    for (let i = 0; i + dSegs.length <= segs.length; i++) {
-      if (dSegs.every((s, j) => segs[i + j] === s)) return true;
-    }
-  }
-  return false;
+/** 对齐 takeSnapshot 的 pathspec 语义：排除路径顶层锚定，段前缀命中即整子树剔除 */
+function isExcludedDir(fullRel: string, excludedPaths: string[]): boolean {
+  return isExcludedRelPath(fullRel.split('/'), excludedPaths);
 }
 
 function commitTreeOf(raw: string): string {
@@ -190,7 +180,7 @@ async function rewriteTree(treeHash: string, relPrefix: string, ctx: SlimContext
   let modified = false;
   for (const entry of entries) {
     if (entry.type === 'tree') {
-      if (isExcludedDir(relPrefix + entry.name, entry.name, ctx.excludeDirs)) {
+      if (isExcludedDir(relPrefix + entry.name, ctx.excludedPaths)) {
         modified = true;
         continue;
       }
@@ -224,6 +214,7 @@ async function rewriteTree(treeHash: string, relPrefix: string, ctx: SlimContext
 }
 
 export async function slimShadowRepo(
+  workspaceId: string,
   gitDir: string,
   workspacePath: string,
   settings: SnapshotSettings,
@@ -261,7 +252,7 @@ export async function slimShadowRepo(
     cwd: workspacePath,
     gitDir,
     maxBytes: settings.maxFileSizeBytes,
-    excludeDirs: new Set(settings.excludeDirs),
+    excludedPaths: settings.excludedPaths[workspaceId] ?? [],
     treeData: new Map(),
     blobSizes: new Map(),
     treeCache: new Map(),
