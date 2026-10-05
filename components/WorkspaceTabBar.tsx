@@ -1,13 +1,15 @@
 /**
- * 工作区多会话 Tab 栏（里程碑 1.5 Step A2.3，A2.8 增强右键菜单）
+ * 工作区多会话 Tab 栏
  *
  * 职责：
- * - 渲染活跃会话标签页（来自 session-store）
- * - 点击 Tab：纯切换焦点（跨工作区的左右面板同步由 conversation-store 焦点联动处理）
+ * - 渲染活跃会话标签页（来自 session-store），按容器宽度弹性收纳：
+ *   超出可见数的 tab 收进右端「…」溢出菜单，任何宽度不出横向滚动条
+ * - 点击 Tab：纯切换焦点（跨工作区的左右面板同步由 conversation-store 焦点联动处理）；
+ *   溢出菜单项点击 = switchTab，排序置顶逻辑保证弹回可视区
  * - 关闭 Tab：释放后端 Query 会话（closeQueryBasedSession），再从 UI 移除
- * - 显示 StatusPulse 指示运行/等待确认状态
- * - 右键菜单：弹出到独立窗口、关闭标签页、关闭其他标签页
- * - hover 快捷入口：弹出按钮、关闭按钮（保留便于鼠标用户）
+ * - 显示 StatusPulse 指示运行/等待确认状态，「…」按钮在溢出区有未读时显示绿点
+ * - 右键菜单：弹出到独立窗口、关闭标签页、关闭其他标签页；hover 快捷入口：弹出、关闭
+ * - 右组哨兵 tabs 图标化（笔记/数据中心/归档/飞书/网页AI），title tooltip 承担命名
  *
  * 不负责：
  * - AgentChat 渲染（由调用方控制）
@@ -15,11 +17,10 @@
  */
 
 import { useMemo } from 'react';
-import { ExternalLink, X, StickyNote, Database, Newspaper, Archive } from 'lucide-react';
+import { ExternalLink, X, StickyNote, Database, Newspaper, Archive, Ellipsis } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -27,16 +28,165 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { StatusPulse } from '@/components/StatusPulse';
 import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useArticleStore } from '@/stores/article-store';
+import { useContainerWidth } from '@/hooks/use-container-width';
 import type { Conversation } from '@/types/electron-api';
 import feishuLogo from '@/assets/feishu-logo.png';
 import { WebAiSiteMenu } from '@/components/webai/WebAiSiteMenu';
 
 /** 闲置淡化阈值：lastActiveAt 超过该时长且非运行/非未读的 tab 淡化显示 */
 const IDLE_FADE_MS = 24 * 60 * 60 * 1000;
+/** tab 最小宽度：低于它就收进溢出菜单（预算按此值计算，压缩模式实际可被 flex 压得更窄） */
+const MIN_TAB_WIDTH = 120;
+/** 溢出按钮在左组容器中占用的宽度预算 */
+const OVERFLOW_BUTTON_WIDTH = 40;
+
+interface TabVisualState {
+  isActive: boolean;
+  isRunning: boolean;
+  isPending: boolean;
+  isUnread: boolean;
+  isSubSession: boolean;
+  isIdle: boolean;
+}
+
+function SessionTabItem({
+  tab,
+  title,
+  flexible,
+  canPopOut,
+  hasOthers,
+  visual,
+  onSelect,
+  onClose,
+  onCloseOthers,
+  onPopOut,
+}: {
+  tab: SessionTab;
+  title: string;
+  flexible: boolean;
+  canPopOut: boolean;
+  hasOthers: boolean;
+  visual: TabVisualState;
+  onSelect: (tab: SessionTab) => void;
+  onClose: (tab: SessionTab) => void;
+  onCloseOthers: (tab: SessionTab) => void;
+  onPopOut: (tab: SessionTab) => void;
+}) {
+  const showPulse = visual.isRunning;
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          className={cn(
+            'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r max-w-[200px]',
+            flexible ? 'flex-1 min-w-0' : 'shrink-0',
+            visual.isActive ? 'bg-background font-medium'
+              : visual.isUnread ? 'hover:bg-muted/50 font-medium text-foreground'
+              : 'hover:bg-muted/50 text-muted-foreground',
+            visual.isIdle && 'opacity-60',
+          )}
+          onClick={() => onSelect(tab)}
+        >
+          {showPulse && <StatusPulse isPending={visual.isPending} size="sm" />}
+          {visual.isUnread && !showPulse && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="未读" />
+          )}
+          {visual.isSubSession && (
+            <span className="text-xs leading-none text-muted-foreground shrink-0" title="子会话">↳</span>
+          )}
+          <span className="truncate">{title}</span>
+          {showPulse && visual.isPending && (
+            <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
+          )}
+          {canPopOut && (
+            <button
+              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="弹出为独立窗口"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPopOut(tab);
+              }}
+            >
+              <ExternalLink className="w-3 h-3" />
+            </button>
+          )}
+          <button
+            className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
+            title="关闭标签页"
+            onClick={(e) => {
+              e.stopPropagation();
+              onClose(tab);
+            }}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem onClick={() => onPopOut(tab)} disabled={!canPopOut}>
+          <ExternalLink className="w-3.5 h-3.5 mr-2" />
+          弹出到独立窗口
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onClose(tab)}>
+          <X className="w-3.5 h-3.5 mr-2" />
+          关闭标签页
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onCloseOthers(tab)} disabled={!hasOthers}>
+          关闭其他标签页
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function OverflowTabMenuItem({
+  tab,
+  title,
+  isRunning,
+  isPending,
+  isUnread,
+  isSubSession,
+  onSelect,
+  onClose,
+}: {
+  tab: SessionTab;
+  title: string;
+  isRunning: boolean;
+  isPending: boolean;
+  isUnread: boolean;
+  isSubSession: boolean;
+  onSelect: (tab: SessionTab) => void;
+  onClose: (tab: SessionTab) => void;
+}) {
+  return (
+    <DropdownMenuItem className="group pr-1.5" onSelect={() => onSelect(tab)}>
+      <span className="w-3 h-3 flex items-center justify-center shrink-0">
+        {isRunning && <StatusPulse isPending={isPending} size="sm" />}
+        {!isRunning && isUnread && <span className="w-2 h-2 rounded-full bg-emerald-500" title="未读" />}
+      </span>
+      {isSubSession && (
+        <span className="text-xs leading-none text-muted-foreground shrink-0" title="子会话">↳</span>
+      )}
+      <span className="truncate flex-1 min-w-0" title={title}>{title}</span>
+      <button
+        className="p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100"
+        title="关闭标签页"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose(tab);
+        }}
+      >
+        <X className="size-3" />
+      </button>
+    </DropdownMenuItem>
+  );
+}
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -62,6 +212,8 @@ export function WorkspaceTabBar() {
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
   const byWorkspace = useConversationStore((s) => s.byWorkspace);
   const personalConversations = useConversationStore((s) => s.personalConversations);
+
+  const [tabsContainerRef, tabsContainerWidth] = useContainerWidth<HTMLDivElement>();
 
   // 过滤掉已弹到独立窗口的 Tab（保持 AgentChat 挂载但不显示标签头）
   const tabs = useMemo(
@@ -106,6 +258,19 @@ export function WorkspaceTabBar() {
     return result;
   }, [tabs, convById]);
 
+  /** 可见数 = 容器宽度预算下的弹性计算：全部放得下则全显，否则按 min 宽容纳最多数量（至少 1），剩余进溢出菜单 */
+  const visibleCount = useMemo(() => {
+    const total = displayTabs.length;
+    if (tabsContainerWidth === 0 || total === 0) return total;
+    if (total * MIN_TAB_WIDTH <= tabsContainerWidth) return total;
+    return Math.max(1, Math.floor((tabsContainerWidth - OVERFLOW_BUTTON_WIDTH) / MIN_TAB_WIDTH));
+  }, [tabsContainerWidth, displayTabs.length]);
+
+  const visibleTabs = displayTabs.slice(0, visibleCount);
+  const overflowTabs = displayTabs.slice(visibleCount);
+  const flexible = overflowTabs.length > 0;
+  const overflowHasUnread = overflowTabs.some((t) => convById.get(t.conversationId)?.unread);
+
   /** 标题实时取 conversation-store（覆盖自动起名/手动重命名）；跨工作区或已删除时回退快照 */
   const resolveTabTitle = (tab: SessionTab): string => {
     const live = convById.get(tab.conversationId);
@@ -128,11 +293,6 @@ export function WorkspaceTabBar() {
       }
     }
     closeTab(tab.conversationId);
-  };
-
-  const handleCloseTab = async (tab: SessionTab, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await closeTabInternal(tab);
   };
 
   /** 关闭其他标签页（右键菜单项） */
@@ -161,9 +321,19 @@ export function WorkspaceTabBar() {
     addSessionWindow(tab.conversationId);
   };
 
-  const handlePopOut = (tab: SessionTab, e: React.MouseEvent) => {
-    e.stopPropagation();
-    popOutInternal(tab);
+  const buildVisual = (tab: SessionTab): TabVisualState => {
+    const conv = convById.get(tab.conversationId);
+    const isRunning = runningConversationIds.has(tab.conversationId);
+    const isPending = pendingActionIds.has(tab.conversationId);
+    const isUnread = !!conv?.unread;
+    return {
+      isActive: activeTabId === tab.conversationId,
+      isRunning,
+      isPending,
+      isUnread,
+      isSubSession: conv?.contractMetadata?.createdBy === 'agent',
+      isIdle: !isRunning && !isPending && !isUnread && Date.now() - tab.lastActiveAt > IDLE_FADE_MS,
+    };
   };
 
   const showSentinelGroup =
@@ -176,89 +346,58 @@ export function WorkspaceTabBar() {
 
   return (
     <div className="flex items-stretch border-b bg-sidebar">
-      {/* 左组：会话 tabs，可滚动 */}
-      <ScrollArea className="flex-1 min-w-0">
-        <div className="flex items-center">
-          {displayTabs.map((tab) => {
-          const isActive = activeTabId === tab.conversationId;
-          const isRunning = runningConversationIds.has(tab.conversationId);
-          const isPending = pendingActionIds.has(tab.conversationId);
-          const conv = convById.get(tab.conversationId);
-          const isUnread = !!conv?.unread;
-          const isSubSession = conv?.contractMetadata?.createdBy === 'agent';
-          const isIdle = !isRunning && !isPending && !isUnread && Date.now() - tab.lastActiveAt > IDLE_FADE_MS;
-          const showPulse = isRunning;
-          const canPopOut = !isRunning;
-
-          return (
-            <ContextMenu key={tab.conversationId}>
-              <ContextMenuTrigger asChild>
-                <div
-                  className={cn(
-                    'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-                    isActive ? 'bg-background font-medium'
-                      : isUnread ? 'hover:bg-muted/50 font-medium text-foreground'
-                      : 'hover:bg-muted/50 text-muted-foreground',
-                    isIdle && 'opacity-60',
-                  )}
-                  onClick={() => handleTabClick(tab)}
-                >
-                  {showPulse && <StatusPulse isPending={isPending} size="sm" />}
-                  {isUnread && !showPulse && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="未读" />
-                  )}
-                  {isSubSession && (
-                    <span className="text-xs leading-none text-muted-foreground shrink-0" title="子会话">↳</span>
-                  )}
-                  <span className="truncate">{resolveTabTitle(tab)}</span>
-                  {showPulse && isPending && (
-                    <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
-                  )}
-                  {canPopOut && (
-                    <button
-                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="弹出为独立窗口"
-                      onClick={(e) => handlePopOut(tab, e)}
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
-                  )}
-                  <button
-                    className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
-                    title="关闭标签页"
-                    onClick={(e) => handleCloseTab(tab, e)}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem
-                  onClick={() => popOutInternal(tab)}
-                  disabled={!canPopOut}
-                >
-                  <ExternalLink className="w-3.5 h-3.5 mr-2" />
-                  弹出到独立窗口
-                </ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem onClick={() => closeTabInternal(tab)}>
-                  <X className="w-3.5 h-3.5 mr-2" />
-                  关闭标签页
-                </ContextMenuItem>
-                <ContextMenuItem
-                  onClick={() => handleCloseOthers(tab)}
-                  disabled={tabs.length <= 1}
-                >
-                  关闭其他标签页
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          );
-        })}
-        </div>
-        <ScrollBar orientation="horizontal" />
-      </ScrollArea>
-      {/* 右组：哨兵 tabs 固定最右（笔记/数据中心/文章），弹出中的哨兵隐藏 */}
+      {/* 左组：会话 tabs 弹性收纳，溢出收进「…」菜单 */}
+      <div ref={tabsContainerRef} className="flex flex-1 min-w-0 items-center">
+        {visibleTabs.map((tab) => (
+          <SessionTabItem
+            key={tab.conversationId}
+            tab={tab}
+            title={resolveTabTitle(tab)}
+            flexible={flexible}
+            canPopOut={!runningConversationIds.has(tab.conversationId)}
+            hasOthers={tabs.length > 1}
+            visual={buildVisual(tab)}
+            onSelect={handleTabClick}
+            onClose={(t) => void closeTabInternal(t)}
+            onCloseOthers={handleCloseOthers}
+            onPopOut={popOutInternal}
+          />
+        ))}
+        {flexible && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="relative flex items-center px-2 py-2 shrink-0 cursor-pointer outline-none border-r text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                title="更多标签页"
+              >
+                <Ellipsis className="w-4 h-4" />
+                {overflowHasUnread && (
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-emerald-500" title="溢出标签页有未读" />
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-w-[280px]">
+              {overflowTabs.map((tab) => {
+                const conv = convById.get(tab.conversationId);
+                return (
+                  <OverflowTabMenuItem
+                    key={tab.conversationId}
+                    tab={tab}
+                    title={resolveTabTitle(tab)}
+                    isRunning={runningConversationIds.has(tab.conversationId)}
+                    isPending={pendingActionIds.has(tab.conversationId)}
+                    isUnread={!!conv?.unread}
+                    isSubSession={conv?.contractMetadata?.createdBy === 'agent'}
+                    onSelect={handleTabClick}
+                    onClose={(t) => void closeTabInternal(t)}
+                  />
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+      {/* 右组：哨兵 tabs 图标化固定最右，弹出中的哨兵隐藏 */}
       {showSentinelGroup && (
         <div className="flex items-center shrink-0">
           {!notesWindowOpen && (
@@ -271,7 +410,6 @@ export function WorkspaceTabBar() {
               title="笔记"
             >
               <StickyNote className="w-3.5 h-3.5" />
-              <span>笔记</span>
               <button
                 className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="弹出为独立窗口"
@@ -294,7 +432,6 @@ export function WorkspaceTabBar() {
               title="数据中心"
             >
               <Database className="w-3.5 h-3.5" />
-              <span>数据中心</span>
               <button
                 className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="弹出为独立窗口"
@@ -328,7 +465,6 @@ export function WorkspaceTabBar() {
               title="归档"
             >
               <Archive className="w-3.5 h-3.5" />
-              <span>归档</span>
               <button
                 className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="关闭归档"
@@ -341,7 +477,7 @@ export function WorkspaceTabBar() {
               </button>
             </div>
           )}
-          {/* 文章：有选中文章才显示，关闭即清空选中 */}
+          {/* 文章：有选中文章才显示，关闭即清空选中；保留标题（内容语义） */}
           {selectedArticle !== null && (
             <div
               onClick={() => switchTab(ARTICLE_TAB_ID)}
@@ -376,7 +512,6 @@ export function WorkspaceTabBar() {
               title="飞书"
             >
               <img src={feishuLogo} alt="飞书" className="w-3.5 h-3.5 rounded-[3px]" />
-              <span>飞书</span>
               <button
                 className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 title="关闭飞书"
@@ -389,12 +524,12 @@ export function WorkspaceTabBar() {
               </button>
             </div>
           )}
-          {/* 网页 AI：可开关 Tab，不落盘，无弹出窗口；站点切换收进 tab 项（箭头弹菜单），关闭同时销毁主进程 embedded tab（分区登录态保留） */}
+          {/* 网页 AI：可开关 Tab，不落盘，无弹出窗口；纯图标 + 站点切换箭头弹菜单，关闭同时销毁主进程 embedded tab（分区登录态保留） */}
           {webAiTabOpen && (
             <div
               onClick={() => switchTab(WEB_AI_TAB_ID)}
               className={cn(
-                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[220px]',
+                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
                 activeTabId === WEB_AI_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
               )}
               title="网页 AI"

@@ -21,8 +21,8 @@ export function resolveSelectedSite(sites: WebAiSite[], selectedId: string | nul
 }
 
 /**
- * 网页 AI tab 项内容：Globe + 当前站点名 + 小箭头弹站点菜单（Radix 弹层走 WebAiSurface overlay 隐藏链路）。
- * 点图标/站点名冒泡到外层 tab 项照常激活；点箭头只弹菜单，选中后写 store + 导航 + 切到网页 AI tab。
+ * 网页 AI tab 项内容：Globe 图标 + 小箭头弹站点菜单，站点名收进菜单（tab 图标化省宽）。
+ * 点图标冒泡到外层 tab 项照常激活；点箭头只弹菜单，选中后写 store + 导航 + 切到网页 AI tab。
  */
 export function WebAiSiteMenu() {
   const sites = resolveWebAiSites(useSettingsStore((s) => s.settings.webAiSites));
@@ -40,7 +40,6 @@ export function WebAiSiteMenu() {
   return (
     <>
       <Globe className="w-3.5 h-3.5 shrink-0" />
-      <span className="truncate">{current.name}</span>
       <DropdownMenu>
         <DropdownMenuTrigger
           title="切换站点"

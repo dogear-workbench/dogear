@@ -12,7 +12,7 @@
 - [x] [Step 2: tabs LRU 排序 + 满员回收](./step2-tab-sorting.md) — session-store 焦点驱动重排（未读 > 最近活跃）与 openTab 满员回收闲置会话
 - [x] [Step 3: tab 栏与列表行未读渲染](./step3-unread-ui.md) — WorkspaceTabBar 三态视觉 + 绿点 + 主子标识 + 同树相邻；ConversationRow 未读绿点
 - [x] [Step 4: 子会话已交付提示条](./step4-subsession-hint.md) — 子会话交付/停止后输入区顶部软提示 + 回主会话跳转
-- [ ] [Step 5: 溢出收纳与哨兵图标化](./step5-overflow-collapse.md) — 取消横向滚动：哨兵 tab 图标化、会话 tab 弹性宽度 + 「…」溢出菜单，可见 tab 标题永远可读
+- [x] [Step 5: 溢出收纳与哨兵图标化](./step5-overflow-collapse.md) — 取消横向滚动：哨兵 tab 图标化、会话 tab 弹性宽度 + 「…」溢出菜单，可见 tab 标题永远可读
 
 依赖链：Step 1 → Step 2 → Step 3 → Step 5；Step 4 独立（只依赖子会话交付状态判定）。
 

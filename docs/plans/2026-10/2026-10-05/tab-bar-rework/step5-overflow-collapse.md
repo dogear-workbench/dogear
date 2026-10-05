@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 溢出收纳与哨兵图标化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,9 +27,22 @@ tab 栏取消横向滚动：哨兵 tab 图标化省宽，会话 tab 按容器宽
 
 ### 实际改动
 - 与计划差异：
+  1. **网页 AI 站点名选「收进菜单」**：tab 只剩 Globe + 切换箭头，菜单内 Check 标记选中项；WebAiPanel 只复用该文件工具函数无波及
+  2. **tab 渲染拆同文件子组件**（SessionTabItem / OverflowTabMenuItem，flexible prop 切换 flex-1 min-w-0 / shrink-0）：溢出逻辑加入后主组件 JSX 超限，按项目 >300 行拆分规范；哨兵 JSX 保持内联（抽出需传 10+ store 字段，样板大于收益）
+  3. **溢出菜单项不做右键菜单、不渲染闲置淡化**（菜单项可读性优先，YAGNI）
+  4. **溢出菜单序 = displayTabs 聚组序**（可见区 = 前缀、溢出 = 后缀，拼接即完整展示序，主子相邻在菜单内保持；与 step3 接力棒「二选一统一」对齐）
+  5. 新建 hooks/use-container-width.ts（ResizeObserver；项目内无既有 useMeasure 先例）；无振荡：溢出按钮可见性只由 total×120 vs W 决定，按钮 40px 预算一次性扣除
+  6. 已知语义例外：子会话从菜单点击后弹回跟随父 tab 位置（父若在溢出区子也留溢出区，主子相邻优先于单 tab 置顶，聚组序固有语义）
 - 改动文件清单：
+  - `hooks/use-container-width.ts`（新建）— ResizeObserver 测容器内容宽度
+  - `components/WorkspaceTabBar.tsx` — 移除 ScrollArea；visibleCount/visibleTabs/overflowTabs/flexible/overflowHasUnread 派生；SessionTabItem/OverflowTabMenuItem 子组件；「…」DropdownMenu（溢出区未读右上角绿点）；哨兵图标化（笔记/数据中心/归档/飞书删文字，文章保留标题，网页 AI 纯图标）
+  - `components/webai/WebAiSiteMenu.tsx` — 去站点名 span，站点名收进菜单
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `useContainerWidth<T>(): [RefObject<T | null>, number]`；易调常量 MIN_TAB_WIDTH(120) / OVERFLOW_BUTTON_WIDTH(40) / IDLE_FADE_MS(24h)
+  - 可见数策略：total×120 ≤ W 全显（max-w-[200px] 兜底）；否则 max(1, floor((W−40)/120))，可见 tab flexible 模式均分预算
+- 下个 step 该从哪里继续：本计划最后一个 step，全部完成
 - 待办或已知限制：
+  - 手测未做（无 UI 环境）：①开 8-10 tab 看溢出与压缩；②开合右侧面板看迁移；③后台完成溢出区会话看「…」绿点；④点菜单项弹回可视区；⑤子会话从菜单点击确认「跟随父位置」产品可接受度
+  - 哨兵全开 + 窗口 <600px 时左组极端压缩（标题省略号），功能不破属合理退化
