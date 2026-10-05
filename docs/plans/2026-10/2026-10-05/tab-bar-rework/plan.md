@@ -16,6 +16,20 @@
 
 依赖链：Step 1 → Step 2 → Step 3 → Step 5；Step 4 独立（只依赖子会话交付状态判定）。
 
+## 完成总结（2026-10-06）
+
+五个 step 全部实施完毕并逐 step 验收提交（fa433d98 → e9b89c6e）。
+
+**数据层**：conversation 记录新增 unread 标记，complete 广播补 conversationId，conversation-store 订阅完成/焦点事件驱动置位与清除，setUnread 服务层防翻转落盘（仅真实翻转写盘一次）。
+
+**排序与回收**：session-store 持有 sortTabs（未读置前 → lastActiveAt 降序，稳定排序），焦点变化与 unread 翻转两个触发点；openTab 满员时自动回收最久未活跃的闲置 tab（四条保护：运行中/等待确认/未读/独立窗口弹出中）；回退链改按 lastActiveAt 语义。
+
+**渲染层**：tab 栏三态视觉（未读绿点加粗 / 闲置 24h 淡化 / 运行 StatusPulse），同派遣树主子相邻（DFS 聚组 + ↳ 标识，数据源 contractMetadata.parentSessionId）；左侧列表行同源绿点；子会话已交付后输入区软提示条 + 回主会话三级跳转链路；哨兵 tab 图标化 + 弹性可见数 + 「…」溢出菜单（溢出区未读绿点），取消横向滚动。
+
+**关键差异沉淀**（详见各 step 回填）：主子关系以 contractMetadata.parentSessionId 派遣树为准（parentConversationId 是 fork 语义）；子会话交付信号源用 bridge 内存快照 childSnapshotsById（重启后不可恢复，宁缺勿滥不显示）；子会话 tab 聚组优先于单 tab 置顶（溢出菜单点击子会话跟随父位置）。
+
+**遗留**：手测未做（全部子会话无 UI 环境），建议走查路径在 step3/step5 回填段；独立窗口内「回主会话」按钮隐藏（跨窗口跳转需主进程基建，后续单独立项）；未读组内序用 lastActiveAt 而非置位时间（无 unreadAt 字段，产品要求严格置位序时需数据层补字段）。
+
 ## 全局决策
 
 - **命名**：conversation 记录加 `unread?: boolean`（缺省 falsy 兼容旧数据）；`SessionTab` 加 `lastActiveAt: number`（epoch ms）。
