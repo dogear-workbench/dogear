@@ -1,7 +1,7 @@
 ---
 step: 2
 title: skill 层三文件
-status: pending
+status: done
 ---
 
 ## 目标
@@ -64,11 +64,14 @@ description: 代码实施的工程纪律（实施前勘察 / 验收自检 / 提�
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：三处合理裁量——①「用户信号说明你走错了」节（不在删/留清单）压缩合并为反模式节末条，四条信号语义保留；②「验收失败常见征兆」3 条随「验收清单全文」删除（文档明确要求删），code-discipline 未覆盖征兆提示，影响轻微；③『笔记存卡纪律』落盘为「」与既有风格统一。message 模板用反引号包裹防 markdown 吞标签，文字逐字
 - 改动文件清单：
+  - 新建 `resources/skill-templates/code-discipline/SKILL.md`（32 行，三处 ⟨…⟩ 按括号内措辞替换）
+  - 重写 `resources/skill-templates/staged-execution/SKILL.md`（210 → 89 行，≤100 达标，删/留清单全落实）
+  - 编辑 `resources/skill-templates/brainstorming/SKILL.md`「后续衔接」节（三条标准引用化，旧指向 staged-impl 一并移除）
 
 ### 给下一步的接力棒
-- code-discipline 最终 frontmatter description 原文（Step 3 的 ability-registry 注册要用 name）：
-- staged-execution 瘦身后行数：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- code-discipline 最终 frontmatter description 原文（Step 3 的 ability-registry 注册要用 name）：name `code-discipline`；description「代码实施的工程纪律（实施前勘察 / 验收自检 / 提交规范）。所有动代码的任务在实施阶段适用——不分步的单步任务直接按本 skill 执行；分步任务（stepN-*.md）叠加 staged-execution 的编排协议。」
+- staged-execution 瘦身后行数：89
+- 下个 step 该从哪里继续：Step 3（代码接线：挂载查表 / CreateTask 文案 / 能力注册 / 执行提示词 + build + 测试）
+- 待办或已知限制：staged-impl 内文的分步判断标准三条全文是否收敛到系统段，不在本计划范围（全局决策：staged-impl 本次不动）；skill 模板打包分发检查由 Step 3/4 验证段覆盖
