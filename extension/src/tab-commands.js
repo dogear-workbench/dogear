@@ -1,6 +1,6 @@
 import { resolvePageState } from './page-state.js'
 import { waitForTabComplete } from './nav-tracker.js'
-import { resolveAgentWindowId, DOGEAR_GROUP_TITLE } from './agent-window.js'
+import { resolveAgentWindowId, DOGEAR_GROUP_TITLE, forgetAgentWindowIfDead } from './agent-window.js'
 
 const GROUP_COLOR = 'blue'
 const OPEN_TAB_TIMEOUT_MS = 15000
@@ -166,6 +166,20 @@ async function listTabs(msg, ctx) {
   ctx.postResult(msg, { ok: true, data: { tabs: items } })
 }
 
+const BLANK_TAB_URL_RE = /^(chrome|edge):\/\/new|^about:blank/
+
+async function closeAgentWindowIfEmpty() {
+  const windowId = await forgetAgentWindowIfDead()
+  if (windowId == null) return
+  try {
+    const tabs = await chrome.tabs.query({ windowId })
+    // 创建 agent 窗口自带的空白起始页不在 Dogear 组内，组页关完后只剩它（或全空）即整窗可关；窗口内仍有用户页面则不动
+    const leftover = tabs.filter((t) => !BLANK_TAB_URL_RE.test(t.url ?? ''))
+    if (tabs.length > 0 && leftover.length === 0) await chrome.windows.remove(windowId)
+  } catch {
+  }
+}
+
 async function closeGroupTabs(msg, ctx) {
   const raw = (msg.params || {}).exemptTabIds
   const exempt = new Set(Array.isArray(raw) ? raw.filter((v) => typeof v === 'number' && Number.isFinite(v)) : [])
@@ -182,6 +196,7 @@ async function closeGroupTabs(msg, ctx) {
   const focusedTabId = ctx.getFocusedTabId()
   if (focusedTabId == null || closedTabIds.includes(focusedTabId)) ctx.clearFocusedTab()
   ctx.postResult(msg, { ok: true, data: { closedTabIds } })
+  await closeAgentWindowIfEmpty()
 }
 
 export async function handleTabCommand(msg, ctx) {
