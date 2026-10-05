@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { toast } from 'sonner';
+import { client } from '@/lib/client';
 import type { PiPermissionMode } from '@/types/settings';
 import { useReferenceStore } from './reference-store';
 
@@ -42,16 +43,33 @@ function readDataCenterTabOpen(): boolean {
   }
 }
 
+/** 剩余 tab 中 lastActiveAt 最大者（重排后数组尾部 = 最久未活跃，回退目标不可再用位置语义） */
+function mostRecentTab(tabs: SessionTab[], excludeIds: Set<string> | null): SessionTab | null {
+  let best: SessionTab | null = null;
+  for (const t of tabs) {
+    if (excludeIds?.has(t.conversationId)) continue;
+    if (!best || t.lastActiveAt > best.lastActiveAt) best = t;
+  }
+  return best;
+}
+
+/** 未读在前（组内 lastActiveAt 降序），其余 lastActiveAt 降序；稳定排序保持原相对顺序 */
+export function sortTabs(tabs: SessionTab[], unreadIds: Set<string>): SessionTab[] {
+  return [...tabs].sort((a, b) => {
+    const aUnread = unreadIds.has(a.conversationId) ? 1 : 0;
+    const bUnread = unreadIds.has(b.conversationId) ? 1 : 0;
+    if (aUnread !== bUnread) return bUnread - aUnread;
+    return b.lastActiveAt - a.lastActiveAt;
+  });
+}
+
 /** 关闭/弹出当前 tab 后的回退目标：最近可用会话 tab，无则空态（不兜底哨兵） */
 function pickFallbackConversationTab(s: Pick<SessionState, 'tabs' | 'lastActiveConversationTabId' | 'sessionWindowIds'>): string | null {
   const last = s.lastActiveConversationTabId;
   if (last && s.tabs.some((t) => t.conversationId === last) && !s.sessionWindowIds.has(last)) {
     return last;
   }
-  for (let i = s.tabs.length - 1; i >= 0; i--) {
-    if (!s.sessionWindowIds.has(s.tabs[i].conversationId)) return s.tabs[i].conversationId;
-  }
-  return null;
+  return mostRecentTab(s.tabs, s.sessionWindowIds)?.conversationId ?? null;
 }
 
 /** 常驻笔记 tab 兜底：无可用会话 tab 时回笔记（弹出中不可落，返回空态） */
@@ -67,6 +85,7 @@ export interface SessionTab {
   sessionId: string | null;      // agent session ID，初始为 null
   attachmentId: string | null;   // runtime attachment ID，用于 detach
   permissionMode: PiPermissionMode;        // 权限模式
+  lastActiveAt: number;          // 最近一次成为焦点的 epoch ms（LRU 排序与满员回收依据）
 }
 
 interface SessionState {
@@ -93,12 +112,16 @@ interface SessionState {
   /** 数据中心窗口弹出中（广播驱动，不落盘） */
   dataCenterWindowOpen: boolean;
 
-  /** 打开标签页（已存在则切换到该标签） */
-  openTab: (conversationId: string, title: string, workspaceId: string) => boolean;
+  /** 打开标签页（已存在则切换到该标签；满员时先回收最久未活跃的可回收 tab） */
+  openTab: (conversationId: string, title: string, workspaceId: string) => Promise<boolean>;
   /** 关闭标签页 */
   closeTab: (conversationId: string) => void;
   /** 切换到指定标签页 */
   switchTab: (conversationId: string) => void;
+  /** 焦点到达会话 tab：刷新 lastActiveAt 并按未读/活跃重排（focusedConversationChanged 驱动） */
+  touchTabActivity: (conversationId: string) => void;
+  /** unread 翻转后重排（未读跳到最前）；顺序无变化时保持引用不变 */
+  reorderTabs: () => void;
   /** 更新标签页的 session 信息 */
   updateSession: (conversationId: string, sessionId: string, permissionMode: PiPermissionMode, attachmentId?: string) => void;
   /** 更新标签页标题 */
@@ -143,6 +166,53 @@ interface SessionState {
 // 里程碑 1.5：Tab 上限对齐后端 MAX_ACTIVE_SESSIONS=10
 const MAX_TABS = 10;
 
+// conversation-store 顶层 import 本模块，此处反向依赖只能动态引；openTab 满员回收与排序需要读运行/待确认/未读集合
+let conversationStoreState: (() => {
+  runningConversationIds: Set<string>;
+  pendingActionConversationIds: Set<string>;
+  byWorkspace: Record<string, { conversations: Array<{ id: string; unread?: boolean }> }>;
+  personalConversations: Array<{ id: string; unread?: boolean }>;
+}) | null = null;
+import('./conversation-store').then(({ useConversationStore }) => {
+  conversationStoreState = () => useConversationStore.getState();
+});
+
+function collectUnreadIds(): Set<string> {
+  const cs = conversationStoreState?.();
+  const ids = new Set<string>();
+  if (!cs) return ids;
+  for (const slice of Object.values(cs.byWorkspace)) {
+    for (const c of slice.conversations) if (c.unread) ids.add(c.id);
+  }
+  for (const c of cs.personalConversations) if (c.unread) ids.add(c.id);
+  return ids;
+}
+
+/** 满员回收：找「非运行中、非等待确认、非未读、非独立窗口弹出中」且 lastActiveAt 最小的 tab，关后端 session 后移除；无可回收者返回 null */
+async function recycleIdleTab(get: () => SessionState): Promise<SessionTab | null> {
+  const cs = conversationStoreState?.();
+  if (!cs) return null;
+  const unreadIds = collectUnreadIds();
+  const state = get();
+  const candidates = state.tabs.filter((t) =>
+    !cs.runningConversationIds.has(t.conversationId) &&
+    !cs.pendingActionConversationIds.has(t.conversationId) &&
+    !unreadIds.has(t.conversationId) &&
+    !state.sessionWindowIds.has(t.conversationId)
+  );
+  if (candidates.length === 0) return null;
+  const victim = candidates.reduce((min, t) => (t.lastActiveAt < min.lastActiveAt ? t : min));
+  if (victim.sessionId) {
+    try {
+      await client.closeQueryBasedSession({ sessionId: victim.sessionId });
+    } catch (err) {
+      console.error('回收闲置会话：关闭后端会话失败（忽略继续）:', err);
+    }
+  }
+  get().closeTab(victim.conversationId);
+  return victim;
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
   activeTabId: NOTES_TAB_ID,
@@ -157,18 +227,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   notesWindowOpen: false,
   dataCenterWindowOpen: false,
 
-  openTab: (conversationId, title, workspaceId) => {
+  openTab: async (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
     if (existing) {
       set({ activeTabId: conversationId, lastActiveConversationTabId: conversationId });
       return true;
     }
     if (get().tabs.length >= MAX_TABS) {
-      // 达到上限：统一在 store 层 toast 提示，调用方无需处理
-      toast.warning(`最多只能同时打开 ${MAX_TABS} 个会话`, {
-        description: '请先关闭一些标签页再打开新对话',
-      });
-      return false;
+      const evicted = await recycleIdleTab(get);
+      if (!evicted) {
+        // 达到上限且无可回收 tab：统一在 store 层 toast 提示，调用方无需处理
+        toast.warning(`最多只能同时打开 ${MAX_TABS} 个会话`, {
+          description: '请先关闭一些标签页再打开新对话',
+        });
+        return false;
+      }
+      toast.success(`已释放闲置会话 ${evicted.conversationTitle}`);
     }
     set((state) => ({
       tabs: [...state.tabs, {
@@ -178,6 +252,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         sessionId: null,
         attachmentId: null,
         permissionMode: 'default',
+        lastActiveAt: Date.now(),
       }],
       activeTabId: conversationId,
       lastActiveConversationTabId: conversationId,
@@ -191,13 +266,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const newTabs = state.tabs.filter((t) => t.conversationId !== conversationId);
       let newActive = state.activeTabId;
       if (state.activeTabId === conversationId) {
-        newActive = newTabs.length > 0
-          ? newTabs[newTabs.length - 1].conversationId
-          : pickFallbackTab({ ...state, tabs: newTabs });
+        const fallback = mostRecentTab(newTabs, null);
+        newActive = fallback ? fallback.conversationId : pickFallbackTab({ ...state, tabs: newTabs });
       }
-      // 最近活跃会话被关时回退到剩余 tab 中最新的一个（数组尾部最近打开）
+      // 最近活跃会话被关时回退到剩余 tab 中最近活跃的一个
       const newLastActive = state.lastActiveConversationTabId === conversationId
-        ? newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : null
+        ? mostRecentTab(newTabs, null)?.conversationId ?? null
         : state.lastActiveConversationTabId;
       return { tabs: newTabs, activeTabId: newActive, lastActiveConversationTabId: newLastActive };
     });
@@ -212,9 +286,30 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
     // 哨兵 tab（笔记/数据中心）激活不影响「最近活跃会话」记录
     const isConversation = !isSentinelTabId(conversationId);
+    if (isConversation) get().touchTabActivity(conversationId);
     set({
       activeTabId: conversationId,
       ...(isConversation ? { lastActiveConversationTabId: conversationId } : {}),
+    });
+  },
+
+  touchTabActivity: (conversationId) => {
+    set((state) => {
+      if (!state.tabs.some((t) => t.conversationId === conversationId)) return state;
+      const now = Date.now();
+      const tabs = sortTabs(
+        state.tabs.map((t) => (t.conversationId === conversationId ? { ...t, lastActiveAt: now } : t)),
+        collectUnreadIds(),
+      );
+      return { tabs };
+    });
+  },
+
+  reorderTabs: () => {
+    set((state) => {
+      const sorted = sortTabs(state.tabs, collectUnreadIds());
+      if (sorted.every((t, i) => t === state.tabs[i])) return state;
+      return { tabs: sorted };
     });
   },
 

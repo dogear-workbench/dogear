@@ -766,6 +766,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
     set((state) => patchConversationUnread(state, conversationId, true));
     void client.setUnread({ conversationId, unread: true }).catch(() => {});
+    useSessionStore.getState().reorderTabs();
   },
 
   clearUnread: (conversationId) => {
@@ -876,9 +877,10 @@ if (typeof window !== 'undefined') {
       void useConversationStore.getState().markUnreadFromComplete(data.conversationId);
     });
 
-    // 全局焦点变化即「已看」信号：焦点会话有 unread 则清除（落盘在服务层值未变化时 no-op）
+    // 全局焦点变化即「已看/活跃」信号：焦点会话有 unread 则清除（落盘在服务层值未变化时 no-op）；同时刷新 tab 活跃时间并重排
     rendererEvents.focusedConversationChanged.listen((data) => {
       useConversationStore.getState().clearUnread(data.conversationId);
+      useSessionStore.getState().touchTabActivity(data.conversationId);
     });
 
     // 存活会话集合（全量广播直接替换，无 UI 也活着/正在跑的后台链路）
