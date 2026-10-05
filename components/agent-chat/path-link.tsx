@@ -226,12 +226,12 @@ export function useExistenceResolved(workspaceId: string | null, candidates: str
 
 // ==================== PathChip 渲染 ====================
 
-export function PathChip({ text, resolved, fileName, workspaceId, children }: {
+export function PathChip({ text, resolved, fileName, workspaceId, groupId, children }: {
   text: string;
   resolved: string;
   fileName?: string;
   workspaceId: string;
-  /** 会话组 id：命中组共享区根内路径时，点击预览需带 groupId 读盘（本步仅类型接收，step3 解构消费） */
+  /** 会话组 id：点击兜底校验与预览读盘均带 groupId，主进程据此把组共享区根纳入 roots */
   groupId?: string;
   /** 覆盖胶囊内显示内容（如 markdown 链接文本 / 搜索高亮节点）；缺省显示 text */
   children?: React.ReactNode;
@@ -240,7 +240,7 @@ export function PathChip({ text, resolved, fileName, workspaceId, children }: {
   const handleClick = async () => {
     let exists = false;
     try {
-      const result = await client.checkPathsExist({ workspaceId, paths: [resolved] });
+      const result = await client.checkPathsExist({ workspaceId, paths: [resolved], groupId });
       exists = !!result.exists?.[resolved];
     } catch {
       exists = false;
@@ -249,7 +249,7 @@ export function PathChip({ text, resolved, fileName, workspaceId, children }: {
       toast.error('文件不存在或已被移动');
       return;
     }
-    useMarkdownPreviewStore.getState().open(workspaceId, resolved, displayName);
+    useMarkdownPreviewStore.getState().open(workspaceId, resolved, displayName, groupId);
   };
   return (
     <button

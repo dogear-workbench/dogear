@@ -51,7 +51,7 @@
 
 ## 横切 UI 与服务（兜底）
 
-- `components/MarkdownRenderer.tsx` — Markdown 渲染器（GFM+代码高亮；p/li 文本仅搜索高亮，正文不识别路径；可选 baseDir 解析相对链接；dogear:// 会话跳转链接劫持 + urlTransform 放行）
+- `components/MarkdownRenderer.tsx` — Markdown 渲染器（GFM+代码高亮；p/li 文本仅搜索高亮；可选 baseDir 解析相对链接；dogear:// 会话跳转链接劫持 + urlTransform 放行；extraRoots 可选追加候选根（附加根之后），配合 sharedGroupId 供聊天链路识别组共享区文件；行内 code 内容为单一存在路径时脱壳直接渲染胶囊）
 - `components/ConfirmDialog.tsx` + `stores/confirm-store.ts` — 全局确认弹窗（confirm() 返回 Promise，showConfirm() 简化版；禁用 window.confirm）
 - `components/TitleBar.tsx` — 全窗口自绘标题栏（pointer-events-none 点击穿透到全局 drag 层，z-9998 低于 drag 层）
 - `components/NotificationCenter.tsx` + `stores/notification-store.ts` — 顶栏消息中心（未读徽章、邮箱式面板、点击跳转即已读；仅主窗口）

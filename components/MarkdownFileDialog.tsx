@@ -6,7 +6,7 @@ import { client } from '@/lib/client';
 import { Loader2 } from 'lucide-react';
 
 export function MarkdownFileDialog() {
-  const { isOpen, workspaceId, filePath, fileName, inlineContent, close } = useMarkdownPreviewStore();
+  const { isOpen, workspaceId, filePath, fileName, groupId, inlineContent, close } = useMarkdownPreviewStore();
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,11 +28,11 @@ export function MarkdownFileDialog() {
     setLoading(true);
     setError(null);
     setContent('');
-    client.readFile({ workspaceId, path: filePath })
+    client.readFile({ workspaceId, path: filePath, groupId: groupId ?? undefined })
       .then(res => setContent(res.content))
       .catch(err => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
-  }, [isOpen, workspaceId, filePath, inlineContent]);
+  }, [isOpen, workspaceId, filePath, groupId, inlineContent]);
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) close(); }}>

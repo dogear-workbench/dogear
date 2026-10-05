@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 识别放宽与胶囊样式](./step1-token-style.md) — 单段文件名识别 + extraRoots prop + 行内 code 脱壳 + 徽章 r 角
 - [x] [Step 2: groupId 上下文与校验链贯通](./step2-group-context.md) — 会话组上下文 + useSharedRoot + 存在性校验带 groupId，共享区文件名渲染成胶囊
-- [ ] [Step 3: 预览读盘链路与全链路验收](./step3-preview.md) — 预览 store/读盘 IPC 带 groupId + 点击链路 + 收尾验收
+- [x] [Step 3: 预览读盘链路与全链路验收](./step3-preview.md) — 预览 store/读盘 IPC 带 groupId + 点击链路 + 收尾验收
 
 ## 全局决策
 

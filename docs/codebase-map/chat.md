@@ -25,8 +25,8 @@
 - `CitationBadge.tsx` / `CollapsibleBlock.tsx` — 引用徽章 / 可折叠块基础组件
 - `SubAgentPanel.tsx` / `SubAgentBlock.tsx` — 子 Agent 面板 / 块
 - `highlight.ts` / `minimap-utils.ts` — 搜索高亮工具 / 消息预览提取
-- `path-link.tsx` — 工作区路径胶囊基础设施：PathChip 可点弹浮窗、PathText 路径增强（仅工具块内）
-- `workspace-id-context.tsx` — 会话所属工作区 Context（无 Provider 降级纯文本）
+- `path-link.tsx` — 路径胶囊基础设施：PathChip 可点弹浮窗（点击兜底校验与读盘均带 groupId，组共享区文件可点）、PathText 路径增强、useSharedRoot 拉组共享区根（extraRoots 来源）、useExistenceResolved 存在性校验（existenceCache key 含 groupId 防跨组串缓存）
+- `workspace-id-context.tsx` — 会话所属工作区/组 Context（useWorkspaceId/useGroupId，AgentChat 从 conversation 挂 Provider；无 Provider 降级纯文本）
 - `turns.ts` — 轮次构建：轮次头优先级真人消息 > task-execution 注入 > 其他注入（注入仅上一轮头同为注入类才开新轮）
 - `transformers.ts` / `types.ts` / `utils.ts` — 流式事件消费转换 / Message 类型 / 工具函数
 - `hooks/` — useAgentSession（会话生命周期+pendingCount）、useSessionMessages（消息流）、useSessionEvents（权限/AskUser 事件）、useMessageHistory（历史加载，错误不静默清空可重试）、transcript 三层（transcript-core 纯 reducer / transcript-store 外部订阅 store / useTranscriptState 入口 hook：stable/live 双队列+init 屏障）、useImageAttachment、useSendMessage（发送/重发/分叉/权限响应）、useSlashCommands、useChatScroll（followMode 状态机）、useMessageSearch、useSubAgentMessages、usePendingState（idle/running/flushing 派生）
@@ -92,7 +92,7 @@
 - running/pendingAction/paused/alive 四个 Set 的唯一订阅源是后端事件（sessionStateChanged/sessionClosed/aliveConversationsChanged），禁止前端乐观直写
 - 列表刷新统一走 conversationListChanged 事件回环，写 action 内不手动 loadConversations
 - 哨兵 tab（笔记/数据中心/文章）不上报全局焦点，保持「最近焦点」语义
-- 路径胶囊仅工具块内识别路径，正文不做（agent 提到的路径可能未落盘，MarkdownRenderer 只做搜索高亮）
+- 路径胶囊识别范围：正文 markdown 在有 workspacePath 场景已可识别路径成胶囊（agent 提到的路径可能未落盘，由存在性校验兜底，不存在回退纯文本；组共享区文件经 groupId 纳入候选根同样可点），无 workspacePath 场景仍仅搜索高亮
 - 终端数据按终端路由：terminal-store.registerDataSink 注册收流，XtermTerminal 消费
 
 ## 数据流

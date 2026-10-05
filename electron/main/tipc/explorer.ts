@@ -123,11 +123,13 @@ export const explorerRouter = {
     }),
 
   readFile: t.procedure
-    .input<{ workspaceId: string; path: string }>()
+    .input<{ workspaceId: string; path: string; groupId?: string }>()
     .action(async ({ input }) => {
       const workspace = await workspaceJsonService.getById(input.workspaceId);
       if (!workspace) throw new Error('工作区不存在');
-      const content = await workspaceFsService.readWorkspaceTextFile(getEnabledRoots(workspace), input.path);
+      const roots = getEnabledRoots(workspace);
+      if (input.groupId) roots.push(await groupSharedService.getSharedDir(input.workspaceId, input.groupId));
+      const content = await workspaceFsService.readWorkspaceTextFile(roots, input.path);
       return { content };
     }),
 

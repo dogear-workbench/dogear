@@ -5,9 +5,10 @@ interface MarkdownPreviewState {
   workspaceId: string | null;
   filePath: string | null;
   fileName: string | null;
+  groupId: string | null;
   /** inline 模式：直接渲染传入内容，不读盘（用于 Write 工具预览） */
   inlineContent: string | null;
-  open: (workspaceId: string, filePath: string, fileName: string) => void;
+  open: (workspaceId: string, filePath: string, fileName: string, groupId?: string) => void;
   openInline: (fileName: string, content: string) => void;
   close: () => void;
 }
@@ -17,12 +18,14 @@ export const useMarkdownPreviewStore = create<MarkdownPreviewState>((set) => ({
   workspaceId: null,
   filePath: null,
   fileName: null,
+  groupId: null,
   inlineContent: null,
-  open: (workspaceId, filePath, fileName) => set({
+  open: (workspaceId, filePath, fileName, groupId) => set({
     isOpen: true,
     workspaceId,
     filePath,
     fileName,
+    groupId: groupId ?? null,
     inlineContent: null,
   }),
   openInline: (fileName, content) => set({
@@ -30,6 +33,7 @@ export const useMarkdownPreviewStore = create<MarkdownPreviewState>((set) => ({
     workspaceId: null,
     filePath: null,
     fileName,
+    groupId: null,
     inlineContent: content,
   }),
   close: () => set({
@@ -37,6 +41,7 @@ export const useMarkdownPreviewStore = create<MarkdownPreviewState>((set) => ({
     workspaceId: null,
     filePath: null,
     fileName: null,
+    groupId: null,
     inlineContent: null,
   }),
 }));
