@@ -11,7 +11,18 @@
 - [x] [Step 1: agent.md 内容层三处](./step1-agent-md.md) — 用户级重写 + general 模板同步 + 工作区去重
 - [x] [Step 2: skill 层三文件](./step2-skill-layer.md) — code-discipline 新建 + staged-execution 瘦身 + brainstorming 引用化
 - [x] [Step 3: 代码接线](./step3-code-wiring.md) — 挂载查表 / CreateTask 文案 / 能力注册 / 执行提示词 + build + 测试
-- [ ] [Step 4: doc-sync 与端到端自查](./step4-docsync-verify.md) — 代码地图同步 + 挂载链路验证
+- [x] [Step 4: doc-sync 与端到端自查](./step4-docsync-verify.md) — 代码地图同步 + 挂载链路验证
+
+## 完成总结
+
+四层提示词架构落地完成，四笔提交每 step 一笔（42fab35b / dcb90c61 / 88af6c1c / 17e0fabd）。
+
+- **层归位**：用户级 agent.md 复活为跨工作区人格层（可写）；general.md 模板同步为出厂态一致；「子会话使用」3 条迁入系统协作规范段（派遣成本判断节）；分步判断标准收敛到系统「笔记存卡纪律」段权威源，brainstorming 引用化
+- **skill 体系去重**：code-discipline 新建为工程纪律单一来源（32 行，跨工作区通用不写死命令）；staged-execution 瘦身为纯分步编排（210→89 行，验收/提交规范改引用 code-discipline）；staged-impl 按全局决策未动
+- **代码接线**：execProfile 新语义全链路——动代码即 code-impl，分步与否由 plan 文档形态决定；查表双 skill 同挂、CreateTask 文案更新、code-workflow 包 7 skill、执行提示词按形态二选一规则行（default 渲染与现状逐字一致）；build/test/lint 全过
+- **doc-sync**：agent-core.md 五处同步；端到端自查 5 项全过（只读推演链均有代码实证）
+
+**遗留**：①工作区 agent.md 硬约束第一条去重被禁写区拦截，已挂用户勾选卡（UI 内删半句）；②真任务运行时目验 code-impl 挂载待用户验收时做；③NOTES_DISCIPLINE 指向 staged-impl、agent-core.md 既有 skill 索引漂移，属后续 doc-sync 范围
 
 ## 全局决策
 
