@@ -50,7 +50,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
       '将实施任务挂到计划栏。默认落计划（plan），由用户决定何时推进执行；与用户聊透方案后挂载。\n' +
         '任务须是完全体：planPath 必传且文件须已落盘；方案未定型先记笔记卡片，落盘 plan 文档后再挂载。\n' +
         '同标题计划（plan 态）任务已存在时拒绝创建，标题勿重复。\n' +
-        'execProfile 判断标准：plan 为分步实施文档（stepN-*.md）且要动代码时填 code-impl（执行会话按 staged-execution 语境逐 step 派子会话实施）；调研/整理类不填。\n' +
+        'execProfile 判断标准：任务要动代码即填 code-impl（执行会话挂 code-discipline 工程纪律；plan 为分步文档 stepN-*.md 时再叠加 staged-execution 编排）；调研/整理类不填。\n' +
         'autoExecute=true 仅当用户明确要求立即执行：直接转入执行队列（串行执行，完成后待审核并系统通知）。\n' +
         '存入计划栏时告知用户（标题与任务 ID）。',
       z.object({
@@ -60,7 +60,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
           .enum(['default', 'code-impl'])
           .optional()
           .describe(
-            "执行类型：plan 为分步实施文档（stepN-*.md）且要动代码时填 'code-impl'；调研/整理类不填（默认）",
+            "要动代码的任务填 'code-impl'（执行会话挂工程纪律 skill，分步 plan 叠加分步编排 skill）；调研/整理类不填（默认）",
           ),
         autoExecute: z.boolean().optional().describe('仅当用户明确要求立即执行时传 true：直接转入执行队列；默认 false 落计划栏'),
       }),

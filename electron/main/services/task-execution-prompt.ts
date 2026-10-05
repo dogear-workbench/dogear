@@ -5,14 +5,22 @@ export interface ExecutionPromptInput {
   title: string;
   id: string;
   planPath: string;
-  /** 任务挂载的专项 skill 名单；非空时追加提示行，语境差异由 skill 全文承载而非模板分支 */
+  /** 任务挂载的专项 skill 名单；非空时追加提示行，详细纪律由 skill 全文承载 */
   mountedSkills?: readonly string[];
+  /** code-impl 注入 plan 形态二选一规则（分步 → staged-execution 编排；单步 → 直接实施走 code-discipline）；default 不注入 */
+  execProfile?: ExecProfile;
 }
 
 export function buildExecutionPrompt(task: ExecutionPromptInput): string {
   const mountedSkillsLine = task.mountedSkills?.length
     ? [`本任务已挂载专项 skill：${task.mountedSkills.join('、')}，开工前先读该 skill 并按其纪律执行`]
     : [];
+  const codeImplModeLines =
+    task.execProfile === 'code-impl'
+      ? [
+          '- 按 plan 文档形态二选一：为分步文档（stepN-*.md）→ 按 staged-execution 编排逐 step 派子会话实施；为设计文档/单文档 → 本会话直接实施，全程遵守 code-discipline（勘察/验收自检/提交规范）',
+        ]
+      : [];
   return [
     '<task-execution>',
     '你是任务系统自动创建的执行会话，全权负责把下述计划实施完毕。无人值守：用户不在线，不要中途停下等确认，推进到整个计划完成。',
@@ -24,6 +32,7 @@ export function buildExecutionPrompt(task: ExecutionPromptInput): string {
     '',
     '执行模式：',
     '- 按计划文档直接实施；需要并行探索或多线实施时可派子会话分工，派出子会话后输出简短收尾语直接结束回合，交付/终态会作为新消息自动唤醒你继续推进',
+    ...codeImplModeLines,
     '- 全部子会话交付并验收完毕、整个计划实施完成后才申报结果',
     ...mountedSkillsLine,
     '',

@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 代码接线
-status: pending
+status: done
 ---
 
 ## 目标
@@ -32,11 +32,17 @@ execProfile 挂载链路、CreateTask 语义文案、能力包注册、执行提
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：step 文档现状锚点漂移——buildExecutionPrompt 双分支已被 97b55d25（10-01）合并为通用模板+mountedSkills，子会话按计划意图恢复显式 execProfile 分支：default/缺省渲染与 97b55d25 后现状逐字一致（主会话已对照 diff 核实），code-impl 注入二选一规则行；旧决策「新 execProfile 提示词零改动」被本次设计有意覆盖（两 skill 同挂时需模板给裁决依据）。另：EXECUTION_PROMPT_PREVIEW 不动（场景页零改动）；ability-registry.test.ts 无 skills 数组内容断言，无需同步；mountedSkills 注释顺带修正与新分支冲突的旧表述
 - 改动文件清单：
-- 测试结果（build/test/lint）：
+  - `electron/main/services/task-queue.ts`（:36-39 查表双 skill + 注释，:311 透传 execProfile）
+  - `electron/main/agents/tools/task-tools.ts`（:53/:63 两处文案）
+  - `electron/main/agents/ability-registry.ts`（:218 code-workflow 加 code-discipline，字母序）
+  - `electron/main/services/task-execution-prompt.ts`（:10-11 可选 execProfile 字段，:18-23 codeImplModeLines，:35 规则行插入）
+  - `electron/main/agents/session-append-templates.ts`（:46-47 派遣成本判断节，general.md 原版 3 条迁移改写，原文取自 dcb90c61^）
+  - `electron/main/services/task-execution-prompt.test.ts`（+2 用例：code-impl 含规则行 / default 不含）
+- 测试结果（build/test/lint）：build:electron tsc 零错误；task-execution-prompt 6 pass + ability-registry / tool-registration-smoke / task-store 63 pass（主会话复跑 3 文件 45 pass 0 fail）；lint 0 errors / 70 warnings 全存量。环境注记：本机 bun run 需 PATH 前置 ~/.bun/bin 与 node v22.2.0
 
 ### 给下一步的接力棒
-- 实际改动的文件与行号锚点（doc-sync 要引用）：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 实际改动的文件与行号锚点（doc-sync 要引用）：见上「改动文件清单」各行号
+- 下个 step 该从哪里继续：Step 4（codebase-map 同步 + 挂载链路端到端验证）
+- 待办或已知限制：①skill 模板分发可见性——code-discipline 走 skillsOverride 挂载，Step 4 需目验真任务 available_skills；②NOTES_DISCIPLINE 的 staged-impl 指向系 staged-impl 本次不动的全局决策，遗留；③agent-core.md 的 buildExecutionPrompt 描述已过期（现为模板分支+挂载行并存），Step 4 更新；④执行模式通用行与 code-impl 规则行有轻微措辞张力，规则行更具体可覆盖，未动

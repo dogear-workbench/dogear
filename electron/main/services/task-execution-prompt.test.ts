@@ -26,6 +26,22 @@ test('mountedSkills 缺省或空数组：不含挂载行', () => {
   expect(buildExecutionPrompt({ ...base, mountedSkills: [] })).not.toContain('已挂载专项 skill');
 });
 
+test('code-impl：注入 plan 形态二选一规则（分步 → staged-execution 编排；单步 → 直接实施走 code-discipline）', () => {
+  const prompt = buildExecutionPrompt({ ...base, execProfile: 'code-impl' });
+  expect(prompt).toContain('按 plan 文档形态二选一');
+  expect(prompt).toContain('stepN-*.md');
+  expect(prompt).toContain('staged-execution');
+  expect(prompt).toContain('code-discipline');
+  expect(prompt).toContain('本会话直接实施');
+});
+
+test('default：不注入二选一规则行（与通用模板一致，无 execProfile 硬编码语境）', () => {
+  const prompt = buildExecutionPrompt({ ...base, execProfile: 'default' });
+  expect(prompt).not.toContain('staged-execution');
+  expect(prompt).not.toContain('code-discipline');
+  expect(prompt).not.toContain('二选一');
+});
+
 test('模板共用任务标题/ID/计划路径占位', () => {
   const prompt = buildExecutionPrompt({ title: 'T', id: 'ID1', planPath: '/p/plan.md' });
   expect(prompt).toContain('任务标题：T');

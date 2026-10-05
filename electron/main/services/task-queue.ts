@@ -33,9 +33,10 @@ const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 
 const FORCE_RELEASE_DELAY_MS = 60_000;
 
-// 执行会话 skill 按任务类型查表恒传（skillsOverride 绕过工作区 enabledSkills 与包总闸）：default 空清单=基础版，code-impl 挂分步实施
+// 执行会话 skill 按任务类型查表恒传（skillsOverride 绕过工作区 enabledSkills 与包总闸）：default 空清单=基础版，
+// code-impl 两 skill 同时挂载，分步与否由 plan 文档形态决定（stepN-*.md=分步），执行会话按 planPath 形态自行选用，同时挂载仅增索引成本
 const EXEC_PROFILE_SKILLS: Record<ExecProfile, readonly string[]> = {
-  'code-impl': ['staged-execution'],
+  'code-impl': ['code-discipline', 'staged-execution'],
   default: [],
 };
 
@@ -307,6 +308,7 @@ class TaskQueueExecutor {
           id: task.id,
           planPath,
           mountedSkills: EXEC_PROFILE_SKILLS[task.execProfile ?? 'default'],
+          execProfile: task.execProfile ?? 'default',
         }),
         { injectionTag: 'task-execution' },
       );

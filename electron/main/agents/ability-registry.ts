@@ -215,6 +215,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     type: 'skill-packs',
     skills: [
       'brainstorming',
+      'code-discipline',
       'codebase-map',
       'doc-sync',
       'staged-execution',
