@@ -21,3 +21,14 @@
 - **不改 `workspace-fs-service.ts`**：其 roots 数组签名天然支持，只在 tipc 层拼装
 - **裸文本绝对路径含空格**（`Application Support`）是 PATH_TOKEN_RE 既有局限，本计划不解决，由纯文件名 / 相对形式 / md 链接覆盖主场景
 - 主进程改动需 `bun run build:electron` 重新编译才生效
+
+## 完成总结
+
+三个 step 全部完成（commit d213a7ae / e4d3e9ae / aefb8017）。
+
+- **识别放宽**：`REL_PATH_TOKEN_RE` 量词 `+` → `*`，纯文件名（.md/.markdown/.txt/.json）进裸路径管道，前后边界断言防粘连误吞；误报由存在性校验兑底回退纯文本
+- **胶囊样式**：PathChip `rounded-full` → `rounded-md`；行内 code 整段为单一存在路径时脱壳直接渲染胶囊，无双层嵌套
+- **共享区链路**：共享区作为读白名单根注入现有管道——`MarkdownRenderer.extraRoots` 追加候选根（主根 → 附加根 → sharedDir 排最后），`useSharedRoot(groupId)` 拉组共享区目录，existenceCache key 含 groupId 防跨组串缓存；前端只传 groupId，sharedDir 一律主进程计算（explorer.ts checkPathsExist / readFile 拼 roots）
+- **读盘收口**：PathChip 点击兑底校验 → markdown-preview-store（state + open 末位可选参）→ MarkdownFileDialog readFile → explorer.readFile 全链路带可选 groupId；无组上下文（笔记卡 / plan 预览 / 文件树）行为与改动前一致
+- **与原计划偏差**：① MessageItem/ContentBlockItem 零改动，由唯一 markdown 渲染入口 ShuntAwareMarkdown 一处取 context 贯通；② IPC 实名 listSharedFiles（计划写的 listGroupFiles 不存在）；③ PathText 顺带贯通（工具详情场景共享区路径也可识别）；④ doc-sync 的 MarkdownRenderer 主描述行在 infra.md 非 chat.md，两文件都改；⑤ 验收发现并修复 `a` 渲染器 useExistenceResolved 漏传 groupId（md 链接指向共享区文件场景）
+- **已知限制**：裸文本绝对路径含空格（Application Support）被 PATH_TOKEN_RE 截断为既有局限未解；全链路验收为代码级核对（无 UI 环境），建议下次 dev 起来后顺手点一次共享区胶囊终验
