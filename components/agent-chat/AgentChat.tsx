@@ -30,6 +30,7 @@ import { useMessageSearch, type SearchMatch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { AwaitingDeliveryIndicator } from './AwaitingDeliveryIndicator';
 import { MoveToWorkspaceDialog } from './MoveToWorkspaceDialog';
+import { SubSessionDeliveredBanner } from './SubSessionDeliveredBanner';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { ConversationIdProvider } from './conversation-id-context';
@@ -602,6 +603,10 @@ export function AgentChat({
           <span>{topicArchived ? '此话题已归档，恢复后才能发送新消息' : '此话题已删除，无法发送新消息'}</span>
         </div>
       ) : (
+      <>
+        {currentConversation && (
+          <SubSessionDeliveredBanner conversation={currentConversation} />
+        )}
       <ChatInputArea
         input={sendMessage.input}
         setInput={sendMessage.setInput}
@@ -633,6 +638,7 @@ export function AgentChat({
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuClose={slashCommands.closeSlashMenu}
       />
+      </>
       )}
       {isPersonal && conversationId && (
         <MoveToWorkspaceDialog
