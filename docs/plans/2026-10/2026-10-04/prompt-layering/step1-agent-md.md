@@ -1,7 +1,7 @@
 ---
 step: 1
 title: agent.md 内容层三处
-status: in_progress
+status: done
 ---
 
 ## 目标
@@ -50,10 +50,12 @@ status: in_progress
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：第 3 处（工作区 agent.md 硬约束第一条去重）未完成——workspaces/ 子树在应用数据禁写区，子会话与主会话的文件工具均被拒（permission_denied），plan 未预见；已转用户经应用 UI 处理（TrackUserActions），改动为纯去重无信息丢失，不阻塞后续步骤
 - 改动文件清单：
+  - 新建 `/Users/dream/Library/Application Support/dogear/.dogear/agent.md`（逐字写入，diff 零差异，未被禁写区拦截）
+  - 重写 `resources/agent-templates/general.md`（与用户级完全一致；旧版「子会话使用」节已移除）
 
 ### 给下一步的接力棒
-- 关键事实（实际写入路径、是否有拦截）：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键事实（实际写入路径、是否有拦截）：用户级 agent.md 可写已复活；workspaces/ 子树对文件工具只读
+- 下个 step 该从哪里继续：Step 2（skill 层三文件）
+- 待办或已知限制：① 工作区 agent.md 硬约束第一条仍含「拿不准的先问…」后半句，待用户经 UI 删除；② general.md 旧版「子会话使用」3 条原文存于共享区 20261005-step1-delivery.md，Step 3 迁移系统段时取用

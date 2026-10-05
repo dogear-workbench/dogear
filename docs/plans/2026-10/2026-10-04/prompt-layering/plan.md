@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: agent.md 内容层三处](./step1-agent-md.md) — 用户级重写 + general 模板同步 + 工作区去重
+- [x] [Step 1: agent.md 内容层三处](./step1-agent-md.md) — 用户级重写 + general 模板同步 + 工作区去重
 - [ ] [Step 2: skill 层三文件](./step2-skill-layer.md) — code-discipline 新建 + staged-execution 瘦身 + brainstorming 引用化
 - [ ] [Step 3: 代码接线](./step3-code-wiring.md) — 挂载查表 / CreateTask 文案 / 能力注册 / 执行提示词 + build + 测试
 - [ ] [Step 4: doc-sync 与端到端自查](./step4-docsync-verify.md) — 代码地图同步 + 挂载链路验证
