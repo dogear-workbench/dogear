@@ -65,6 +65,7 @@ export function ConversationRow({
 
   const isFork = !!conv.parentConversationId;
   const isAgentConversation = conv.contractMetadata?.createdBy === 'agent';
+  const isUnread = !!conv.unread;
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isAlive = aliveIds.has(conv.id);
@@ -161,8 +162,14 @@ export function ConversationRow({
           />
         ) : (
           <div className="flex items-center gap-1">
+            {isUnread && <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="未读" />}
             <div
-              className={cn('text-sm truncate', isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground')}
+              className={cn(
+                'text-sm truncate',
+                isSelected ? 'text-blue-700 dark:text-blue-300 font-medium'
+                  : isUnread ? 'font-medium text-foreground'
+                  : 'text-foreground',
+              )}
               title={getConversationTitle(conv)}
             >
               {getConversationTitle(conv)}

@@ -14,6 +14,7 @@
  * - 对话创建（由对话列表处理）
  */
 
+import { useMemo } from 'react';
 import { ExternalLink, X, StickyNote, Database, Newspaper, Archive } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
@@ -30,8 +31,12 @@ import { StatusPulse } from '@/components/StatusPulse';
 import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useArticleStore } from '@/stores/article-store';
+import type { Conversation } from '@/types/electron-api';
 import feishuLogo from '@/assets/feishu-logo.png';
 import { WebAiSiteMenu } from '@/components/webai/WebAiSiteMenu';
+
+/** 闲置淡化阈值：lastActiveAt 超过该时长且非运行/非未读的 tab 淡化显示 */
+const IDLE_FADE_MS = 24 * 60 * 60 * 1000;
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -55,14 +60,55 @@ export function WorkspaceTabBar() {
 
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
-  const conversations = useConversationStore((s) => s.conversations);
+  const byWorkspace = useConversationStore((s) => s.byWorkspace);
+  const personalConversations = useConversationStore((s) => s.personalConversations);
 
   // 过滤掉已弹到独立窗口的 Tab（保持 AgentChat 挂载但不显示标签头）
-  const tabs = allTabs.filter((t) => !sessionWindowIds.has(t.conversationId));
+  const tabs = useMemo(
+    () => allTabs.filter((t) => !sessionWindowIds.has(t.conversationId)),
+    [allTabs, sessionWindowIds],
+  );
+
+  // tabs 跨工作区保留，会话数据从所有分片（含 personal）统一查
+  const convById = useMemo(() => {
+    const map = new Map<string, Conversation>();
+    for (const slice of Object.values(byWorkspace)) {
+      for (const c of slice.conversations) map.set(c.id, c);
+    }
+    for (const c of personalConversations) map.set(c.id, c);
+    return map;
+  }, [byWorkspace, personalConversations]);
+
+  /** 同派遣树主子相邻（DFS：主在前子随后，组间保持 store 排序）；仅派生展示顺序，不回写 store */
+  const displayTabs = useMemo(() => {
+    const childTabsByParentSession = new Map<string, SessionTab[]>();
+    for (const tab of tabs) {
+      const meta = convById.get(tab.conversationId)?.contractMetadata;
+      if (meta?.createdBy !== 'agent' || !meta.parentSessionId) continue;
+      const list = childTabsByParentSession.get(meta.parentSessionId) ?? [];
+      list.push(tab);
+      childTabsByParentSession.set(meta.parentSessionId, list);
+    }
+    const sessionIdByConvId = new Map<string, string | null | undefined>();
+    for (const tab of tabs) {
+      sessionIdByConvId.set(tab.conversationId, convById.get(tab.conversationId)?.sessionId);
+    }
+    const emitted = new Set<string>();
+    const result: SessionTab[] = [];
+    const emit = (tab: SessionTab) => {
+      if (emitted.has(tab.conversationId)) return;
+      emitted.add(tab.conversationId);
+      result.push(tab);
+      const children = childTabsByParentSession.get(sessionIdByConvId.get(tab.conversationId) ?? '');
+      if (children) for (const child of children) emit(child);
+    };
+    for (const tab of tabs) emit(tab);
+    return result;
+  }, [tabs, convById]);
 
   /** 标题实时取 conversation-store（覆盖自动起名/手动重命名）；跨工作区或已删除时回退快照 */
   const resolveTabTitle = (tab: SessionTab): string => {
-    const live = conversations.find((c) => c.id === tab.conversationId);
+    const live = convById.get(tab.conversationId);
     if (live) return live.title || '新对话';
     return tab.conversationTitle;
   };
@@ -133,10 +179,14 @@ export function WorkspaceTabBar() {
       {/* 左组：会话 tabs，可滚动 */}
       <ScrollArea className="flex-1 min-w-0">
         <div className="flex items-center">
-          {tabs.map((tab) => {
+          {displayTabs.map((tab) => {
           const isActive = activeTabId === tab.conversationId;
           const isRunning = runningConversationIds.has(tab.conversationId);
           const isPending = pendingActionIds.has(tab.conversationId);
+          const conv = convById.get(tab.conversationId);
+          const isUnread = !!conv?.unread;
+          const isSubSession = conv?.contractMetadata?.createdBy === 'agent';
+          const isIdle = !isRunning && !isPending && !isUnread && Date.now() - tab.lastActiveAt > IDLE_FADE_MS;
           const showPulse = isRunning;
           const canPopOut = !isRunning;
 
@@ -146,11 +196,20 @@ export function WorkspaceTabBar() {
                 <div
                   className={cn(
                     'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-                    isActive ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+                    isActive ? 'bg-background font-medium'
+                      : isUnread ? 'hover:bg-muted/50 font-medium text-foreground'
+                      : 'hover:bg-muted/50 text-muted-foreground',
+                    isIdle && 'opacity-60',
                   )}
                   onClick={() => handleTabClick(tab)}
                 >
                   {showPulse && <StatusPulse isPending={isPending} size="sm" />}
+                  {isUnread && !showPulse && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="未读" />
+                  )}
+                  {isSubSession && (
+                    <span className="text-xs leading-none text-muted-foreground shrink-0" title="子会话">↳</span>
+                  )}
                   <span className="truncate">{resolveTabTitle(tab)}</span>
                   {showPulse && isPending && (
                     <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
