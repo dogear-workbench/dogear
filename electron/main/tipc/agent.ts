@@ -66,7 +66,11 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
       if (event === 'message') {
         h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
       } else if (event === 'complete') {
-        h.queryBasedSessionComplete.send({ sessionId, result: payload as PiSessionTurnResult });
+        h.queryBasedSessionComplete.send({
+          sessionId,
+          conversationId: getPiSessionManager().getConversationIdBySession(sessionId),
+          result: payload as PiSessionTurnResult,
+        });
       } else if (event === 'error') {
         h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
       } else if (event === 'permissionRequest') {

@@ -56,6 +56,8 @@ export interface ConversationIndex {
   /** 任务系统创建的无人值守执行会话；启动时据此裁剪 systemPrompt（跳过话题状态段与笔记纪律） */
   executor?: boolean;
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
+  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除；只在状态翻转时落盘 */
+  unread?: boolean;
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
   usageSummary?: {
@@ -508,6 +510,26 @@ export async function updateModelSelection(
     conv.updatedAt = new Date().toISOString();
   });
   broadcastConversationListChanged(workspaceId, 'debounced');
+}
+
+/**
+ * 翻转会话未读标记。
+ * 值未变化时不写盘不广播（调用方可无条件触发，落盘仅在真实翻转时发生一次）；
+ * 不更新 updatedAt（未读不参与列表排序），不做 requireActiveGroup（归档话题里的会话同样可标记）。
+ */
+export async function setUnread(conversationId: string, unread: boolean): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId } = found;
+  let changed = false;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[conversationId];
+    if (!conv || conv.unread === unread) return;
+    if (unread) conv.unread = true;
+    else delete conv.unread;
+    changed = true;
+  });
+  if (changed) broadcastConversationListChanged(workspaceId);
 }
 
 /**

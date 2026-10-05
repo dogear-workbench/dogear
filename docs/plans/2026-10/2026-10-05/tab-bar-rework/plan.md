@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: unread 数据链路](./step1-unread-data.md) — conversation 增加 unread 标记，sessionComplete 驱动写入、全局焦点驱动清除，落盘 conversations.json
+- [x] [Step 1: unread 数据链路](./step1-unread-data.md) — conversation 增加 unread 标记，sessionComplete 驱动写入、全局焦点驱动清除，落盘 conversations.json
 - [ ] [Step 2: tabs LRU 排序 + 满员回收](./step2-tab-sorting.md) — session-store 焦点驱动重排（未读 > 最近活跃）与 openTab 满员回收闲置会话
 - [ ] [Step 3: tab 栏与列表行未读渲染](./step3-unread-ui.md) — WorkspaceTabBar 三态视觉 + 绿点 + 主子标识 + 同树相邻；ConversationRow 未读绿点
 - [ ] [Step 4: 子会话已交付提示条](./step4-subsession-hint.md) — 子会话交付/停止后输入区顶部软提示 + 回主会话跳转

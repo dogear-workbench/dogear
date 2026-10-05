@@ -26,9 +26,10 @@ export type RendererHandlers = {
     message: ExtendedSessionMessage;
   }) => void;
 
-  // 基于 Query 的会话完成
+  // 基于 Query 的会话完成（conversationId 供前端定位 conversation 记录，如未读标记；会话未绑定 conversation 时缺省）
   queryBasedSessionComplete: (data: {
     sessionId: string;
+    conversationId?: string;
     result: unknown;
   }) => void;
 

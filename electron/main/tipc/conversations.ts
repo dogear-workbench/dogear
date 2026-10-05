@@ -169,6 +169,19 @@ export const conversationsRouter = {
       }
     }),
 
+  /** 翻转会话未读标记（入参只带 conversationId，workspaceId 由服务层全局定位；值未变化时服务层 no-op） */
+  setUnread: t.procedure
+    .input<{ conversationId: string; unread: boolean }>()
+    .action(async ({ input }) => {
+      try {
+        await conversationService.setUnread(input.conversationId, input.unread);
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('更新未读标记失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   /** 把临时会话（personal）移入真实工作区：索引迁移 + session JSONL 搬运 + personal 侧清理 */
   moveConversationToWorkspace: t.procedure
     .input<{ conversationId: string; targetWorkspaceId: string; targetGroupId?: string; newGroupTitle?: string }>()

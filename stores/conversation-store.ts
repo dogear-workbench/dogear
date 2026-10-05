@@ -144,6 +144,10 @@ interface ConversationState {
   setPausedState: (conversationId: string, isPaused: boolean) => void;
   /** 整体替换存活会话集合 */
   setAliveConversations: (conversationIds: string[]) => void;
+  /** 会话一轮跑完（含子会话交付）：非当前全局焦点则置 unread（内存 + 落盘）；焦点查询失败时保守不标 */
+  markUnreadFromComplete: (conversationId: string) => Promise<void>;
+  /** 会话成为全局焦点：清除 unread（内存 + 落盘，服务层值未变化时 no-op） */
+  clearUnread: (conversationId: string) => void;
   /** 从 bridge 拉取所有子会话快照（loadConversations 后台调一次） */
   refreshAllChildren: () => Promise<void>;
   /** 把一条 childStatusChanged 事件应用到 childrenByParent */
@@ -197,6 +201,44 @@ function patchSlice(
   // 如果更新的是当前激活工作区，同步顶层镜像
   if (state.activeWorkspaceId === workspaceId) {
     Object.assign(update, patch);
+  }
+  return update;
+}
+
+/** 把 unread 标记应用到单个工作区分片（conversations 数组 + selectedConversation 若匹配） */
+function unreadPatchForSlice(
+  slice: WorkspaceConversationSlice,
+  conversationId: string,
+  unread: boolean,
+): Partial<WorkspaceConversationSlice> {
+  return {
+    conversations: slice.conversations.map((c) => (c.id === conversationId ? { ...c, unread } : c)),
+    selectedConversation: slice.selectedConversation?.id === conversationId
+      ? { ...slice.selectedConversation, unread }
+      : slice.selectedConversation,
+  };
+}
+
+/** 会话 unread 翻转：补丁到所有已加载视图（工作区分片 + personal），未涉及任何视图时返回空补丁 */
+function patchConversationUnread(
+  state: ConversationState,
+  conversationId: string,
+  unread: boolean,
+): Partial<ConversationState> {
+  let update: Partial<ConversationState> = {};
+  for (const [wsId, slice] of Object.entries(state.byWorkspace)) {
+    if (!slice.conversations.some((c) => c.id === conversationId)) continue;
+    const patch = unreadPatchForSlice(slice, conversationId, unread);
+    update = {
+      ...update,
+      byWorkspace: { ...(update.byWorkspace ?? state.byWorkspace), [wsId]: { ...slice, ...patch } },
+    };
+    if (state.activeWorkspaceId === wsId) update = { ...update, ...patch };
+  }
+  if (state.personalConversations.some((c) => c.id === conversationId)) {
+    update.personalConversations = state.personalConversations.map((c) =>
+      c.id === conversationId ? { ...c, unread } : c,
+    );
   }
   return update;
 }
@@ -715,6 +757,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ aliveConversationIds: new Set(conversationIds) });
   },
 
+  markUnreadFromComplete: async (conversationId) => {
+    try {
+      const { focused } = await client.getFocusedConversation();
+      if (focused?.conversationId === conversationId) return;
+    } catch {
+      return;
+    }
+    set((state) => patchConversationUnread(state, conversationId, true));
+    void client.setUnread({ conversationId, unread: true }).catch(() => {});
+  },
+
+  clearUnread: (conversationId) => {
+    set((state) => patchConversationUnread(state, conversationId, false));
+    void client.setUnread({ conversationId, unread: false }).catch(() => {});
+  },
+
   refreshAllChildren: async () => {
     try {
       const result = await client.listAllChildren(undefined);
@@ -812,6 +870,17 @@ if (typeof window !== 'undefined') {
       useConversationStore.getState().setPausedState(data.conversationId, false);
     });
 
+    // 会话一轮跑完（含子会话交付）：非当前全局焦点则置 unread（内存 + 落盘，落盘在服务层只在翻转时写盘）
+    rendererEvents.queryBasedSessionComplete.listen((data) => {
+      if (!data.conversationId) return;
+      void useConversationStore.getState().markUnreadFromComplete(data.conversationId);
+    });
+
+    // 全局焦点变化即「已看」信号：焦点会话有 unread 则清除（落盘在服务层值未变化时 no-op）
+    rendererEvents.focusedConversationChanged.listen((data) => {
+      useConversationStore.getState().clearUnread(data.conversationId);
+    });
+
     // 存活会话集合（全量广播直接替换，无 UI 也活着/正在跑的后台链路）
     rendererEvents.aliveConversationsChanged.listen((data) => {
       useConversationStore.getState().setAliveConversations(data.conversationIds);
@@ -875,6 +944,11 @@ if (typeof window !== 'undefined') {
     client.getAliveConversations(undefined).then((data) => {
       useConversationStore.getState().setAliveConversations(data.conversationIds ?? []);
     }).catch(() => { /* 拉取失败等下次广播修正 */ });
+
+    // 焦点会话残留未读兜底：置位后清除写盘失败等极端情况可能让焦点会话带 unread 冷启动
+    client.getFocusedConversation().then(({ focused }) => {
+      if (focused) useConversationStore.getState().clearUnread(focused.conversationId);
+    }).catch(() => { /* 主进程焦点态尚未就绪时跳过 */ });
 
     // personal 临时会话列表：启动拉一次，后续由 conversationListChanged 广播驱动
     useConversationStore.getState().loadPersonalConversations();

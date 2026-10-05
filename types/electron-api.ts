@@ -164,6 +164,8 @@ export interface Conversation {
   groupId?: string;                      // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';                 // P1 只产生 'main'
   contractMetadata?: ContractMetadata;   // Agent 派出契约元数据；手动会话为 undefined
+  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除 */
+  unread?: boolean;
   usageSummary?: {
     turnCount: number;
     totalInputTokens: number;
