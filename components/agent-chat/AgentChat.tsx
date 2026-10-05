@@ -388,7 +388,7 @@ export function AgentChat({
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
 
   return (
-    <WorkspaceIdProvider workspaceId={workspaceId ?? null}>
+    <WorkspaceIdProvider workspaceId={workspaceId ?? null} groupId={currentConversation?.groupId ?? null}>
     <div className={`relative flex flex-col h-full rounded-lg border shadow-sm ${isPersonal ? 'bg-muted/30' : 'bg-card'}`}>
       {isPersonal && (
         <div className="flex items-center gap-1.5 px-4 py-1.5 border-b text-[11px] text-muted-foreground shrink-0">

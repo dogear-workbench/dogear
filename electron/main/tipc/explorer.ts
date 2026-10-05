@@ -6,6 +6,7 @@ import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { getEnabledRoots } from '../services/workspace-json-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
 import * as articleService from '../services/article-service.js';
+import * as groupSharedService from '../services/group-shared-service.js';
 
 const t = tipc.create();
 
@@ -131,11 +132,13 @@ export const explorerRouter = {
     }),
 
   checkPathsExist: t.procedure
-    .input<{ workspaceId: string; paths: string[] }>()
+    .input<{ workspaceId: string; paths: string[]; groupId?: string }>()
     .action(async ({ input }) => {
       const workspace = await workspaceJsonService.getById(input.workspaceId);
       if (!workspace) throw new Error('工作区不存在');
-      const exists = await workspaceFsService.checkPathsExist(getEnabledRoots(workspace), input.paths);
+      const roots = getEnabledRoots(workspace);
+      if (input.groupId) roots.push(await groupSharedService.getSharedDir(input.workspaceId, input.groupId));
+      const exists = await workspaceFsService.checkPathsExist(roots, input.paths);
       return { exists };
     }),
 };

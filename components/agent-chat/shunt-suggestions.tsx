@@ -5,6 +5,8 @@ import { showConfirm } from '@/stores/confirm-store';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer, type MarkdownRendererProps } from '@/components/MarkdownRenderer';
 import { useConversationId } from './conversation-id-context';
+import { useGroupId } from './workspace-id-context';
+import { useSharedRoot } from './path-link';
 
 /**
  * 分流建议卡文本协议：agent 在回复末尾输出 fenced JSON 块（语言标签 shunt-suggestions）：
@@ -119,6 +121,9 @@ export function ShuntAwareMarkdown({
   activeMatchId,
   workspacePath,
 }: Pick<MarkdownRendererProps, 'content' | 'className' | 'searchQuery' | 'matchIdPrefix' | 'activeMatchId' | 'workspacePath'>) {
+  const groupId = useGroupId();
+  const sharedRoot = useSharedRoot(groupId);
+  const extraRoots = useMemo(() => (sharedRoot ? [sharedRoot] : undefined), [sharedRoot]);
   const { body, suggestions } = useMemo(() => parseShuntSuggestions(content), [content]);
   return (
     <>
@@ -129,6 +134,8 @@ export function ShuntAwareMarkdown({
         matchIdPrefix={matchIdPrefix}
         activeMatchId={activeMatchId}
         workspacePath={workspacePath}
+        extraRoots={extraRoots}
+        sharedGroupId={groupId ?? undefined}
       />
       {suggestions && <ShuntSuggestionCard suggestions={suggestions} />}
     </>

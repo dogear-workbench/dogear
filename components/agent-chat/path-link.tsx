@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
-import { useWorkspaceId } from './workspace-id-context';
+import { useGroupId, useWorkspaceId } from './workspace-id-context';
 import { splitPathSegments } from './path-resolve';
 
 export { resolvePathInWorkspace, resolvePathCandidates, splitPathSegments, ALLOWED_EXT_RE } from './path-resolve';
@@ -64,6 +64,49 @@ export function useWorkspaceRoots(workspaceId: string | null): string[] | null {
   return focusedRoots ?? cached;
 }
 
+// ==================== 组共享区根目录 ====================
+
+const sharedRootsCache = {
+  // groupId → sharedDir；'' 表示已确认无共享区（组缺失/已归档），读取时归一为 null
+  map: new Map<string, string>(),
+  inflight: new Set<string>(),
+  listeners: new Set<() => void>(),
+};
+
+function subscribeSharedRoots(listener: () => void) {
+  sharedRootsCache.listeners.add(listener);
+  return () => {
+    sharedRootsCache.listeners.delete(listener);
+  };
+}
+
+/** 会话所属组的共享区目录（主进程从 workspaceId+groupId 计算）；组不可用时返回 null，调用方安全降级 */
+export function useSharedRoot(groupId: string | null): string | null {
+  const workspaceId = useWorkspaceId();
+  const cached = useSyncExternalStore(
+    subscribeSharedRoots,
+    useCallback(() => (groupId ? sharedRootsCache.map.get(groupId) || null : null), [groupId]),
+    () => null,
+  );
+  useEffect(() => {
+    if (!groupId || !workspaceId) return;
+    if (sharedRootsCache.map.has(groupId) || sharedRootsCache.inflight.has(groupId)) return;
+    sharedRootsCache.inflight.add(groupId);
+    client.listSharedFiles({ workspaceId, groupId })
+      .then((r) => {
+        sharedRootsCache.map.set(groupId, r.sharedDir || '');
+      })
+      .catch(() => {
+        sharedRootsCache.map.set(groupId, '');
+      })
+      .finally(() => {
+        sharedRootsCache.inflight.delete(groupId);
+        sharedRootsCache.listeners.forEach((l) => l());
+      });
+  }, [groupId, workspaceId]);
+  return cached;
+}
+
 export function useWorkspacePath(workspaceId: string | null): string | null {
   const roots = useWorkspaceRoots(workspaceId);
   return roots?.[0] ?? null;
@@ -100,12 +143,12 @@ const PENDING = Symbol('path-existence-pending');
 
 export type ExistenceState = typeof PENDING | string | null;
 
-function existenceKey(workspaceId: string, p: string) {
-  return `${workspaceId}\n${p}`;
+function existenceKey(workspaceId: string, groupId: string | undefined, p: string) {
+  return `${workspaceId}\n${groupId ?? ''}\n${p}`;
 }
 
-function peekExistence(workspaceId: string, p: string): boolean | null {
-  const entry = existenceCache.get(existenceKey(workspaceId, p));
+function peekExistence(workspaceId: string, groupId: string | undefined, p: string): boolean | null {
+  const entry = existenceCache.get(existenceKey(workspaceId, groupId, p));
   if (!entry) return null;
   if (!entry.value && Date.now() - entry.at > NEGATIVE_TTL_MS) return null;
   return entry.value;
@@ -118,14 +161,15 @@ function subscribeExistence(listener: () => void) {
   };
 }
 
-const pendingChecks = new Map<string, { workspaceId: string; path: string }>();
+type PendingCheck = { workspaceId: string; groupId?: string; path: string };
+const pendingChecks = new Map<string, PendingCheck>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
-function requestExistence(workspaceId: string, p: string) {
-  if (peekExistence(workspaceId, p) !== null) return;
-  const key = existenceKey(workspaceId, p);
+function requestExistence(workspaceId: string, groupId: string | undefined, p: string) {
+  if (peekExistence(workspaceId, groupId, p) !== null) return;
+  const key = existenceKey(workspaceId, groupId, p);
   if (pendingChecks.has(key)) return;
-  pendingChecks.set(key, { workspaceId, path: p });
+  pendingChecks.set(key, { workspaceId, groupId, path: p });
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
@@ -136,18 +180,19 @@ function requestExistence(workspaceId: string, p: string) {
 async function flushExistenceChecks() {
   const batch = [...pendingChecks.values()];
   pendingChecks.clear();
-  const byWorkspace = new Map<string, string[]>();
+  const byScope = new Map<string, { workspaceId: string; groupId?: string; paths: string[] }>();
   for (const item of batch) {
-    const list = byWorkspace.get(item.workspaceId) ?? [];
-    list.push(item.path);
-    byWorkspace.set(item.workspaceId, list);
+    const scopeKey = `${item.workspaceId}\n${item.groupId ?? ''}`;
+    const scope = byScope.get(scopeKey) ?? { workspaceId: item.workspaceId, groupId: item.groupId, paths: [] };
+    scope.paths.push(item.path);
+    byScope.set(scopeKey, scope);
   }
-  await Promise.all([...byWorkspace].map(async ([workspaceId, paths]) => {
+  await Promise.all([...byScope.values()].map(async ({ workspaceId, groupId, paths }) => {
     try {
-      const result = await client.checkPathsExist({ workspaceId, paths });
+      const result = await client.checkPathsExist({ workspaceId, paths, groupId });
       const now = Date.now();
       for (const p of paths) {
-        existenceCache.set(existenceKey(workspaceId, p), { value: !!result.exists?.[p], at: now });
+        existenceCache.set(existenceKey(workspaceId, groupId, p), { value: !!result.exists?.[p], at: now });
       }
     } catch {
       // IPC 失败不写缓存，下次触发重试
@@ -157,25 +202,25 @@ async function flushExistenceChecks() {
 }
 
 /** 候选列表中第一个存在性通过的绝对路径；PENDING=校验中，null=全部不存在 */
-export function useExistenceResolved(workspaceId: string | null, candidates: string[] | null | undefined): ExistenceState {
+export function useExistenceResolved(workspaceId: string | null, candidates: string[] | null | undefined, groupId?: string): ExistenceState {
   const getSnapshot = useCallback(() => {
     if (!workspaceId || !candidates?.length) return null;
     let pending = false;
     for (const c of candidates) {
-      const v = peekExistence(workspaceId, c);
+      const v = peekExistence(workspaceId, groupId, c);
       if (v === true) return c;
       if (v === null) pending = true;
     }
     return pending ? PENDING : null;
-  }, [workspaceId, candidates]);
+  }, [workspaceId, groupId, candidates]);
   const state = useSyncExternalStore(subscribeExistence, getSnapshot, getSnapshot);
   useEffect(() => {
     if (!workspaceId || !candidates?.length) return;
     for (const c of candidates) {
-      if (peekExistence(workspaceId, c) === true) break;
-      requestExistence(workspaceId, c);
+      if (peekExistence(workspaceId, groupId, c) === true) break;
+      requestExistence(workspaceId, groupId, c);
     }
-  }, [workspaceId, candidates]);
+  }, [workspaceId, groupId, candidates]);
   return state;
 }
 
@@ -186,6 +231,8 @@ export function PathChip({ text, resolved, fileName, workspaceId, children }: {
   resolved: string;
   fileName?: string;
   workspaceId: string;
+  /** 会话组 id：命中组共享区根内路径时，点击预览需带 groupId 读盘（本步仅类型接收，step3 解构消费） */
+  groupId?: string;
   /** 覆盖胶囊内显示内容（如 markdown 链接文本 / 搜索高亮节点）；缺省显示 text */
   children?: React.ReactNode;
 }) {
@@ -218,23 +265,28 @@ export function PathChip({ text, resolved, fileName, workspaceId, children }: {
 }
 
 /** 存在性门槛胶囊：候选中存在性校验通过的第一个才渲染 PathChip，其余态渲染纯文本 */
-export function GatedPathChip({ text, candidates, workspaceId, children }: {
+export function GatedPathChip({ text, candidates, workspaceId, groupId, children }: {
   text: string;
   candidates: string[] | null | undefined;
   workspaceId: string;
+  /** 会话组 id：存在性校验把组共享区根纳入 roots，防跨组串缓存 */
+  groupId?: string;
   children?: React.ReactNode;
 }) {
-  const resolved = useExistenceResolved(workspaceId, candidates);
+  const resolved = useExistenceResolved(workspaceId, candidates, groupId);
   if (typeof resolved !== 'string') return <span>{children ?? text}</span>;
-  return <PathChip text={text} resolved={resolved} workspaceId={workspaceId}>{children}</PathChip>;
+  return <PathChip text={text} resolved={resolved} workspaceId={workspaceId} groupId={groupId}>{children}</PathChip>;
 }
 
 export function PathText({ text }: {
   text: string;
 }) {
   const workspaceId = useWorkspaceId();
+  const groupId = useGroupId();
+  const sharedRoot = useSharedRoot(groupId);
   const roots = useWorkspaceRoots(workspaceId);
-  const segments = useMemo(() => splitPathSegments(text, roots), [text, roots]);
+  const allRoots = useMemo(() => (roots && sharedRoot ? [...roots, sharedRoot] : roots), [roots, sharedRoot]);
+  const segments = useMemo(() => splitPathSegments(text, allRoots), [text, allRoots]);
   if (segments.length === 1 && segments[0].type === 'text') {
     return <>{text}</>;
   }
@@ -242,7 +294,7 @@ export function PathText({ text }: {
     <>
       {segments.map((seg, i) => {
         if (seg.type === 'path' && workspaceId && seg.candidates?.length) {
-          return <GatedPathChip key={i} text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} />;
+          return <GatedPathChip key={i} text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} groupId={groupId ?? undefined} />;
         }
         return <span key={i}>{seg.text}</span>;
       })}

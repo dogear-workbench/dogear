@@ -36,6 +36,8 @@ export interface MarkdownRendererProps {
   baseDir?: string;
   /** 追加在附加根之后的额外候选根（如组共享区目录），排在最后不抢工作区路径 */
   extraRoots?: string[];
+  /** 会话组 id：与 extraRoots 配对，胶囊存在性校验/点击消费需带 groupId（跨组隔离） */
+  sharedGroupId?: string;
 }
 
 /**
@@ -95,7 +97,7 @@ function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
  * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
-export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir, extraRoots }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir, extraRoots, sharedGroupId }: MarkdownRendererProps) {
   const workspaceId = useWorkspaceIdByPath(workspacePath ?? null);
   const roots = useWorkspaceRoots(workspaceId);
   const allRoots = useMemo(() => (roots && extraRoots?.length ? [...roots, ...extraRoots] : roots), [roots, extraRoots]);
@@ -132,7 +134,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         <>
           {segments.map((seg, i) =>
             seg.type === 'path' && workspaceId && seg.candidates?.length ? (
-              <GatedPathChip key={i} text={seg.text} candidates={seg.candidates} workspaceId={workspaceId}>
+              <GatedPathChip key={i} text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} groupId={sharedGroupId}>
                 {renderText(seg.text)}
               </GatedPathChip>
             ) : (
@@ -199,7 +201,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         const segments = splitPathSegments(children, allRoots);
         const seg = segments.length === 1 ? segments[0] : null;
         if (seg?.type === 'path' && seg.candidates?.length) {
-          return <GatedPathChip text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} />;
+          return <GatedPathChip text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} groupId={sharedGroupId} />;
         }
       }
       return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{wrap(children)}</code>;
@@ -210,10 +212,10 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         () => (openPathCandidates && href ? openPathCandidates(href) : null),
         [openPathCandidates, href],
       );
-      const resolved = useExistenceResolved(workspaceId, candidates);
+      const resolved = useExistenceResolved(workspaceId, candidates, sharedGroupId);
       if (candidates) {
         if (typeof resolved === 'string' && workspaceId) {
-          return <PathChip text={resolved} resolved={resolved} workspaceId={workspaceId}>{children}</PathChip>;
+          return <PathChip text={resolved} resolved={resolved} workspaceId={workspaceId} groupId={sharedGroupId}>{children}</PathChip>;
         }
         return <span className="text-muted-foreground" {...props}>{children}</span>;
       }
@@ -249,7 +251,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
       />
     ),
   };
-  }, [searchQuery, matchIdPrefix, activeMatchId, workspacePath, allRoots, workspaceId, openPathCandidates]);
+  }, [searchQuery, matchIdPrefix, activeMatchId, workspacePath, allRoots, workspaceId, sharedGroupId, openPathCandidates]);
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>
