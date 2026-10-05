@@ -34,6 +34,8 @@ export interface MarkdownRendererProps {
   workspacePath?: string;
   /** 相对链接解析基准目录（如 plan 文档所在目录），缺省用 workspacePath；正文裸路径始终以 workspacePath 为基准 */
   baseDir?: string;
+  /** 追加在附加根之后的额外候选根（如组共享区目录），排在最后不抢工作区路径 */
+  extraRoots?: string[];
 }
 
 /**
@@ -93,9 +95,10 @@ function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
  * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
-export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir, extraRoots }: MarkdownRendererProps) {
   const workspaceId = useWorkspaceIdByPath(workspacePath ?? null);
   const roots = useWorkspaceRoots(workspaceId);
+  const allRoots = useMemo(() => (roots && extraRoots?.length ? [...roots, ...extraRoots] : roots), [roots, extraRoots]);
 
   // 每次渲染重置块级编号器；经 ref 中转让 memoized 的 mdComponents 闭包始终读到本轮的计数器
   const numberingRef = useRef<MatchNumbering | null>(null);
@@ -107,12 +110,12 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
   );
 
   const openPathCandidates = useMemo(() => {
-    if (!workspacePath || !roots) return null;
+    if (!workspacePath || !allRoots) return null;
     return (href: string): string[] | null => {
       if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
-      return resolvePathCandidates(href, roots, baseDir);
+      return resolvePathCandidates(href, allRoots, baseDir);
     };
-  }, [workspacePath, roots, baseDir]);
+  }, [workspacePath, allRoots, baseDir]);
 
   // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
   // 只有搜索/路径链接相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
@@ -122,8 +125,8 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     const renderText = (text: string): React.ReactNode =>
       canHighlight ? <>{highlightText(text, searchQuery!, matchIdPrefix!, activeMatchId ?? null, numbering!)}</> : text;
     // 路径识别与搜索高亮共存：text 段高亮，path 段进 GatedPathChip 且内部文本也走高亮编号（保证 match id 与搜索端对齐）
-    const renderPathSegments = !workspacePath || !roots ? undefined : (text: string): React.ReactNode => {
-      const segments = splitPathSegments(text, roots);
+    const renderPathSegments = !workspacePath || !allRoots ? undefined : (text: string): React.ReactNode => {
+      const segments = splitPathSegments(text, allRoots);
       if (segments.length === 1 && segments[0].type === 'text') return renderText(text);
       return (
         <>
@@ -192,6 +195,13 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
       if (isBlock) {
         return <code className={className} {...props}>{wrap(children)}</code>;
       }
+      if (renderPathSegments && workspaceId && typeof children === 'string') {
+        const segments = splitPathSegments(children, allRoots);
+        const seg = segments.length === 1 ? segments[0] : null;
+        if (seg?.type === 'path' && seg.candidates?.length) {
+          return <GatedPathChip text={seg.text} candidates={seg.candidates} workspaceId={workspaceId} />;
+        }
+      }
       return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{wrap(children)}</code>;
     },
     // 链接：路径链接模式下产出多根候选，存在性通过 → 胶囊开浮窗（点击兜底再校验）；未通过/解析失败回退纯文本；外部 URL 维持浏览器打开
@@ -239,7 +249,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
       />
     ),
   };
-  }, [searchQuery, matchIdPrefix, activeMatchId, workspacePath, roots, workspaceId, openPathCandidates]);
+  }, [searchQuery, matchIdPrefix, activeMatchId, workspacePath, allRoots, workspaceId, openPathCandidates]);
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>

@@ -9,8 +9,8 @@ export interface PathSegment {
 }
 
 const PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/]|[\\/])[A-Za-z0-9_.\-~@$()+\\/]*/g;
-// 裸相对路径 token：`seg/seg.ext` 形态，前导必须是路径字符以外的边界；误报由存在性校验兜底为纯文本
-const REL_PATH_TOKEN_RE = /(^|[^A-Za-z0-9_.\-~@$+\\/]*)((?:[A-Za-z0-9_.\-~@$+]+[\\/])+[A-Za-z0-9_.\-~@$+]+\.(?:md|markdown|txt|json))(?![A-Za-z0-9_.\-])/gi;
+// 裸相对路径 token：`file.ext` / `seg/seg.ext` 形态，前后必须是路径字符边界；误报由存在性校验兜底为纯文本
+const REL_PATH_TOKEN_RE = /(^|[^A-Za-z0-9_.\-~@$+\\/]*)((?:[A-Za-z0-9_.\-~@$+]+[\\/])*[A-Za-z0-9_.\-~@$+]+\.(?:md|markdown|txt|json))(?![A-Za-z0-9_.\-])/gi;
 const TRAILING_PUNCT_RE = /[.,;:!?)\]}'"]+$/;
 export const ALLOWED_EXT_RE = /\.(md|markdown|txt|json)$/i;
 

@@ -208,7 +208,7 @@ export function PathChip({ text, resolved, fileName, workspaceId, children }: {
     <button
       type="button"
       onClick={handleClick}
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 align-baseline max-w-[280px] rounded-full border border-teal-200 bg-teal-50 text-xs text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-900/40 dark:hover:border-teal-700 transition-colors"
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 align-baseline max-w-[280px] rounded-md border border-teal-200 bg-teal-50 text-xs text-teal-700 hover:bg-teal-100 hover:border-teal-300 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-900/40 dark:hover:border-teal-700 transition-colors"
       title={resolved}
     >
       <FileText size={12} className="shrink-0" />
