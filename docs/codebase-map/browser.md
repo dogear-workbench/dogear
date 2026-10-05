@@ -27,9 +27,10 @@
 - `human-intervention.ts` — awaiting_human 产品化（内存态不持久化）：raise/resolve/自动解除 + 全量广播
 - `browser-task-meta.ts` — 动作流任务元数据（kind: article|agent）
 - `browser-action-stream.ts` — 浏览器动作事件汇总出口（供伴随面板动作流消费；launched 经 provider 注入保持 node 环境可 smoke）
-- `extension-ownership.ts` — 扩展通道会话独占（纯逻辑零 IO：同 owner 续期、空闲 10min 自动释放、busy 不排队直接拒）
+- `extension-ownership.ts` — 扩展通道会话独占（纯逻辑零 IO：同 owner 续期、空闲 10min 自动释放、busy 不排队直接拒）；会话销毁时由 session-tab-cleanup 主动 releaseChannel（不等空闲过期）
 - `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词，含 agent 可读操作指引 instructions）+ navigateGate/policyGate 门控入口与风控扫描（内嵌/扩展通道共用）
 - `site-knowledge-service.ts` — 站点档案存储（`.dogear/site-knowledge/{domain}.md` 两区：正式地图+探索发现），normalizeDomain/appendSiteFinding
+- `session-tab-cleanup.ts` — 会话销毁收尾（挂 PiSessionManager._destroySession）：仅通道归属者关 Dogear 组内未移交 tab（close_group_tabs，豁免移交 tabId）+ finally 释放独占；扩展侧收尾后若 agent 窗口只剩空白起始页则整窗关闭（tab-commands closeAgentWindowIfEmpty，窗口内仍有用户页面则不动）
 
 ## 浏览器数据管理（services/browser/）
 
@@ -72,6 +73,8 @@
 - `src/wait-actions.js` — waitFn 轮询等待（visible/hidden/text_contains 三条件，函数体全内联适配 executeScript 序列化硬约束）
 - `src/content-extract.js` — 页面内容抽取注入：readText + extractArticleHtml（readyState 等待 + selector 限定容器抽 HTML，解析在主进程）
 - `src/nm-protocol.js` — 帧编解码器
+- `src/tab-commands.js` — tab 管理（open_tab 开在 agent 窗口入 Dogear 组/close_tab 仅组内/close_group_tabs 收尾关组页+关只剩空白页的 agent 窗口/list_tabs；adoptPassiveTab 收编组内页新开的子页）
+- `src/agent-window.js` — agent 专属窗口解析（存储 id→找 Dogear 组所在窗→focused:false 新建；onRemoved 自动清存储）
 - 授权链路：popup 手势 request → SW getAll 归一化 → permission_state 帧 → gateway authorizedOrigins 纵深防御 → 设置页只读 chip
 
 ## 注意
