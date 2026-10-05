@@ -115,7 +115,7 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
       if (tasks.length === 0) return null;
       return (
         <div key={status}>
-          <div className="px-4 pt-3 pb-1 text-[11px] font-medium text-muted-foreground">
+          <div className="px-4 pt-3 pb-1 text-sm font-semibold text-foreground">
             {label} · {tasks.length}
           </div>
           <div className="divide-y">
