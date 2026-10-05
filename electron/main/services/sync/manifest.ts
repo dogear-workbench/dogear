@@ -25,7 +25,7 @@ export interface ManifestExcludes {
   conflictCopies: boolean;
   /** 任意层级 shadow-git/ 目录是否同步（false = 排除） */
   shadowGit: boolean;
-  /** 关闭的同步项 id 集合（目录 7 项 + 文件 3 项；stocks/feishu 走 optionalDirs，不在此生效） */
+/** 关闭的同步项 id 集合（目录 7 项 + 文件 4 项；stocks/feishu 走 optionalDirs，不在此生效） */
   disabledItems: Set<string>;
   /** 可选目录 stocks/feishu 是否同步（true = 同步，语义与其余开关同向） */
   optionalDirs: OptionalDirs;
@@ -45,7 +45,7 @@ export interface ManifestOptions {
 }
 
 const ALWAYS_SYNC_DIRS = ['workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history'] as const;
-const ALWAYS_SYNC_FILES = ['settings.json', 'plans.json', 'notifications.json'] as const;
+const ALWAYS_SYNC_FILES = ['settings.json', 'plans.json', 'notifications.json', 'agent.md'] as const;
 
 const IGNORE_FILE_SUFFIXES = ['.bak', '.lock', '.tmp'];
 const IGNORE_DIR_NAMES = new Set(['__pycache__', 'browser-profile', 'logs', 'backups']);

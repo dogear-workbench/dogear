@@ -340,13 +340,13 @@ test('excludesFromSyncOptions：true=同步 直传（无翻转），disabledItem
 
 // ── SYNC_ITEM_IDS 白名单常量 ──
 
-test('SYNC_ITEM_IDS：14 项、id 唯一、settings.json 标必选、含 stocks/feishu/tasks/articles', () => {
-  expect(SYNC_ITEM_IDS).toHaveLength(14);
+test('SYNC_ITEM_IDS：15 项、id 唯一、settings.json 标必选、含 stocks/feishu/tasks/articles/agent.md', () => {
+  expect(SYNC_ITEM_IDS).toHaveLength(15);
   const ids = SYNC_ITEM_IDS.map((m) => m.id);
-  expect(new Set(ids).size).toBe(14);
+  expect(new Set(ids).size).toBe(15);
   for (const expected of [
     'workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history',
-    'tasks', 'articles', 'settings.json', 'plans.json', 'notifications.json', 'stocks', 'feishu',
+    'tasks', 'articles', 'settings.json', 'plans.json', 'notifications.json', 'agent.md', 'stocks', 'feishu',
   ]) {
     expect(ids).toContain(expected);
   }

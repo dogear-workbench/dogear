@@ -59,7 +59,7 @@ export const DATA_ITEMS: readonly DataItem[] = [
   { id: 'memory', paths: ['memory'], mergePolicy: 'file', backupCategory: 'memory', syncItemId: 'memory' },
   { id: 'conversations', paths: ['conversations'], mergePolicy: 'file', backupCategory: 'sessions', syncItemId: 'conversations' },
   { id: 'workspaces-registry', paths: ['workspaces/workspaces.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'workspaces' },
-  { id: 'agent-md', paths: ['agent.md'], mergePolicy: 'file', backupCategory: 'app-config' },
+  { id: 'agent-md', paths: ['agent.md'], mergePolicy: 'file', backupCategory: 'app-config', syncItemId: 'agent.md' },
   { id: 'settings', paths: ['settings.json'], mergePolicy: 'settings-fields', backupCategory: 'app-config', syncItemId: 'settings.json' },
   { id: 'plans', paths: ['plans.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'plans.json' },
   { id: 'notifications', paths: ['notifications.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'notifications.json' },

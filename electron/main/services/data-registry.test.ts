@@ -63,7 +63,7 @@ test('审计对照表：每个数据行都有对应条目且路径正确', () =>
     memory: { paths: ['memory'], sync: 'memory', category: 'memory' },
     conversations: { paths: ['conversations'], sync: 'conversations', category: 'sessions' },
     'workspaces-registry': { paths: ['workspaces/workspaces.json'], sync: 'workspaces', category: 'app-config' },
-    'agent-md': { paths: ['agent.md'], category: 'app-config' },
+    'agent-md': { paths: ['agent.md'], sync: 'agent.md', category: 'app-config' },
     settings: { paths: ['settings.json'], sync: 'settings.json', category: 'app-config' },
     plans: { paths: ['plans.json'], sync: 'plans.json', category: 'app-config' },
     notifications: { paths: ['notifications.json'], sync: 'notifications.json', category: 'app-config' },
@@ -110,13 +110,14 @@ test('已下线遗留文件不进 registry：dashboard.md 无条目', () => {
 
 // ── 同步项派生：与 settings-types SYNC_ITEM_IDS 现状一致 ──
 
-test('registrySyncItems 派生的同步项 id 集合 == SYNC_ITEM_IDS 的 14 项', () => {
+test('registrySyncItems 派生的同步项 id 集合 == SYNC_ITEM_IDS 的 15 项', () => {
   const registryIds = [...new Set(registrySyncItems().map((i) => i.syncItemId!))].sort();
   const legacyIds = SYNC_ITEM_IDS.map((m) => m.id).sort();
   expect(registryIds).toEqual(legacyIds);
-  expect(registryIds).toHaveLength(14);
+  expect(registryIds).toHaveLength(15);
   expect(registryIds).toContain('tasks');
   expect(registryIds).toContain('articles');
+  expect(registryIds).toContain('agent.md');
 });
 
 // ── mergePolicy 锁定（对照 sync/apply.ts merge registry 现状）──

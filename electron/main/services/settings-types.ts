@@ -494,7 +494,7 @@ export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
   };
 }
 
-/** 同步范围项 id（目录 7 项 + 工作区外部数据 2 项 + 文件 3 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */
+/** 同步范围项 id（目录 7 项 + 工作区外部数据 2 项 + 文件 4 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */
 export type SyncItemId =
   | 'workspaces'
   | 'conversations'
@@ -508,6 +508,7 @@ export type SyncItemId =
   | 'settings.json'
   | 'plans.json'
   | 'notifications.json'
+  | 'agent.md'
   | 'stocks'
   | 'feishu';
 
@@ -523,11 +524,11 @@ export interface SyncItemMeta {
 }
 
 /**
- * 同步范围 14 项：目录 7 项 + 工作区外部数据 2 项（tasks/articles，虚拟路径 __ws-external__/{wsid}/）+ 文件 3 项 + 可选目录 2 项。
+ * 同步范围 15 项：目录 7 项 + 工作区外部数据 2 项（tasks/articles，虚拟路径 __ws-external__/{wsid}/）+ 文件 4 项 + 可选目录 2 项。
  * stocks/feishu 的开关联动 syncStocksData/syncFeishu 独立布尔键（避免迁移），不进 disabledSyncItems 生效路径。
  */
 export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
-  { id: 'workspaces', name: '工作区数据', description: '工作区笔记、文档与会话数据；关闭后所有工作区数据不跨设备' },
+  { id: 'workspaces', name: '工作区数据', description: '工作区笔记、文档、会话与规则文件（工作区 agent.md）；关闭后所有工作区数据不跨设备' },
   { id: 'conversations', name: '会话记录', description: 'AI 会话历史' },
   { id: 'memory', name: '记忆库', description: '跨会话记忆数据' },
   { id: 'usage', name: '使用统计', description: '模型用量与使用统计' },
@@ -539,6 +540,7 @@ export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
   { id: 'settings.json', name: '应用设置', description: '全局设置（含同步配置本身，必选）', required: true },
   { id: 'plans.json', name: '任务数据', description: '定时任务数据；关闭后任务不跨设备' },
   { id: 'notifications.json', name: '通知记录', description: '通知历史；关闭后通知不跨设备' },
+  { id: 'agent.md', name: '规则文件', description: '用户级全局规则（agent.md），注入每个会话；关闭后规则不跨设备' },
   { id: 'stocks', name: '行情数据', description: '行情缓存较大且可重新拉取；自选股配置始终同步' },
   { id: 'feishu', name: '飞书数据', description: '飞书相关缓存数据' },
 ] as const;
