@@ -137,6 +137,7 @@ test('outgoing 配对确认成功 → peerState 写入对端 host/port', async (
   const peers = await readPeers();
   expect(peers['dev-c']?.lastHost).toBe('127.0.0.1');
   expect(peers['dev-c']?.lastPort).toBe(47210);
+  expect(peers['dev-c']?.appVersion).toBe('test');
 });
 
 async function confirmIncoming<T>(p: Promise<T>): Promise<T> {
@@ -158,6 +159,7 @@ test('incoming 配对确认成功（带来源地址）→ peerState 写入对端
   const peers = await readPeers();
   expect(peers['dev-d']?.lastHost).toBe('192.168.1.20');
   expect(peers['dev-d']?.lastPort).toBe(47210);
+  expect(peers['dev-d']?.appVersion).toBe('test');
 
   const s = await loadSettings();
   expect(s.syncOptions!.pairedDevices.some((d) => d.deviceId === 'dev-d')).toBe(true);

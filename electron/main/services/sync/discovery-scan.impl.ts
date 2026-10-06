@@ -189,9 +189,11 @@ test('scanNow 探测成功：mDNS 未见过则并入快照 online:true，探测�
     expect(c.host).toBe('10.0.0.7');
     expect(c.port).toBe(7777);
     expect(c.appVersion).toBe('9.9.9');
-    await until(() => readSyncStateFrom(dataDir).then((s) => s.peers['dev-c']?.lastHost === '10.0.0.7'), 'probe address 回写');
+    await until(() => readSyncStateFrom(dataDir).then((s) => s.peers['dev-c']?.appVersion === '9.9.9'), 'probe address 回写');
     const state = await readSyncStateFrom(dataDir);
+    expect(state.peers['dev-c']?.lastHost).toBe('10.0.0.7');
     expect(state.peers['dev-c']?.lastPort).toBe(7777);
+    expect(state.peers['dev-c']?.appVersion).toBe('9.9.9');
   } finally {
     resetProbeMocks();
   }

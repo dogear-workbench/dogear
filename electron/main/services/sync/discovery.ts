@@ -251,13 +251,14 @@ export async function getDeviceSnapshot(): Promise<DeviceSnapshot> {
 }
 
 /** 探测成功地址回写（与 pairing.recordPeerAddress / orchestrator 收尾同一读改写模式）；只在成功路径调用，失败不删旧值 */
-async function recordProbeAddress(deviceId: string, host: string, port: number): Promise<void> {
+async function recordProbeAddress(deviceId: string, host: string, port: number, appVersion?: string): Promise<void> {
   const dataDir = getDataDir();
   await withSyncStateLock(dataDir, async () => {
     const state = await readSyncStateFrom(dataDir);
     const peer = state.peers[deviceId] ?? { deviceId, lastSyncAt: 0 };
     peer.lastHost = host;
     peer.lastPort = port;
+    if (appVersion) peer.appVersion = appVersion;
     state.peers[deviceId] = peer;
     await writeSyncStateTo(dataDir, state);
   });
@@ -274,7 +275,7 @@ function onProbeSuccess(paired: { deviceId: string; deviceName?: string }, addre
     lastSeen: Date.now(),
     online: true,
   });
-  recordProbeAddress(paired.deviceId, address.host, address.port).catch((error) => {
+  recordProbeAddress(paired.deviceId, address.host, address.port, hello.appVersion).catch((error) => {
     console.error('[lan-sync] 探测地址回写失败:', error);
   });
 }

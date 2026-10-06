@@ -60,13 +60,14 @@ async function addPairedDevice(entry: { deviceId: string; deviceName?: string; s
 }
 
 /** 地址记忆只在成功路径写入（配对确认/同步成功/探测成功）；后续同步或探测成功会覆盖为最新地址 */
-async function recordPeerAddress(deviceId: string, host: string, port: number): Promise<void> {
+async function recordPeerAddress(deviceId: string, host: string, port: number, appVersion?: string): Promise<void> {
   const dataDir = getDataDir();
   await withSyncStateLock(dataDir, async () => {
     const state = await readSyncStateFrom(dataDir);
     const peer = state.peers[deviceId] ?? { deviceId, lastSyncAt: 0 };
     peer.lastHost = host;
     peer.lastPort = port;
+    if (appVersion) peer.appVersion = appVersion;
     state.peers[deviceId] = peer;
     await writeSyncStateTo(dataDir, state);
   });
@@ -136,7 +137,7 @@ async function runPairingRequest(
       return outcome;
     }
     await addPairedDevice({ deviceId: target.deviceId, deviceName: target.deviceName ?? result.peerHello?.deviceName, secret: result.secret });
-    await recordPeerAddress(target.deviceId, target.host, target.port);
+    await recordPeerAddress(target.deviceId, target.host, target.port, result.peerHello?.appVersion);
     const outcome: PairingOutcome = { ok: true, deviceId: target.deviceId, deviceName: target.deviceName, direction: 'outgoing' };
     emitOutcome(outcome);
     return outcome;
@@ -188,7 +189,7 @@ export async function handleIncomingPairRequest(
   // mDNS 被防火墙/睡眠断掉时，确认侧只能靠这里的地址记忆免于「地址未知」；失败不阻断配对结果
   const host = source?.host.replace(/^::ffff:/, '');
   if (host && source?.listenPort) {
-    await recordPeerAddress(hello.deviceId, host, source.listenPort).catch((error) => {
+    await recordPeerAddress(hello.deviceId, host, source.listenPort, hello.appVersion).catch((error) => {
       console.error('[lan-sync] incoming 配对地址回写失败:', error);
     });
   }
