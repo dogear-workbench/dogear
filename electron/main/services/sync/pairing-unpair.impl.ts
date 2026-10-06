@@ -21,7 +21,7 @@ mock.module('electron', () => ({
 }));
 
 const { loadSettings, saveSettings } = await import('../settings-service.js');
-const { ensureSelfHello, beginPairing, unpairDevice } = await import('./pairing.js');
+const { ensureSelfHello, beginPairing, unpairDevice, handleIncomingPairRequest, confirmPairRequest, getPendingPairRequests } = await import('./pairing.js');
 const { runSync } = await import('./orchestrator.js');
 const { readSyncStateFrom } = await import('./sync-state.js');
 
@@ -137,6 +137,41 @@ test('outgoing 配对确认成功 → peerState 写入对端 host/port', async (
   const peers = await readPeers();
   expect(peers['dev-c']?.lastHost).toBe('127.0.0.1');
   expect(peers['dev-c']?.lastPort).toBe(47210);
+});
+
+async function confirmIncoming<T>(p: Promise<T>): Promise<T> {
+  await until(() => getPendingPairRequests().length > 0, 'pair request pending');
+  await confirmPairRequest(getPendingPairRequests()[0].requestId);
+  return p;
+}
+
+test('incoming 配对确认成功（带来源地址）→ peerState 写入对端 host/port', async () => {
+  await seedSettings([]);
+  await ensureSelfHello('test');
+
+  const res = await confirmIncoming(handleIncomingPairRequest(helloOf('dev-d', 'D'), '123456', {
+    host: '::ffff:192.168.1.20',
+    listenPort: 47210,
+  }));
+  expect(res.accepted).toBe(true);
+
+  const peers = await readPeers();
+  expect(peers['dev-d']?.lastHost).toBe('192.168.1.20');
+  expect(peers['dev-d']?.lastPort).toBe(47210);
+
+  const s = await loadSettings();
+  expect(s.syncOptions!.pairedDevices.some((d) => d.deviceId === 'dev-d')).toBe(true);
+});
+
+test('incoming 配对确认无 listenPort（旧版对端）→ 配对成功但不写地址记忆', async () => {
+  await seedSettings([]);
+  await ensureSelfHello('test');
+
+  const res = await confirmIncoming(handleIncomingPairRequest(helloOf('dev-e', 'E'), '223456', { host: '192.168.1.30' }));
+  expect(res.accepted).toBe(true);
+
+  const peers = await readPeers();
+  expect(peers['dev-e']?.lastHost).toBeUndefined();
 });
 
 test('runSync 成功收尾 → peerState 写入 lastHost/lastPort', async () => {

@@ -40,12 +40,13 @@ export async function sendPairRequest(
   peer: PeerEndpoint,
   hello: HandshakeHello,
   code: string,
-  timeoutMs = 150_000,
+  opts: { listenPort?: number; timeoutMs?: number } = {},
 ): Promise<{ accepted: boolean; secret?: string; reason?: string; peerHello?: HandshakeHello }> {
+  const timeoutMs = opts.timeoutMs ?? 150_000;
   const res = await fetch(peerUrl(peer, '/pair-request'), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ hello, code }),
+    body: JSON.stringify({ hello, code, ...(opts.listenPort ? { listenPort: opts.listenPort } : {}) }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   const body = PairResponseBodySchema.safeParse(await res.json().catch(() => null));

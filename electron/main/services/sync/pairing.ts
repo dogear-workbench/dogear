@@ -124,8 +124,9 @@ async function runPairingRequest(
   code: string,
 ): Promise<PairingOutcome> {
   const hello = getSelfHello();
+  const { getLanSyncPort } = await import('./lan-sync-service.js');
   try {
-    const result = await sendPairRequest(target, hello, code);
+    const result = await sendPairRequest(target, hello, code, { listenPort: getLanSyncPort() ?? undefined });
     if (!result.accepted || !result.secret) {
       const error = result.reason ?? '对端拒绝配对';
       const outcome: PairingOutcome = {
@@ -162,6 +163,7 @@ export function getOutgoingPairingCode(deviceId?: string): string | null {
 export async function handleIncomingPairRequest(
   hello: HandshakeHello,
   code: string,
+  source?: { host: string; listenPort?: number },
 ): Promise<{ accepted: boolean; reason?: string; secret?: string }> {
   const requestId = randomBytes(8).toString('hex');
   const info: PairingRequestInfo = { requestId, code, peer: hello, createdAt: Date.now() };
@@ -183,6 +185,13 @@ export async function handleIncomingPairRequest(
   if (!result.accepted) return result;
   const secret = randomBytes(32).toString('hex');
   await addPairedDevice({ deviceId: hello.deviceId, deviceName: hello.deviceName, secret });
+  // mDNS 被防火墙/睡眠断掉时，确认侧只能靠这里的地址记忆免于「地址未知」；失败不阻断配对结果
+  const host = source?.host.replace(/^::ffff:/, '');
+  if (host && source?.listenPort) {
+    await recordPeerAddress(hello.deviceId, host, source.listenPort).catch((error) => {
+      console.error('[lan-sync] incoming 配对地址回写失败:', error);
+    });
+  }
   emitOutcome({ ok: true, deviceId: hello.deviceId, deviceName: hello.deviceName, direction: 'incoming' });
   return { accepted: true, secret };
 }

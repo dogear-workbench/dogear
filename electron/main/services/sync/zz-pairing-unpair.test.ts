@@ -25,5 +25,5 @@ test('pairing/unpair/地址记忆 集成（子进程隔离）', async () => {
     console.error(stderr);
   }
   expect(exitCode).toBe(0);
-  expect(stderr).toContain('6 pass');
+  expect(stderr).toContain('8 pass');
 }, 40_000);

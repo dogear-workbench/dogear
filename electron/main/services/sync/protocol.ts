@@ -102,6 +102,8 @@ export type FilePushMeta = z.infer<typeof FilePushMetaSchema>;
 export const PairRequestBodySchema = z.object({
   hello: HandshakeHelloSchema,
   code: z.string().regex(/^\d{6}$/),
+  /** 发起方服务监听端口：确认端据此回写对端地址记忆（旧版对端缺省则不记录） */
+  listenPort: z.number().int().positive().optional(),
 });
 export type PairRequestBody = z.infer<typeof PairRequestBodySchema>;
 

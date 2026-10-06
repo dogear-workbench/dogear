@@ -45,7 +45,11 @@ export interface SyncServerOptions {
   getSelfHello(): HandshakeHello;
   /** per-peer 清单选项：requesterDeviceId 用于按该对端的映射表过滤 workspaces/ 目录 */
   getManifestOptions(requesterDeviceId: string): Promise<ManifestOptions>;
-  handlePairRequest(hello: HandshakeHello, code: string): Promise<{ accepted: boolean; reason?: string; secret?: string }>;
+  handlePairRequest(
+    hello: HandshakeHello,
+    code: string,
+    source: { host: string; listenPort?: number },
+  ): Promise<{ accepted: boolean; reason?: string; secret?: string }>;
   /** 配对校验；缺省按 settings.syncOptions.pairedDevices 比对请求头（测试可注入替代实现隔离进程级 env） */
   authorizeRequest?: AuthCheck;
 }
@@ -198,7 +202,10 @@ async function handlePairRequest(
     sendJson(res, 400, { error: `invalid pair request: ${error instanceof Error ? error.message : String(error)}` });
     return;
   }
-  const result = await opts.handlePairRequest(raw.hello, raw.code);
+  const result = await opts.handlePairRequest(raw.hello, raw.code, {
+    host: (req.socket.remoteAddress ?? '').replace(/^::ffff:/, ''),
+    listenPort: raw.listenPort,
+  });
   if (!result.accepted) {
     sendJson(res, 403, { accepted: false, reason: result.reason ?? 'rejected', hello: publicHello(opts.getSelfHello()) });
     return;

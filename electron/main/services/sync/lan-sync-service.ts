@@ -123,6 +123,10 @@ export function getLanSyncStatus(): LanSyncStatus {
   return { ...status };
 }
 
+export function getLanSyncPort(): number | null {
+  return server?.port ?? null;
+}
+
 export function listPeers(): PeerInfo[] {
   return getPeers();
 }
