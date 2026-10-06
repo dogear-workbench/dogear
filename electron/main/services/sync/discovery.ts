@@ -1,3 +1,4 @@
+import os from 'node:os';
 import { Bonjour, type Browser, type Service } from 'bonjour-service';
 import { loadSettings } from '../settings-service.js';
 import { fetchPeerInfo, type PeerEndpoint } from './client.js';
@@ -9,7 +10,7 @@ import {
   withSyncStateLock,
   writeSyncStateTo,
 } from './sync-state.js';
-import { SYNC_PROTOCOL_VERSION, type HandshakeHello } from './protocol.js';
+import { DEFAULT_SYNC_PORT, SYNC_PROTOCOL_VERSION, type HandshakeHello } from './protocol.js';
 
 export const DOGEAR_MDNS_TYPE = 'dogear';
 
@@ -40,6 +41,8 @@ const PEER_STALE_MS = 90_000;
 const REQUERY_INTERVAL_MS = 30_000;
 const MDNS_SCAN_WINDOW_MS = 2_000;
 const PROBE_TIMEOUT_MS = 3_000;
+const SUBNET_SCAN_TIMEOUT_MS = 800;
+const SUBNET_SCAN_CONCURRENCY = 48;
 
 let bonjour: Bonjour | null = null;
 let browser: Browser | null = null;
@@ -48,6 +51,9 @@ let publishedService: ReturnType<Bonjour['publish']> | null = null;
 const peers = new Map<string, PeerInfo>();
 /** 最近一次扫描探测成功的已配对设备（内存在线态，探测失败时移除）；不进 peers Map（那是 mDNS 在线态） */
 const probeOnline = new Map<string, PeerInfo>();
+/** 最近一轮网段扫描命中的设备（含未配对；mDNS 多播被路由/防火墙丢弃时的发现兑底），下轮扫描重建 */
+const scanFound = new Map<string, PeerInfo>();
+let selfDeviceId = '';
 const peersChangedListeners = new Set<(snapshot: DeviceSnapshot) => void>();
 let discoveryError: string | null = null;
 
@@ -117,6 +123,7 @@ function notifyChanged(): void {
 export function startDiscovery(opts: DiscoveryOptions): void {
   if (bonjour) return;
   discoveryError = null;
+  selfDeviceId = opts.deviceId;
   try {
     bonjour = new Bonjour();
     publishedService = bonjour.publish({
@@ -173,9 +180,10 @@ export function stopDiscovery(): void {
     clearInterval(requeryTimer);
     requeryTimer = null;
   }
-  if (peers.size > 0 || probeOnline.size > 0) {
+  if (peers.size > 0 || probeOnline.size > 0 || scanFound.size > 0) {
     peers.clear();
     probeOnline.clear();
+    scanFound.clear();
     notifyChanged();
   }
   try {
@@ -222,6 +230,9 @@ export async function getDeviceSnapshot(): Promise<DeviceSnapshot> {
       continue;
     }
     if (!merged.has(deviceId)) merged.set(deviceId, { ...probe, online: true });
+  }
+  for (const [deviceId, found] of scanFound) {
+    if (!merged.has(deviceId)) merged.set(deviceId, { ...found, online: true });
   }
   for (const paired of pairedDevices) {
     if (merged.has(paired.deviceId)) continue;
@@ -270,6 +281,89 @@ function onProbeSuccess(paired: { deviceId: string; deviceName?: string }, addre
 
 let scanInFlight: Promise<DeviceSnapshot> | null = null;
 
+const VIRTUAL_NIC_PATTERN = /vmware|virtualbox|vmnet|veth|docker|wsl|hyper-?v|veternet|loopback|bluetooth|tailscale|zerotier|utun|bridge|tap/i;
+
+function isPrivateV4(ip: string): boolean {
+  const parts = ip.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return false;
+  const [a, b] = parts;
+  return (a === 192 && b === 168) || a === 10 || (a === 172 && b >= 16 && b <= 31);
+}
+
+function subnetTargetsForScan(): { prefixes: string[]; selfIps: Set<string> } {
+  const prefixes = new Set<string>();
+  const selfIps = new Set<string>();
+  for (const [iface, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      const family = addr.family as string | number;
+      if (family !== 'IPv4' && family !== 4) continue;
+      if (addr.internal || !isPrivateV4(addr.address)) continue;
+      selfIps.add(addr.address);
+      if (!VIRTUAL_NIC_PATTERN.test(iface)) prefixes.add(addr.address.split('.').slice(0, 3).join('.'));
+    }
+  }
+  return { prefixes: [...prefixes], selfIps };
+}
+
+/**
+ * 网段扫描：对本机私网 /24 逐 IP 探测 /info（仅默认端口）。
+ * mDNS 多播在 IGMP snooping/AP 隔离等环境下不可靠（设备「自动断掉」的根因），
+ * 未配对设备除此之外没有任何发现途径——这里是手动「寻找设备」的兑底。
+ */
+async function scanSubnets(
+  pairedById: Map<string, { deviceId: string; deviceName?: string }>,
+): Promise<boolean> {
+  const { prefixes, selfIps } = subnetTargetsForScan();
+  const found = new Map<string, PeerInfo>();
+  for (const prefix of prefixes) {
+    const targets: string[] = [];
+    for (let i = 1; i <= 254; i++) {
+      const ip = `${prefix}.${i}`;
+      if (!selfIps.has(ip)) targets.push(ip);
+    }
+    for (let i = 0; i < targets.length; i += SUBNET_SCAN_CONCURRENCY) {
+      await Promise.all(
+        targets.slice(i, i + SUBNET_SCAN_CONCURRENCY).map(async (ip) => {
+          try {
+            const hello = await fetchPeerInfo({ host: ip, port: DEFAULT_SYNC_PORT }, SUBNET_SCAN_TIMEOUT_MS);
+            if (!hello.deviceId || hello.deviceId === selfDeviceId) return;
+            const paired = pairedById.get(hello.deviceId);
+            if (paired) {
+              onProbeSuccess(paired, { host: ip, port: DEFAULT_SYNC_PORT }, hello);
+              return;
+            }
+            found.set(hello.deviceId, {
+              deviceId: hello.deviceId,
+              name: hello.deviceName ?? shortDeviceId(hello.deviceId),
+              host: ip,
+              port: DEFAULT_SYNC_PORT,
+              appVersion: hello.appVersion,
+              protocolVersion: hello.protocolVersion,
+              lastSeen: Date.now(),
+              online: true,
+            });
+          } catch {
+            // 非 Dogear 服务或不可达
+          }
+        }),
+      );
+    }
+  }
+  let changed = scanFound.size !== found.size;
+  if (!changed) {
+    for (const [deviceId, peer] of found) {
+      const prev = scanFound.get(deviceId);
+      if (!prev || prev.host !== peer.host || prev.port !== peer.port) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  scanFound.clear();
+  for (const [deviceId, peer] of found) scanFound.set(deviceId, peer);
+  return changed;
+}
+
 /** 手动触发一轮发现：mDNS 主动查询窗口 + 并行探测已配对设备记忆地址；并发调用共享同一轮结果 */
 export function scanNow(): Promise<DeviceSnapshot> {
   if (scanInFlight) return scanInFlight;
@@ -303,6 +397,9 @@ async function runScanNow(): Promise<DeviceSnapshot> {
     }
   });
   const waiters: Promise<unknown>[] = probes;
+  waiters.push(scanSubnets(pairedById).then((subnetChanged) => {
+    if (subnetChanged) changed = true;
+  }));
   if (browser) {
     browser.update();
     waiters.push(new Promise<void>((resolve) => setTimeout(resolve, MDNS_SCAN_WINDOW_MS)));

@@ -16,6 +16,7 @@ import {
   type HandshakeHello,
   type PairRequestBody,
 } from './protocol.js';
+export { DEFAULT_SYNC_PORT } from './protocol.js';
 import { buildManifest, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
 import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
 import {
@@ -53,9 +54,6 @@ export interface SyncServerOptions {
   /** 配对校验；缺省按 settings.syncOptions.pairedDevices 比对请求头（测试可注入替代实现隔离进程级 env） */
   authorizeRequest?: AuthCheck;
 }
-
-/** 默认服务端口；占用时由启动方退避随机端口，实际端口以 mDNS 广播为准 */
-export const DEFAULT_SYNC_PORT = 47210;
 
 export interface RunningSyncServer {
   port: number;

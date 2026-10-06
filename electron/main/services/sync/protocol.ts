@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 export const SYNC_APP_ID = 'dogear';
+
+/** 默认服务端口；占用时由启动方退避随机端口，实际端口以 mDNS 广播为准。网段扫描兑底也只探测此端口 */
+export const DEFAULT_SYNC_PORT = 47210;
 // v2：同步范围可配置化（excludes 对称过滤，shadow-git 与 .conflict-* 默认不再同步）
 // v3：墓碑删除传播（/manifest 双向携墓碑 + DELETE /file 删除端点）
 // v4：工作区外部数据进同步（__ws-external__/{wsid}/ 虚拟路径：tasks.json + 文章库 + 用户勾选子树）；

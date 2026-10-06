@@ -15,6 +15,16 @@ mock.module('electron', () => ({
   nativeTheme: {},
 }));
 
+// scanNow 含网段扫描（subnetTargetsForScan），mock 掉 networkInterfaces 防止用例向真实局域网发请求；
+// 默认空接口 = 零网段目标，需要网段扫描的用例再注入 fake 接口
+import * as realOs from 'node:os';
+let fakeInterfaces: Record<string, Array<{ family: string; internal: boolean; address: string }>> = {};
+mock.module('node:os', () => ({
+  ...realOs,
+  default: { ...realOs, networkInterfaces: () => fakeInterfaces },
+  networkInterfaces: () => fakeInterfaces,
+}));
+
 const browserHandlers = new Map<string, (svc: unknown) => void>();
 let browserUpdateCount = 0;
 const fakeBrowser = {
@@ -101,6 +111,7 @@ function resetProbeMocks(): void {
   fetchPeerInfoImpl = null;
   fetchPeerInfoCalls = [];
   browserUpdateCount = 0;
+  fakeInterfaces = {};
 }
 
 test('getDeviceSnapshot：mDNS 空 + 已配对离线兜底（host/port 取 lastHost/lastPort，无地址记录短码兑底）', async () => {
@@ -236,6 +247,61 @@ test('scanNow 并发调用共享同一轮扫描（防抖）', async () => {
     resolveProbe(helloOf('dev-c', 'C'));
     await Promise.all([p1, p2]);
     expect(fetchPeerInfoCalls).toHaveLength(1);
+  } finally {
+    resetProbeMocks();
+  }
+});
+
+test('网段扫描兑底：mDNS 零命中时未配对设备经 /info 进快照，虚拟网卡网段与本机 IP 不扫', async () => {
+  resetProbeMocks();
+  await seedSettings([]);
+  await writePeerState({});
+  fakeInterfaces = {
+    WLAN: [{ family: 'IPv4', internal: false, address: '192.168.1.100' }],
+    'VMware Network Adapter VMnet8': [{ family: 'IPv4', internal: false, address: '172.16.88.1' }],
+  };
+  fetchPeerInfoImpl = async (...args: unknown[]) => {
+    const peer = args[0] as { host: string };
+    if (peer.host === '192.168.1.50') return helloOf('dev-lan', 'LanDevice');
+    throw new Error('refused');
+  };
+
+  try {
+    const snap = await scanNow();
+    const lan = snap.peers.find((p) => p.deviceId === 'dev-lan');
+    expect(lan).toBeDefined();
+    expect(lan!.online).toBe(true);
+    expect(lan!.host).toBe('192.168.1.50');
+    expect(lan!.port).toBe(47210);
+    expect(lan!.name).toBe('LanDevice');
+    const hosts = fetchPeerInfoCalls.map(([p]) => p.host);
+    expect(hosts.length).toBeGreaterThan(0);
+    expect(hosts.every((h) => h.startsWith('192.168.1.'))).toBe(true);
+    expect(hosts).not.toContain('192.168.1.100');
+  } finally {
+    resetProbeMocks();
+  }
+});
+
+test('网段扫描命中已配对设备（记忆地址失效）：进快照在线且地址记忆回写', async () => {
+  resetProbeMocks();
+  await seedSettings([{ deviceId: 'dev-m', deviceName: 'M', secret: 'd'.repeat(64) }]);
+  await writePeerState({ 'dev-m': { deviceId: 'dev-m', lastSyncAt: 5, lastHost: '10.0.0.99', lastPort: 47210 } });
+  fakeInterfaces = { WLAN: [{ family: 'IPv4', internal: false, address: '192.168.1.100' }] };
+  fetchPeerInfoImpl = async (...args: unknown[]) => {
+    const peer = args[0] as { host: string };
+    if (peer.host === '192.168.1.50') return helloOf('dev-m', 'M');
+    throw new Error('refused');
+  };
+  try {
+    const snap = await scanNow();
+    const m = snap.peers.find((p) => p.deviceId === 'dev-m')!;
+    expect(m.online).toBe(true);
+    expect(m.host).toBe('192.168.1.50');
+    expect(m.port).toBe(47210);
+    await until(() => readSyncStateFrom(dataDir).then((s) => s.peers['dev-m']?.lastHost === '192.168.1.50'), 'subnet 地址回写');
+    const state = await readSyncStateFrom(dataDir);
+    expect(state.peers['dev-m']?.lastPort).toBe(47210);
   } finally {
     resetProbeMocks();
   }

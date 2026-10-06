@@ -26,5 +26,5 @@ test('discovery 快照合并/scanNow 主动扫描 集成（子进程隔离）', 
     console.error(stderr);
   }
   expect(exitCode).toBe(0);
-  expect(stderr).toContain('7 pass');
+  expect(stderr).toContain('9 pass');
 }, 40_000);

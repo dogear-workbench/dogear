@@ -15,6 +15,15 @@ mock.module('electron', () => ({
   nativeTheme: {},
 }));
 
+// scanNow 含网段扫描，mock 空 networkInterfaces 防止用例向真实局域网发请求，
+// 也避免本用例组的 fetchPeerInfo 全通 mock 把每个 IP 都变成 dev-c 污染断言
+import * as realOs from 'node:os';
+mock.module('node:os', () => ({
+  ...realOs,
+  default: { ...realOs, networkInterfaces: () => ({}) },
+  networkInterfaces: () => ({}),
+}));
+
 const browserHandlers = new Map<string, (svc: unknown) => void>();
 const fakeBrowser = {
   on: (event: string, cb: (svc: unknown) => void) => {
