@@ -59,7 +59,7 @@ python -m pip install -r python/requirements.txt
 ### 运行
 
 ```bash
-git clone https://github.com/DreamaChou/dogear.git
+git clone https://github.com/dogear-workbench/dogear.git
 cd dogear
 bun install
 bun run dev
