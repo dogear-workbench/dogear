@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Dogear single dog ear mark</title>
+  <desc id="desc">A single flowing dog ear with a folded inner plane and a cyan context path.</desc>
+  <defs>
+    <linearGradient id="ear" x1="114" y1="82" x2="405" y2="432" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset=".56" stop-color="#D6E7F0"/>
+      <stop offset="1" stop-color="#B9D3E0"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="187" y1="136" x2="350" y2="386" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#51E0D3"/>
+      <stop offset="1" stop-color="#168B9B"/>
+    </linearGradient>
+    <filter id="shadow" x="54" y="48" width="407" height="424" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="9" flood-color="#000" flood-opacity=".3"/>
+    </filter>
+  </defs>
+  <g filter="url(#shadow)">
+    <!-- one continuous outer ear silhouette -->
+    <path d="M161 411c-35-45-53-99-53-160 0-101 65-176 166-176 81 0 141 54 141 130 0 58-30 104-83 130-40 20-67 45-81 76-9 20-28 32-49 32h-41Z" fill="url(#ear)" stroke="#07111C" stroke-width="14" stroke-linejoin="round"/>
+    <!-- clean blue inner plane: no extra line or dot, so it stays legible at small sizes -->
+    <path d="M202 388c14-46 42-82 86-108 42-25 65-55 65-91 0-38-25-63-65-63-54 0-91 46-91 117 0 54 12 101 35 145l-30 0Z" fill="url(#inner)" stroke="#07111C" stroke-width="11" stroke-linejoin="round"/>
+  </g>
+</svg>

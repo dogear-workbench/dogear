@@ -1,0 +1,688 @@
+/**
+ * 对话索引服务
+ * 管理 .dogear/workspaces/{workspaceId}/conversations.json — 按工作区存储的对话元数据索引
+ * 实际消息内容由 Claude Agent SDK 的 .jsonl 文件管理
+ */
+import fs from 'fs/promises';
+import path from 'path';
+import electron from 'electron';
+import { v4 as uuidv4 } from 'uuid';
+import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
+import { mainLogger } from '../agents/logger.js';
+import { readUsage } from './usage/usage-service.js';
+import { getGroup, listActiveGroups, requireActiveGroup, updateGroup } from './group-service.js';
+import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
+import type { ConversationUsageEntry } from '../types.js';
+import type { ModelSelection } from './settings-types.js';
+
+const { app } = electron;
+
+const sessionIdAuditLogger = mainLogger.child('ConvTxn');
+
+// ============================================================
+// 类型定义
+// ============================================================
+
+/**
+ * 契约元数据（Agent 协作模式）
+ * 手动创建的会话此字段为 undefined；agent 派出的会话必填
+ * 与 types/electron-api.ts 的同名接口镜像（主进程 rootDir 限制无法跨目录 import 前端类型）
+ */
+export interface ContractMetadata {
+  parentSessionId: string;
+  task: string;
+  expectedOutputPath?: string;
+  createdBy: 'agent' | 'human';
+  /** 派出时选用的子会话 Profile id；缺省视为默认 Profile */
+  subAgentProfileId?: string;
+}
+
+/** 单条对话的索引信息 */
+export interface ConversationIndex {
+  id: string;
+  title: string;
+  sessionId: string | null;
+  workspaceId: string;
+  parentConversationId: string | null;
+  /** 分叉点标识；SDK 时代是 Claude JSONL 消息 uuid，Harness 迁移后是 fork 时使用的 SessionTreeEntry id */
+  forkMessageSdkUuid: string | null;
+  modelSelection: ModelSelection | null;
+  /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
+  forkPending?: boolean;
+  /** @deprecated 仅为话题生命周期 v1 迁移读取；所有存量清理后可随迁移代码移除。 */
+  archivedAt?: string;
+  groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
+  role?: 'main' | 'sub';    // P1 只产生 'main'
+  /** 任务系统创建的无人值守执行会话；启动时据此裁剪 systemPrompt（跳过话题状态段与笔记纪律） */
+  executor?: boolean;
+  contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
+  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除；只在状态翻转时落盘 */
+  unread?: boolean;
+  createdAt: string;   // ISO 8601 字符串
+  updatedAt: string;   // ISO 8601 字符串
+  usageSummary?: {
+    turnCount: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    lastContextSize?: number;
+    lastContextWindow?: number;
+  };
+}
+
+/** 每工作区的 conversations.json 文件结构 */
+export interface WorkspaceConversationsFile {
+  version: number;
+  conversations: Record<string, ConversationIndex>;
+}
+
+// ============================================================
+// 路径函数
+// ============================================================
+
+/**
+ * 获取 .dogear 配置目录
+ * 开发阶段：项目根目录/.dogear
+ * 打包后：AppData/Roaming/Dogear/.dogear
+ */
+function getConfigDir(): string {
+  // Worker 线程无 electron app，优先读注入的 DOGEAR_CONFIG_DIR
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) return path.join(app.getPath('userData'), '.dogear');
+  return path.join(process.cwd(), '.dogear');
+}
+
+/** 获取工作区数据目录 .dogear/workspaces/{workspaceId}/ */
+export function getWorkspaceDataDir(workspaceId: string): string {
+  return path.join(getConfigDir(), 'workspaces', workspaceId);
+}
+
+/** 获取工作区 conversations.json 路径 */
+function getWorkspaceConversationsPath(workspaceId: string): string {
+  return path.join(getWorkspaceDataDir(workspaceId), 'conversations.json');
+}
+
+// ============================================================
+// 读写函数
+// ============================================================
+
+/** 空的默认文件结构 */
+function emptyFile(): WorkspaceConversationsFile {
+  return { version: 2, conversations: {} };
+}
+
+/**
+ * 读取指定工作区的 conversations.json
+ * 文件不存在或解析失败时返回空结构
+ */
+async function loadWorkspaceConversations(workspaceId: string): Promise<WorkspaceConversationsFile> {
+  return safeJsonRead<WorkspaceConversationsFile>(
+    getWorkspaceConversationsPath(workspaceId),
+    { version: 1, conversations: {} },
+  );
+}
+
+/**
+ * 将数据写入工作区的 conversations.json
+ * 自动创建目录
+ */
+async function saveWorkspaceConversations(workspaceId: string, data: WorkspaceConversationsFile): Promise<void> {
+  await safeJsonWrite(getWorkspaceConversationsPath(workspaceId), data);
+}
+
+/**
+ * 读-改-写事务：同一工作区的 conversations.json 修改串行化，
+ * 防止并发写者（如 fire-and-forget 的 usage 结算）用旧快照覆盖彼此的字段
+ * （曾导致子会话 updateSessionId 写回被 applyUsageSummary 抹掉、sessionId 永久丢失）。
+ * 锁键加 '#txn' 后缀与 safeJsonWrite 内部的同路径写锁隔离——promise 链锁不可重入，同键嵌套会死锁。
+ * 导出供测试直接构造写事务（验证 sessionId 置空审计埋点）。
+ */
+export async function withConversationsTxn<T>(
+  workspaceId: string,
+  fn: (file: WorkspaceConversationsFile) => Promise<T>,
+): Promise<T> {
+  return withFileLock(getWorkspaceConversationsPath(workspaceId) + '#txn', async () => {
+    const filePath = getWorkspaceConversationsPath(workspaceId);
+    // 观测：事务持锁期间文件 mtime 被外部（跨进程/外部工具）改动 → 本事务的 load→save 会覆盖他人写入
+    let observedMtimeMs: number | null = null;
+    try {
+      observedMtimeMs = (await fs.stat(filePath)).mtimeMs;
+    } catch { /* 文件尚未创建 */ }
+    const file = await loadWorkspaceConversations(workspaceId);
+    // sessionId 置空审计：正常代码无合法置空路径，一旦出现即覆盖者复发，WARN 落盘供人工回填
+    const sessionIdsBefore = new Map<string, string | null>();
+    for (const [id, conv] of Object.entries(file.conversations)) {
+      sessionIdsBefore.set(id, conv.sessionId ?? null);
+    }
+    const result = await fn(file);
+    for (const [id, before] of sessionIdsBefore) {
+      const conv = file.conversations[id];
+      if (!conv) continue;
+      const after = conv.sessionId ?? null;
+      if (before && !after) {
+        sessionIdAuditLogger.warn(
+          `[txn 审计] 会话 ${id}（title: ${conv.title}）sessionId 从 ${before} 被置空，` +
+          `原值可用于人工回填。调用栈:\n${new Error().stack}`,
+        );
+      }
+    }
+    if (observedMtimeMs !== null) {
+      try {
+        const currentMtimeMs = (await fs.stat(filePath)).mtimeMs;
+        if (currentMtimeMs !== observedMtimeMs) {
+          console.error(
+            `[conversation-service] conversations.json 在事务持锁期间被外部修改（${filePath}），` +
+            `本次写入可能覆盖外部改动。写入方调用栈:\n${new Error().stack}`,
+          );
+        }
+      } catch { /* 文件被删，safeJsonWrite 会重建 */ }
+    }
+    await saveWorkspaceConversations(workspaceId, file);
+    return result;
+  });
+}
+
+// ============================================================
+// CRUD 操作
+// ============================================================
+
+/**
+ * 将 Record 转为数组并按 updatedAt 倒序排列
+ */
+function sortedList(conversations: Record<string, ConversationIndex>): ConversationIndex[] {
+  return Object.values(conversations).sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+}
+
+/**
+ * 获取指定工作区的所有对话（按 updatedAt 倒序，默认只返回活跃话题）
+ * @param options.includeArchived 是否包含归档话题中的对话，默认 false
+ */
+export async function getByWorkspaceId(
+  workspaceId: string,
+  options?: { includeArchived?: boolean },
+): Promise<ConversationIndex[]> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  if (options?.includeArchived) return sortedList(file.conversations);
+
+  const activeGroupIds = new Set((await listActiveGroups(workspaceId)).map((group) => group.id));
+  return sortedList(Object.fromEntries(
+    Object.entries(file.conversations).filter(([, conversation]) =>
+      !!conversation.groupId && activeGroupIds.has(conversation.groupId),
+    ),
+  ));
+}
+
+
+/**
+ * 根据 ID 获取单条对话，不存在则返回 null
+ */
+export async function getById(workspaceId: string, id: string): Promise<ConversationIndex | null> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  return file.conversations[id] ?? null;
+}
+
+/**
+ * 跨工作区按 ID 查找对话（遍历所有工作区目录）
+ * 用于 agent.ts session_init 回调等不知道 workspaceId 的场景
+ */
+export async function getByIdGlobal(id: string): Promise<{ conv: ConversationIndex; workspaceId: string } | null> {
+  const workspacesDir = path.join(getConfigDir(), 'workspaces');
+  try {
+    const entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const wsId = entry.name;
+      const file = await loadWorkspaceConversations(wsId);
+      if (file.conversations[id]) {
+        return { conv: file.conversations[id], workspaceId: wsId };
+      }
+    }
+  } catch {
+    // workspaces 目录不存在
+  }
+  return null;
+}
+
+/**
+ * 跨工作区按 sessionId 查找对话（遍历所有工作区目录）
+ * 用于 delegation-tools 反查派出者会话
+ */
+export async function getBySessionId(
+  sessionId: string,
+): Promise<{ conv: ConversationIndex; workspaceId: string } | null> {
+  const workspacesDir = path.join(getConfigDir(), 'workspaces');
+  try {
+    const entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const wsId = entry.name;
+      const file = await loadWorkspaceConversations(wsId);
+      for (const conv of Object.values(file.conversations)) {
+        if (conv.sessionId === sessionId) {
+          return { conv, workspaceId: wsId };
+        }
+      }
+    }
+  } catch {
+    // workspaces 目录不存在
+  }
+  return null;
+}
+
+/**
+ * 列出指定父会话名下的子会话（role='sub' 且 parentConversationId 匹配）。
+ * 只读无事务，供 delegation bridge 重启后补齐内存丢失的子会话索引。
+ */
+export async function listByParent(
+  workspaceId: string,
+  parentConversationId: string,
+): Promise<ConversationIndex[]> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  return Object.values(file.conversations).filter(
+    (conv) => conv.role === 'sub' && conv.parentConversationId === parentConversationId,
+  );
+}
+
+/**
+ * 创建新对话
+ * userInitiated=true（用户手动新建/分流）才刷话题 updatedAt 置顶；
+ * 默认 false（agent 派子会话、任务执行、飞书入口）只刷 lastBackgroundActivityAt，不动列表位置
+ * @returns 新对话的 ID
+ */
+export async function create(
+  workspaceId: string,
+  groupId: string,
+  title: string = '新对话',
+  modelSelection: ModelSelection | null = null,
+  options?: {
+    role?: 'main' | 'sub';
+    parentConversationId?: string;
+    contractMetadata?: ContractMetadata;
+    executor?: boolean;
+    userInitiated?: boolean;
+  },
+): Promise<string> {
+  return withConversationsTxn(workspaceId, async (file) => {
+    await requireActiveGroup(workspaceId, groupId);
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    file.conversations[id] = {
+      id,
+      title,
+      sessionId: null,
+      workspaceId,
+      parentConversationId: options?.parentConversationId ?? null,
+      forkMessageSdkUuid: null,
+      modelSelection: modelSelection ? { ...modelSelection } : null,
+      groupId,
+      role: options?.role ?? 'main',
+      executor: options?.executor,
+      contractMetadata: options?.contractMetadata,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return id;
+  }).then(async (id) => {
+    const { touchGroup, touchGroupBackgroundActivity } = await import('./group-service.js');
+    if (options?.userInitiated) await touchGroup(workspaceId, groupId);
+    else await touchGroupBackgroundActivity(workspaceId, groupId);
+    broadcastConversationListChanged(workspaceId);
+    return id;
+  });
+}
+
+/**
+ * 创建分叉对话。分叉现在是同步/即时的：调用方必须已经用 Harness repository fork
+ * 出新 sessionId，此函数只落 Conversation metadata，不再有 forkPending 待定态。
+ * @returns 新对话的 ID
+ */
+export async function createFork(
+  workspaceId: string,
+  groupId: string,
+  title: string,
+  parentConversationId: string,
+  sessionId: string,
+  forkMessageSdkUuid: string,
+  modelSelection: ModelSelection | null = null,
+): Promise<string> {
+  const id = await withConversationsTxn(workspaceId, async (file) => {
+    await requireActiveGroup(workspaceId, groupId);
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const parent = file.conversations[parentConversationId];
+
+    file.conversations[id] = {
+      id,
+      title,
+      sessionId,
+      workspaceId,
+      parentConversationId,
+      forkMessageSdkUuid,
+      modelSelection: modelSelection ? { ...modelSelection } : null,
+      contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
+      groupId,
+      role: 'main',
+      createdAt: now,
+      updatedAt: now,
+    };
+    return id;
+  });
+  broadcastConversationListChanged(workspaceId);
+  return id;
+}
+
+/**
+ * 更新对话标题
+ */
+export async function updateTitle(workspaceId: string, id: string, title: string): Promise<void> {
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+
+    conv.title = title;
+  });
+  broadcastConversationListChanged(workspaceId);
+}
+
+/** 默认 title（新建对话时设置）——用于识别"用户尚未修改过 title"的状态 */
+const DEFAULT_TITLE = '新对话';
+/** 自动生成 title 时截取的最大长度 */
+const AUTO_TITLE_MAX_LENGTH = 30;
+
+/** 组无正式名时用会话自动标题占坑（autoTitle 标记，AI 提炼/用户改名可覆盖转正）；失败不影响会话标题写入 */
+async function seedGroupAutoTitle(workspaceId: string, groupId: string, title: string): Promise<void> {
+  try {
+    const group = await getGroup(workspaceId, groupId);
+    if (!group || group.title?.trim()) return;
+    await updateGroup(workspaceId, groupId, { title, autoTitle: true });
+  } catch (err) {
+    mainLogger.warn('[conversation] 话题初始名占坑失败:', err);
+  }
+}
+
+/**
+ * 从用户第一条消息自动生成 title。
+ *
+ * 仅当当前 title 是默认值（DEFAULT_TITLE）时执行，避免覆盖用户手动修改的标题。
+ * 截取规则：去除换行与首尾空白，取前 AUTO_TITLE_MAX_LENGTH 字，超长加 "…"。
+ *
+ * @returns 是否实际更新了 title
+ */
+export async function autoUpdateTitleFromFirstMessage(
+  workspaceId: string,
+  id: string,
+  messageText: string,
+): Promise<boolean> {
+  const seeded = await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return null;
+    if (!conv.groupId) return null;
+    await requireActiveGroup(workspaceId, conv.groupId);
+
+    // 仅默认 title 时才自动生成（保护用户已修改的标题）
+    if (conv.title !== DEFAULT_TITLE) return null;
+
+    const cleaned = messageText.replace(/\s+/g, ' ').trim();
+    if (!cleaned) return null;
+
+    const truncated = cleaned.length > AUTO_TITLE_MAX_LENGTH
+      ? cleaned.slice(0, AUTO_TITLE_MAX_LENGTH) + '…'
+      : cleaned;
+
+    conv.title = truncated;
+    return { groupId: conv.groupId, title: truncated };
+  });
+  if (!seeded) return false;
+  await seedGroupAutoTitle(workspaceId, seeded.groupId, seeded.title);
+  broadcastConversationListChanged(workspaceId, 'debounced');
+  return true;
+}
+
+export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) throw new Error(`Conversation not found: ${id}`);
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+
+    conv.sessionId = sessionId;
+  });
+  broadcastConversationListChanged(workspaceId, 'debounced');
+}
+
+/**
+ * 批量回填丢失的 sessionId（启动自愈用）：只填当前为 null 的条目，不覆盖已有值。
+ * 与 updateSessionId 不同，不做 requireActiveGroup——归档话题里的会话同样需要修复。
+ */
+export async function repairSessionIds(
+  workspaceId: string,
+  assignments: Record<string, string>,
+): Promise<number> {
+  let repaired = 0;
+  await withConversationsTxn(workspaceId, async (file) => {
+    for (const [id, sessionId] of Object.entries(assignments)) {
+      const conv = file.conversations[id];
+      if (!conv || conv.sessionId) continue;
+      conv.sessionId = sessionId;
+      repaired++;
+    }
+  });
+  if (repaired > 0) broadcastConversationListChanged(workspaceId, 'debounced');
+  return repaired;
+}
+
+/**
+ * 仅更新 updatedAt 时间戳
+ */
+export async function touch(workspaceId: string, id: string): Promise<void> {
+  let groupId: string | null = null;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+
+    conv.updatedAt = new Date().toISOString();
+    groupId = conv.groupId;
+  });
+  if (groupId) {
+    const { touchGroup } = await import('./group-service.js');
+    await touchGroup(workspaceId, groupId);
+  }
+  broadcastConversationListChanged(workspaceId, 'debounced');
+}
+
+export async function updateModelSelection(
+  workspaceId: string,
+  id: string,
+  modelSelection: ModelSelection | null,
+): Promise<void> {
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+    conv.modelSelection = modelSelection ? { ...modelSelection } : null;
+  });
+  broadcastConversationListChanged(workspaceId, 'debounced');
+}
+
+/**
+ * 翻转会话未读标记。
+ * 值未变化时不写盘不广播（调用方可无条件触发，落盘仅在真实翻转时发生一次）；
+ * 不更新 updatedAt（未读不参与列表排序），不做 requireActiveGroup（归档话题里的会话同样可标记）。
+ * 置为未读（会话完成）时刷新话题 lastBackgroundActivityAt：归档保鲜但不扰动列表位置。
+ */
+export async function setUnread(conversationId: string, unread: boolean): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId, conv } = found;
+  let changed = false;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[conversationId];
+    if (!conv || conv.unread === unread) return;
+    if (unread) conv.unread = true;
+    else delete conv.unread;
+    changed = true;
+  });
+  if (changed) {
+    broadcastUnreadChanged(conversationId, unread);
+    if (unread && conv.groupId) {
+      const { touchGroupBackgroundActivity } = await import('./group-service.js');
+      await touchGroupBackgroundActivity(workspaceId, conv.groupId).catch((err) => {
+        mainLogger.warn('[conversation] 刷新话题后台活跃度失败:', err);
+      });
+    }
+    broadcastConversationListChanged(workspaceId);
+  }
+}
+
+function broadcastUnreadChanged(conversationId: string, unread: boolean): void {
+  void (async () => {
+    try {
+      const { broadcastToWindows } = await import('./renderer-broadcast.js');
+      broadcastToWindows((h) => h.conversationUnreadChanged.send({ conversationId, unread }));
+    } catch {
+      // 同 renderer-broadcast-lazy：worker 线程加载 renderer-broadcast 会抛，广播静默跳过
+    }
+  })();
+}
+
+/**
+ * 会话完成/任务终态的未读置位入口：全局焦点正是该会话则跳过，否则落盘（值未变 no-op）。
+ * 焦点查询动态 import：focused-conversation-service 静态依赖 @egoist/tipc/main，避免 worker/测试环境加载失败
+ */
+export async function markUnreadIfNotFocused(conversationId: string): Promise<void> {
+  try {
+    const { getFocusedConversation } = await import('./focused-conversation-service.js');
+    if (getFocusedConversation()?.conversationId === conversationId) return;
+    await setUnread(conversationId, true);
+  } catch (err) {
+    mainLogger.warn('[conversation] 置未读失败:', err);
+  }
+}
+
+/**
+ * 删除对话（硬删除：从索引中彻底移除）
+ * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
+ *
+ * 注意：本函数只删索引。如需同时清理 SDK 会话历史 JSONL 文件，
+ * 请使用 tipc 层的 deleteConversation RPC（会调用 SDK deleteSession）。
+ */
+export async function deleteConversation(workspaceId: string, id: string): Promise<void> {
+  await withConversationsTxn(workspaceId, async (file) => {
+    if (!file.conversations[id]) return;
+
+    // 删除目标对话
+    delete file.conversations[id];
+
+    // 子分叉的 parentConversationId 置空
+    for (const conv of Object.values(file.conversations)) {
+      if (conv.parentConversationId === id) {
+        conv.parentConversationId = null;
+      }
+    }
+  });
+  broadcastConversationListChanged(workspaceId);
+}
+
+
+/**
+ * 导入一条对话索引到目标工作区（用于会话恢复，保留原 ID）
+ * 如果目标工作区已存在相同 ID 的对话则跳过。
+ */
+export async function importConversation(
+  targetWorkspaceId: string,
+  conv: ConversationIndex,
+): Promise<void> {
+  await withConversationsTxn(targetWorkspaceId, async (file) => {
+    if (file.conversations[conv.id]) return; // 已存在则跳过
+    file.conversations[conv.id] = { ...conv, workspaceId: targetWorkspaceId };
+  });
+  broadcastConversationListChanged(targetWorkspaceId);
+}
+
+// ============================================================
+// 兼容转换
+// ============================================================
+
+// ============================================================
+// 用量汇总
+// ============================================================
+
+function pickMainContextWindow(entry: ConversationUsageEntry): number | undefined {
+  const models = Object.values(entry.modelUsage ?? {});
+  if (models.length === 0) return undefined;
+  const main = models.reduce((a, b) => (b.inputTokens > a.inputTokens ? b : a));
+  return main.contextWindow || undefined;
+}
+
+/**
+ * 将一条用量记录增量合并到对话索引的 usageSummary 字段。
+ * 不更新 updatedAt（用量采集是后台行为，不影响排序）。
+ */
+export async function applyUsageSummary(
+  conversationId: string,
+  entry: ConversationUsageEntry,
+): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId } = found;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[conversationId];
+    if (!conv) return;
+
+    const prev = conv.usageSummary;
+    // lastContextSize 口径：轮内最后一条 CTX 的 totalTokens（真实上下文占用）；
+    // 历史 entry 无该字段时回退旧口径（轮内累加值，计费语义，虚高但兼容）
+    const lastContextSize = entry.lastContextTokens
+      ?? entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
+    const lastContextWindow = pickMainContextWindow(entry);
+
+    conv.usageSummary = {
+      turnCount: (prev?.turnCount ?? 0) + 1,
+      totalInputTokens: (prev?.totalInputTokens ?? 0) + entry.usage.inputTokens,
+      totalOutputTokens: (prev?.totalOutputTokens ?? 0) + entry.usage.outputTokens,
+      totalCacheReadTokens: (prev?.totalCacheReadTokens ?? 0) + entry.usage.cacheReadInputTokens,
+      lastContextSize,
+      lastContextWindow,
+    };
+  });
+  broadcastConversationListChanged(workspaceId, 'debounced');
+}
+
+/**
+ * 若 usageSummary.turnCount 与 JSONL 实际轮次不一致，则重建 summary。
+ * 懒触发：由 getUsage IPC handler 调用，fire-and-forget。
+ */
+export async function recomputeUsageSummaryIfStale(conversationId: string): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId, conv } = found;
+  const usage = await readUsage(conversationId);
+  if ((conv.usageSummary?.turnCount ?? 0) === usage.totals.turnCount) return;
+
+  await withConversationsTxn(workspaceId, async (file) => {
+    const target = file.conversations[conversationId];
+    if (!target) return;
+
+    const lastEntry = usage.entries[usage.entries.length - 1];
+    target.usageSummary = {
+      turnCount: usage.totals.turnCount,
+      totalInputTokens: usage.totals.inputTokens,
+      totalOutputTokens: usage.totals.outputTokens,
+      totalCacheReadTokens: usage.totals.cacheReadInputTokens,
+      lastContextSize: lastEntry
+        ? lastEntry.lastContextTokens
+          ?? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
+        : undefined,
+      lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
+    };
+  });
+  broadcastConversationListChanged(workspaceId, 'debounced');
+}

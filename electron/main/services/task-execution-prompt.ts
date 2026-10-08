@@ -1,0 +1,52 @@
+/** 任务执行提示词模板（单一来源）：task-queue 入队拼接与场景页 executor 行静态展示共用。 */
+export type ExecProfile = 'default' | 'code-impl';
+
+export interface ExecutionPromptInput {
+  title: string;
+  id: string;
+  planPath: string;
+  /** 任务挂载的专项 skill 名单；非空时追加提示行，详细纪律由 skill 全文承载 */
+  mountedSkills?: readonly string[];
+  /** code-impl 注入 plan 形态二选一规则（分步 → staged-execution 编排；单步 → 直接实施走 code-discipline）；default 不注入 */
+  execProfile?: ExecProfile;
+}
+
+export function buildExecutionPrompt(task: ExecutionPromptInput): string {
+  const mountedSkillsLine = task.mountedSkills?.length
+    ? [`本任务已挂载专项 skill：${task.mountedSkills.join('、')}，开工前先读该 skill 并按其纪律执行`]
+    : [];
+  const codeImplModeLines =
+    task.execProfile === 'code-impl'
+      ? [
+          '- 按 plan 文档形态二选一：为分步文档（stepN-*.md）→ 按 staged-execution 编排逐 step 派子会话实施；为设计文档/单文档 → 本会话直接实施，全程遵守 code-discipline（勘察/验收自检/提交规范）',
+        ]
+      : [];
+  return [
+    '<task-execution>',
+    '你是任务系统自动创建的执行会话，全权负责把下述计划实施完毕。无人值守：用户不在线，不要中途停下等确认，推进到整个计划完成。',
+    '用户可能打开本会话查看过程或插话，插话按正常对话回应。',
+    '',
+    `任务标题：${task.title}`,
+    `任务 ID：${task.id}`,
+    `计划文档：${task.planPath}`,
+    '',
+    '执行模式：',
+    '- 按计划文档直接实施；需要并行探索或多线实施时可派子会话分工，派出子会话后输出简短收尾语直接结束回合，交付/终态会作为新消息自动唤醒你继续推进',
+    ...codeImplModeLines,
+    '- 全部子会话交付并验收完毕、整个计划实施完成后才申报结果',
+    ...mountedSkillsLine,
+    '',
+    '执行要求：',
+    '1. 先读计划文档再实施；计划引用的其他文件按需读取',
+    '2. 计划文档不存在或明显无法实施时不要硬做，直接说明原因结束本轮',
+    '3. 整个计划实施完成后，调用 dogear__ReportTaskResult 工具申报结果摘要（做了什么、关键改动位置、遗留问题），任务将进入待审核；摘要中若有必须用户本人完成的事项（登录/授权/线下操作/人工拍板），同时调用 dogear__TrackUserActions 提议勾选卡；不申报则任务会因回合结束被置为中断，用户还需再干预一次',
+    '</task-execution>',
+  ].join('\n');
+}
+
+/** 场景页静态展示用的占位实参：模板结构一目了然，不含任何真实任务数据 */
+export const EXECUTION_PROMPT_PREVIEW: ExecutionPromptInput = {
+  title: '（任务标题）',
+  id: '（任务 ID）',
+  planPath: '（计划文档路径）',
+};

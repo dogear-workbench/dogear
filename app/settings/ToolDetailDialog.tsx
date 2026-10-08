@@ -1,0 +1,36 @@
+import { useEffect, useState } from 'react';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+
+interface ToolDetailDialogProps {
+  tool: { name: string; description: string } | null;
+  onClose: () => void;
+}
+
+export function ToolDetailDialog({ tool, onClose }: ToolDetailDialogProps) {
+  const [lastTool, setLastTool] = useState(tool);
+
+  useEffect(() => {
+    if (tool) setLastTool(tool);
+  }, [tool]);
+
+  return (
+    <Dialog open={tool !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
+          <DialogTitle className="font-mono">{lastTool?.name}</DialogTitle>
+          <DialogDescription>工具完整说明（给 Agent 的描述全文）</DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+          {lastTool && <MarkdownRenderer content={lastTool.description || '(无描述)'} />}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

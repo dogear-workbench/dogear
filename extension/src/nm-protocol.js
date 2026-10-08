@@ -1,0 +1,56 @@
+// 与 electron/main/services/browser/nm-protocol.ts 双副本同步；v4 CommandKind: observe/find/click/fill/read_text/navigate/read_state/scroll/open_tab/close_tab/close_group_tabs/list_tabs/wait_for/readArticle/capture/focus_tab/watch_intervention；click params: { ref, confirmed? }（confirmed 仅桌面端确认后重发携带，缺省仍拦截）；wait_for params: { selector?, ref?, condition: visible|hidden|text_contains, text?, timeoutMs? }；readArticle params: { selector? }；capture params: { tabId? }（缺省截帧 tabId）；focus_tab params: { tabId }（激活标签页+窗口前置）；watch_intervention params: { tabId }（挂登录等待 watch，导航完成且 pageState 恢复 ready 时上行 intervention_resolved 帧）
+const HEADER_SIZE = 4
+const MAX_FRAME_BYTES = 64 * 1024 * 1024
+
+export function encodeFrame(message) {
+  const payload = new TextEncoder().encode(JSON.stringify(message))
+  const frame = new Uint8Array(HEADER_SIZE + payload.length)
+  new DataView(frame.buffer).setUint32(0, payload.length, true)
+  frame.set(payload, HEADER_SIZE)
+  return frame
+}
+
+export function makeDecoder() {
+  let buffer = new Uint8Array(0)
+  let frameHandler = null
+
+  const emit = (message) => {
+    if (frameHandler) frameHandler(message)
+  }
+
+  const consume = () => {
+    while (buffer.length >= HEADER_SIZE) {
+      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+      const length = view.getUint32(0, true)
+      if (buffer.length < HEADER_SIZE + length) return
+      if (length > MAX_FRAME_BYTES) {
+        buffer = new Uint8Array(0)
+        emit({ type: 'protocol_error', error: 'frame too large' })
+        return
+      }
+      const payload = buffer.subarray(HEADER_SIZE, HEADER_SIZE + length)
+      buffer = buffer.subarray(HEADER_SIZE + length)
+      let message
+      try {
+        message = JSON.parse(new TextDecoder().decode(payload))
+      } catch {
+        emit({ type: 'protocol_error', error: 'invalid json frame' })
+        continue
+      }
+      emit(message)
+    }
+  }
+
+  return {
+    onFrame(handler) {
+      frameHandler = handler
+    },
+    push(chunk) {
+      const merged = new Uint8Array(buffer.length + chunk.length)
+      merged.set(buffer)
+      merged.set(chunk, buffer.length)
+      buffer = merged
+      consume()
+    }
+  }
+}

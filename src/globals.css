@@ -1,0 +1,669 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@font-face {
+  font-family: "LXGW WenKai";
+  src: url("../resources/fonts/LXGWWenKai-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+/* ═══════════════════════════════════════════════
+   Dogear Editorial Design System
+   杂志编辑室风格 — 柔雾亮 / 墨蓝暗双主题
+   ═══════════════════════════════════════════════ */
+
+@theme inline {
+  /* 字体 */
+  --font-display: Georgia, "LXGW WenKai", "Times New Roman", serif;
+  --font-sans: "LXGW WenKai", system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+
+  /* 色彩映射 */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* 圆角 */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+}
+
+/* ─── 米纸亮色主题 ─── */
+:root {
+  --radius: 0.5rem;
+
+  --background: #F5F1E8;
+  --foreground: #33302B;
+  --card: #FBF8F1;
+  --card-foreground: #33302B;
+  --popover: #FBF8F1;
+  --popover-foreground: #33302B;
+  --primary: #A6533C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EDE7D9;
+  --secondary-foreground: #33302B;
+  --muted: #EDE7D9;
+  --muted-foreground: #7A756D;
+  --accent: #E8E2D2;
+  --accent-foreground: #33302B;
+  --destructive: #B94D52;
+  --border: #DFD8C6;
+  --input: #DFD8C6;
+  --ring: #A6533C;
+
+  --reading-foreground: #4A453D;
+  --code-background: #EDE8DC;
+  --code-foreground: #33302B;
+  --scrollbar-thumb: #B8AE99;
+  --scrollbar-thumb-hover: #9A9080;
+
+  --chart-1: #A6533C;
+  --chart-2: #287765;
+  --chart-3: #3D6F93;
+  --chart-4: #A8762A;
+  --chart-5: #7564A1;
+
+  --sidebar: #F0EBDE;
+  --sidebar-foreground: #33302B;
+  --sidebar-primary: #A6533C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #E6E0CF;
+  --sidebar-accent-foreground: #33302B;
+  --sidebar-border: #DFD8C6;
+  --sidebar-ring: #A6533C;
+}
+
+/* ─── 墨蓝暗色主题 ─── */
+.dark {
+  --background: #1E242C;
+  --foreground: #C6CBD2;
+  --card: #252C36;
+  --card-foreground: #C6CBD2;
+  --popover: #252C36;
+  --popover-foreground: #C6CBD2;
+  --primary: #F06A1F;
+  --primary-foreground: #FFFFFF;
+  --secondary: #2A3140;
+  --secondary-foreground: #C6CBD2;
+  --muted: #2A3140;
+  --muted-foreground: #7E8894;
+  --accent: #2E3644;
+  --accent-foreground: #C6CBD2;
+  --destructive: #E5484D;
+  --border: #343D49;
+  --input: #343D49;
+  --ring: #F06A1F;
+
+  --reading-foreground: #AEB4BD;
+  --code-background: #0D1117;
+  --code-foreground: #E6EDF3;
+  --scrollbar-thumb: #343D49;
+  --scrollbar-thumb-hover: #46525F;
+
+  --chart-1: #E8590C;
+  --chart-2: #30A46C;
+  --chart-3: #3B82F6;
+  --chart-4: #F59E0B;
+  --chart-5: #8B5CF6;
+
+  --sidebar: #1A2027;
+  --sidebar-foreground: #C6CBD2;
+  --sidebar-primary: #F06A1F;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #2A3140;
+  --sidebar-accent-foreground: #C6CBD2;
+  --sidebar-border: #2C3541;
+  --sidebar-ring: #F06A1F;
+}
+
+/* ─── 基础层 ─── */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    height: 100%;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  /* 自绘标题栏让位（titleBarStyle hidden 窗口）：顶部留出系统按钮条高度并作为窗口拖拽区 */
+  #root {
+    height: 100%;
+    padding-top: env(titlebar-area-height, 0px);
+  }
+
+  #root::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(titlebar-area-height, 0px);
+    -webkit-app-region: drag;
+    z-index: 9999;
+  }
+
+  /* 滚动条美化 — 编辑室风格：细窄、暗色、融入背景 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* 变量驱动：html 自身滚动条不会命中 .dark 后代选择器 */
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+
+  /* 文字选中高亮 */
+  ::selection {
+    background: rgba(166, 83, 60, 0.22);
+    color: inherit;
+  }
+
+  .dark ::selection {
+    background: rgba(240, 106, 31, 0.35);
+  }
+}
+
+/* ─── 排版工具类 ─── */
+@layer utilities {
+  /* 编辑室风格粗线分隔 */
+  .border-editorial {
+    border-width: 2px;
+    border-color: var(--foreground);
+  }
+
+  /* 显示字体（标题用） */
+  .font-display {
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  /* Long-form reading uses a softer CJK typeface without changing application controls. */
+  .font-reading {
+    font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
+    font-size: 1.0625rem;
+    line-height: 1.9;
+    color: var(--reading-foreground);
+  }
+
+  .font-reading :is(pre, code) {
+    font-family: ui-monospace, Consolas, monospace;
+  }
+
+  /* 阅读代码块沿用主题背景，避免亮色模式出现强烈的纯黑区域。 */
+  .font-reading pre {
+    background: var(--code-background) !important;
+    color: var(--code-foreground) !important;
+    border: 1px solid var(--border);
+  }
+
+  .font-reading pre .hljs {
+    background: transparent !important;
+    color: var(--code-foreground);
+  }
+
+  .font-reading :not(pre) > code {
+    background: var(--secondary);
+    color: #7C4637;
+    border-radius: 0.25rem;
+    padding: 0.1em 0.3em;
+  }
+
+  .font-reading .hljs-doctag,
+  .font-reading .hljs-keyword,
+  .font-reading .hljs-meta .hljs-keyword,
+  .font-reading .hljs-template-tag,
+  .font-reading .hljs-template-variable,
+  .font-reading .hljs-type,
+  .font-reading .hljs-variable.language_ {
+    color: #94503C;
+  }
+
+  .font-reading .hljs-title,
+  .font-reading .hljs-title.class_,
+  .font-reading .hljs-title.class_.inherited__,
+  .font-reading .hljs-title.function_ {
+    color: #715C96;
+  }
+
+  .font-reading .hljs-attr,
+  .font-reading .hljs-attribute,
+  .font-reading .hljs-literal,
+  .font-reading .hljs-meta,
+  .font-reading .hljs-number,
+  .font-reading .hljs-operator,
+  .font-reading .hljs-variable,
+  .font-reading .hljs-selector-attr,
+  .font-reading .hljs-selector-class,
+  .font-reading .hljs-selector-id {
+    color: #336C87;
+  }
+
+  .font-reading .hljs-regexp,
+  .font-reading .hljs-string,
+  .font-reading .hljs-meta .hljs-string {
+    color: #287160;
+  }
+
+  .font-reading .hljs-built_in,
+  .font-reading .hljs-symbol {
+    color: #946523;
+  }
+
+  .font-reading .hljs-comment,
+  .font-reading .hljs-code,
+  .font-reading .hljs-formula {
+    color: #6E7971;
+  }
+
+  .font-reading .hljs-name,
+  .font-reading .hljs-quote,
+  .font-reading .hljs-selector-tag,
+  .font-reading .hljs-selector-pseudo {
+    color: #47735E;
+  }
+
+  .dark .font-reading :not(pre) > code {
+    color: #F2B28E;
+  }
+
+  .dark .font-reading .hljs-doctag,
+  .dark .font-reading .hljs-keyword,
+  .dark .font-reading .hljs-meta .hljs-keyword,
+  .dark .font-reading .hljs-template-tag,
+  .dark .font-reading .hljs-template-variable,
+  .dark .font-reading .hljs-type,
+  .dark .font-reading .hljs-variable.language_ {
+    color: #FF7B72;
+  }
+
+  .dark .font-reading .hljs-title,
+  .dark .font-reading .hljs-title.class_,
+  .dark .font-reading .hljs-title.class_.inherited__,
+  .dark .font-reading .hljs-title.function_ {
+    color: #D2A8FF;
+  }
+
+  .dark .font-reading .hljs-attr,
+  .dark .font-reading .hljs-attribute,
+  .dark .font-reading .hljs-literal,
+  .dark .font-reading .hljs-meta,
+  .dark .font-reading .hljs-number,
+  .dark .font-reading .hljs-operator,
+  .dark .font-reading .hljs-variable,
+  .dark .font-reading .hljs-selector-attr,
+  .dark .font-reading .hljs-selector-class,
+  .dark .font-reading .hljs-selector-id {
+    color: #79C0FF;
+  }
+
+  .dark .font-reading .hljs-regexp,
+  .dark .font-reading .hljs-string,
+  .dark .font-reading .hljs-meta .hljs-string {
+    color: #A5D6FF;
+  }
+
+  .dark .font-reading .hljs-built_in,
+  .dark .font-reading .hljs-symbol {
+    color: #FFA657;
+  }
+
+  .dark .font-reading .hljs-comment,
+  .dark .font-reading .hljs-code,
+  .dark .font-reading .hljs-formula {
+    color: #8B949E;
+  }
+
+  .dark .font-reading .hljs-name,
+  .dark .font-reading .hljs-quote,
+  .dark .font-reading .hljs-selector-tag,
+  .dark .font-reading .hljs-selector-pseudo {
+    color: #7EE787;
+  }
+}
+
+/* ─── 笔记编辑区（Tiptap） ─── */
+.notes-editor {
+  position: relative;
+}
+
+.notes-editor .ProseMirror {
+  outline: none;
+}
+
+/* 正文中的相对路径（NotePathLink 插件 Decoration）：primary 色 + 下划线，观感可点 */
+.notes-editor .ProseMirror .note-path-link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.notes-editor .ProseMirror .note-path-link:hover {
+  text-decoration-color: var(--primary);
+}
+
+.notes-editor .ProseMirror p.is-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] li {
+  display: flex;
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] li > label {
+  flex: 0 0 auto;
+  margin-right: 0.5rem;
+  margin-top: 0.35em;
+  user-select: none;
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] input[type='checkbox'] {
+  width: 1em;
+  height: 1em;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.notes-editor .ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--muted-foreground);
+}
+
+/* ─── 选中浮层工具栏 ─── */
+.notes-bubble {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.14);
+}
+
+.notes-bubble button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: calc(var(--radius) - 4px);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.notes-bubble button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.notes-bubble button[data-active='true'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.notes-bubble-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+.notes-bubble-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.notes-bubble-linkrow input {
+  width: 200px;
+  padding: 0 6px;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--popover-foreground);
+}
+
+.notes-bubble-linkrow input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ─── / 插入菜单 ─── */
+.notes-slash-menu {
+  width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.14);
+}
+
+.notes-slash-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: 13px;
+  text-align: left;
+  color: var(--popover-foreground);
+  cursor: pointer;
+}
+
+.notes-slash-menu button[data-selected='true'] {
+  background: var(--accent);
+}
+
+.notes-slash-menu-empty {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.notes-editor .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin-block: 1em;
+  font-size: 0.9em;
+}
+
+.notes-editor .ProseMirror table td,
+.notes-editor .ProseMirror table th {
+  border: 1px solid var(--border);
+  padding: 0.375em 0.75em;
+  vertical-align: top;
+  position: relative;
+}
+
+.notes-editor .ProseMirror table th {
+  background: var(--muted);
+  font-weight: 600;
+  text-align: left;
+}
+
+.notes-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 2px;
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.notes-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.notes-editor .ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  pointer-events: none;
+}
+
+.notes-table-toolbar {
+  position: absolute;
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+
+.notes-table-toolbar[data-visible='true'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.notes-table-toolbar button {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.notes-editor .ProseMirror pre {
+  background: var(--code-background);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.notes-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+.notes-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+}
+
+.notes-editor .ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--primary);
+}
+
+.notes-prose {
+  font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
+  font-size: 1.0625rem;
+  line-height: 1.9;
+}
+
+.notes-prose p {
+  margin-block: 0.625em;
+}
+
+.notes-prose h1 {
+  font-size: 1.4em;
+  margin-block: 1.2em 0.6em;
+}
+
+.notes-prose h2 {
+  font-size: 1.25em;
+  margin-block: 1.1em 0.5em;
+}
+
+.notes-prose h3 {
+  font-size: 1.125em;
+  margin-block: 1em 0.4em;
+}
+
+.notes-prose h4,
+.notes-prose h5,
+.notes-prose h6 {
+  margin-block: 0.875em 0.375em;
+}
+
+/* ─── Minimap 消息闪烁动画 ─── */
+@keyframes minimap-flash {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(234, 179, 8, 0.2); }
+}
+
+.minimap-flash {
+  animation: minimap-flash 1s ease-in-out;
+}

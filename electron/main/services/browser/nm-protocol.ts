@@ -1,0 +1,203 @@
+import { join } from 'path';
+
+export const NM_WIN_PIPE_PATH = '\\\\.\\pipe\\dogear-nm-gateway';
+export const NM_SOCKET_FILE = 'nm-gateway.sock';
+
+/** win32 走 named pipe（路径固定）；darwin 走 userData 下 unix socket，路径由调用方传入 userDataDir */
+export function nmGatewayAddress(userDataDir: string): string {
+  return process.platform === 'win32' ? NM_WIN_PIPE_PATH : join(userDataDir, NM_SOCKET_FILE);
+}
+
+const HEADER_SIZE = 4;
+const MAX_FRAME_BYTES = 64 * 1024 * 1024;
+
+export type NmMessage = Record<string, unknown>;
+
+export const ProtocolVersion = 4;
+
+export type CommandKind =
+  | 'observe'
+  | 'find'
+  | 'click'
+  | 'fill'
+  | 'read_text'
+  | 'navigate'
+  | 'read_state'
+  | 'scroll'
+  | 'open_tab'
+  | 'close_tab'
+  | 'close_group_tabs'
+  | 'list_tabs'
+  | 'wait_for'
+  | 'readArticle'
+  | 'capture'
+  | 'focus_tab'
+  | 'watch_intervention';
+
+export type CommandErrorCode =
+  | 'not_connected'
+  | 'stale_protocol'
+  | 'timeout'
+  | 'disconnected'
+  | 'stale_tab'
+  | 'navigated_away'
+  | 'tab_closed'
+  | 'permission_denied'
+  | 'ref_expired'
+  | 'value_mismatch'
+  | 'guard_password'
+  | 'guard_submit'
+  | 'navigation_blocked';
+
+export interface ExtensionCommand {
+  requestId: string;
+  tabId: number;
+  url: string;
+  kind: CommandKind;
+  params: Record<string, unknown>;
+}
+
+export interface CommandResult {
+  requestId: string;
+  ok: boolean;
+  data?: unknown;
+  error?: string;
+  errorCode?: CommandErrorCode;
+}
+
+export interface PermissionStateMessage {
+  type: 'permission_state';
+  origins: string[];
+}
+
+export interface ClickCommandParams {
+  ref: string;
+  /** 仅桌面端在用户确认提交后重发时携带，扩展侧缺省仍拦截；不暴露给 agent */
+  confirmed?: boolean;
+}
+
+export interface NavigateCommandParams {
+  targetUrl: string;
+}
+
+export interface ReadStateCommandParams {
+  path?: string;
+}
+
+export interface OpenTabCommandParams {
+  targetUrl: string;
+  background?: boolean;
+}
+
+export interface CloseTabCommandParams {
+  targetTabId?: number;
+}
+
+export interface CloseGroupTabsCommandParams {
+  /** 收尾清理豁免的 tabId（一键移交过、保留给用户的 tab） */
+  exemptTabIds?: number[];
+}
+
+export type WaitForCondition = 'visible' | 'hidden' | 'text_contains';
+
+export interface WaitForCommandParams {
+  selector?: string;
+  ref?: string;
+  condition: WaitForCondition;
+  text?: string;
+  timeoutMs?: number;
+}
+
+export interface ReadArticleCommandParams {
+  selector?: string;
+}
+
+export interface CaptureCommandParams {
+  /** 缺省截帧内 tabId（焦点 tab）；扩展侧只截 Dogear 分组内 tab */
+  tabId?: number;
+}
+
+export interface FocusTabCommandParams {
+  tabId: number;
+}
+
+export interface WatchInterventionCommandParams {
+  tabId: number;
+}
+
+export interface TabSnapshotMessage {
+  type: 'tab_snapshot';
+  tabId: number;
+  title: string;
+  url: string;
+  textPreview: string;
+  extractError?: string;
+  generation: number;
+}
+
+/** 扩展主动推送的一键移交帧；与 tab_snapshot 同类无 requestId，NmMessage 为宽 Record 故此类型仅作文档 */
+export interface PageHandoffMessage {
+  type: 'page_handoff';
+  /** 移交源标签页；gateway 据此记入收尾清理豁免集合，缺省（旧版扩展）不豁免 */
+  tabId?: number;
+  url: string;
+  title: string;
+  selectionText?: string;
+  textExcerpt?: string;
+}
+
+/** 扩展 watch 中的 tab 导航完成且 pageState 恢复 ready 时回推；与 tab_snapshot 同类无 requestId，仅作文档 */
+export interface InterventionResolvedMessage {
+  type: 'intervention_resolved';
+  tabId: number;
+}
+
+export interface NmDecoder {
+  onFrame(handler: (message: NmMessage) => void): void;
+  push(chunk: Uint8Array): void;
+}
+
+export function encodeNmFrame(message: NmMessage): Buffer {
+  const payload = Buffer.from(JSON.stringify(message), 'utf-8');
+  const frame = Buffer.alloc(HEADER_SIZE + payload.length);
+  frame.writeUInt32LE(payload.length, 0);
+  payload.copy(frame, HEADER_SIZE);
+  return frame;
+}
+
+export function makeNmDecoder(): NmDecoder {
+  let buffer = Buffer.alloc(0);
+  let frameHandler: ((message: NmMessage) => void) | null = null;
+
+  const consume = () => {
+    while (buffer.length >= HEADER_SIZE) {
+      const length = buffer.readUInt32LE(0);
+      if (buffer.length < HEADER_SIZE + length) return;
+      if (length > MAX_FRAME_BYTES) {
+        buffer = Buffer.alloc(0);
+        frameHandler?.({ type: 'protocol_error', error: 'frame too large' });
+        return;
+      }
+      const payload = buffer.subarray(HEADER_SIZE, HEADER_SIZE + length);
+      buffer = buffer.subarray(HEADER_SIZE + length);
+      let message: NmMessage;
+      try {
+        message = JSON.parse(payload.toString('utf-8')) as NmMessage;
+      } catch {
+        frameHandler?.({ type: 'protocol_error', error: 'invalid json frame' });
+        continue;
+      }
+      frameHandler?.(message);
+    }
+  };
+
+  return {
+    onFrame(handler) {
+      frameHandler = handler;
+    },
+    push(chunk) {
+      buffer = Buffer.concat([buffer, chunk]);
+      consume();
+    },
+  };
+}

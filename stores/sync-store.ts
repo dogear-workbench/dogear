@@ -1,0 +1,328 @@
+import { create } from 'zustand';
+import { toast } from 'sonner';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
+import { showConfirm } from '@/stores/confirm-store';
+import type { SyncReport, SyncDirection } from '@/electron/main/services/sync/orchestrator';
+import type { PairingRequestInfo } from '@/electron/main/services/sync/pairing';
+import type { LanSyncStatus } from '@/electron/main/services/sync/lan-sync-service';
+import type { PeerInfo } from '@/electron/main/services/sync/discovery';
+import type { SyncState } from '@/electron/main/services/sync/sync-state';
+import type { SyncOptions } from '@/electron/main/services/settings-types';
+
+/** 与主进程 pairing.ts 的 PENDING_TTL_MS 一致：超时的入站配对请求不再展示 */
+export const PAIR_REQUEST_TTL_MS = 150_000;
+
+interface SyncStoreState {
+  status: LanSyncStatus | null;
+  peers: PeerInfo[];
+  /** 「寻找设备」扫描进行中（主进程一轮约 2~3s） */
+  scanning: boolean;
+  syncOptions: SyncOptions | null;
+  syncState: SyncState | null;
+  runningSync: { peerId: string; startedAt: number } | null;
+  lastReport: SyncReport | null;
+  pendingPairRequests: PairingRequestInfo[];
+  outgoingPairing: { deviceId: string; code: string } | null;
+  /** 通知中心「前往同步」跳转请求：自增值，数据中心页消费后归零 */
+  syncPanelFocusAt: number;
+
+  /** 数据中心页挂载时调用：拉全量 + 订阅主进程 syncEvent，返回取消订阅 */
+  subscribe: () => () => void;
+  refresh: () => Promise<void>;
+  /** 手动寻找设备：主进程 mDNS 一轮 + 已配对设备地址探测，结果为合并快照（含离线已配对） */
+  scan: () => Promise<void>;
+  /** 解除配对：仅删本端 pairedDevices 条目，同步基线/映射保留 */
+  unpair: (deviceId: string) => Promise<void>;
+  runSync: (
+    peerId: string,
+    opts?: {
+      confirmVersionMismatch?: boolean;
+      /** 缺省 pull=仅拉取 */
+      direction?: SyncDirection;
+      /** 双改冲突裁决表（双向/推送档）：key=relPath */
+      conflictResolutions?: Record<string, 'local' | 'remote'>;
+    },
+  ) => Promise<void>;
+  requestPair: (peer: PeerInfo) => Promise<void>;
+  confirmPairRequest: (requestId: string) => Promise<void>;
+  rejectPairRequest: (requestId: string) => Promise<void>;
+  updateSyncOptions: (patch: Partial<SyncOptions> & { removeDeviceId?: string }) => Promise<void>;
+  /** 工作区同步开关（仅对已建映射的本端工作区有效） */
+  setWorkspaceSync: (peerId: string, localWsid: string, enabled: boolean) => Promise<boolean>;
+  /** 建立映射（new=本端新建工作区条目 / existing=映射到已有）；成功后自动触发一次仅拉取 */
+  mapWorkspace: (peerId: string, input: { remoteWsid: string; mode: 'new' | 'existing'; localWsid?: string; localPath?: string; localName?: string }) => Promise<boolean>;
+  unmapWorkspace: (peerId: string, localWsid: string) => Promise<boolean>;
+  ignoreRemoteWorkspace: (peerId: string, remoteWsid: string) => Promise<boolean>;
+  unignoreRemoteWorkspace: (peerId: string, remoteWsid: string) => Promise<boolean>;
+  requestSyncPanelFocus: () => void;
+  consumeSyncPanelFocus: () => void;
+}
+
+export const useSyncStore = create<SyncStoreState>((set, get) => ({
+  status: null,
+  peers: [],
+  scanning: false,
+  syncOptions: null,
+  syncState: null,
+  runningSync: null,
+  lastReport: null,
+  pendingPairRequests: [],
+  outgoingPairing: null,
+  syncPanelFocusAt: 0,
+
+  subscribe: () => {
+    void get().refresh();
+    return rendererEvents.syncEvent.listen((payload) => {
+      switch (payload.kind) {
+        case 'status':
+          set({ status: payload.status });
+          break;
+        case 'peers':
+          set({ peers: payload.peers });
+          break;
+        case 'sync':
+          if (payload.event.kind === 'started') {
+            set({ runningSync: { peerId: payload.event.peerId, startedAt: payload.event.startedAt } });
+          } else {
+            set({ runningSync: null, lastReport: payload.event.report });
+            void get().refresh();
+          }
+          break;
+        case 'pair-request':
+          set((s) => ({
+            pendingPairRequests: [
+              ...s.pendingPairRequests.filter((r) => r.requestId !== payload.request.requestId),
+              payload.request,
+            ],
+          }));
+          break;
+        case 'pairing-completed': {
+          const outcome = payload.outcome;
+          set((s) => ({
+            outgoingPairing: outcome.direction === 'outgoing' ? null : s.outgoingPairing,
+            pendingPairRequests:
+              outcome.direction === 'incoming'
+                ? s.pendingPairRequests.filter((r) => r.peer.deviceId !== outcome.deviceId)
+                : s.pendingPairRequests,
+          }));
+          if (outcome.ok) {
+            toast.success(`已与 ${outcome.deviceName ?? '对端设备'} 完成配对`);
+            void get().refresh();
+          } else if (outcome.error) {
+            toast.error('配对未完成', { description: outcome.error });
+          }
+          break;
+        }
+      }
+    });
+  },
+
+  refresh: async () => {
+    try {
+      const [status, snapshot, syncState, running, requests, settingsResult] = await Promise.all([
+        client.getSyncStatus({}),
+        client.getPeersSnapshot({}),
+        client.getSyncState({}),
+        client.getRunningSync({}),
+        client.getPendingPairRequests({}),
+        client.getSettings(),
+      ]);
+      set({
+        status,
+        peers: snapshot?.peers ?? [],
+        syncState,
+        runningSync: running ?? null,
+        pendingPairRequests: requests ?? [],
+        syncOptions: settingsResult.settings?.syncOptions ?? null,
+      });
+    } catch (error) {
+      console.error('[sync] 状态拉取失败:', error);
+    }
+  },
+
+  runSync: async (peerId, opts) => {
+    try {
+      let report = await client.runSync({
+        peerId,
+        confirmVersionMismatch: opts?.confirmVersionMismatch,
+        direction: opts?.direction,
+        conflictResolutions: opts?.conflictResolutions,
+      });
+      if (report.status === 'blocked' && report.confirmRequired === 'protocol-version-mismatch') {
+        const ok = await showConfirm(
+          '协议版本不一致',
+          `${report.warnings[0] ?? '对端协议版本与本端不同'}，同步可能损坏数据。仍要继续吗？`,
+        );
+        if (!ok) return;
+        report = await client.runSync({
+          peerId,
+          confirmVersionMismatch: true,
+          direction: opts?.direction,
+          conflictResolutions: opts?.conflictResolutions,
+        });
+      }
+      set({ lastReport: report, runningSync: null });
+      if (report.status === 'completed') {
+        const extra = [
+          report.conflicts.length > 0 ? `待处理冲突 ${report.conflicts.length}` : null,
+          (report.deleteConflicts?.length ?? 0) > 0 ? `删改冲突 ${report.deleteConflicts!.length}` : null,
+          report.skipped.length > 0 ? `跳过 ${report.skipped.length}` : null,
+        ].filter(Boolean);
+        const directionLabel = report.direction === 'push' ? '仅推送' : report.direction === 'both' ? '双向' : '仅拉取';
+        const counts = report.deleted ? `拉取 ${report.pulled} · 推送 ${report.pushed} · 删除 ${report.deleted}` : `拉取 ${report.pulled} · 推送 ${report.pushed}`;
+        toast.success(`同步完成（${directionLabel}）：${counts}`, {
+          description: extra.length > 0 ? extra.join(' · ') : undefined,
+        });
+      } else if (report.status === 'failed') {
+        toast.error('同步失败', { description: report.error });
+      } else if (report.status === 'in-progress') {
+        toast.info('已有同步正在进行，请稍后再试');
+      }
+    } catch (error) {
+      toast.error('同步失败', { description: String(error) });
+    }
+  },
+
+  scan: async () => {
+    if (get().scanning) return;
+    set({ scanning: true });
+    try {
+      const snapshot = await client.scanPeers({});
+      set({ peers: snapshot?.peers ?? [] });
+    } catch (error) {
+      toast.error('寻找设备失败', { description: String(error) });
+    } finally {
+      set({ scanning: false });
+    }
+  },
+
+  unpair: async (deviceId) => {
+    try {
+      await client.unpair({ deviceId });
+      toast.success('已解除配对', { description: '同步基线与工作区映射已保留，重新配对后接着同步' });
+      await get().refresh();
+    } catch (error) {
+      toast.error('解除配对失败', { description: String(error) });
+    }
+  },
+
+  requestPair: async (peer) => {
+    try {
+      const { code } = await client.requestPair({
+        deviceId: peer.deviceId,
+        host: peer.host,
+        port: peer.port,
+        deviceName: peer.name,
+      });
+      set({ outgoingPairing: { deviceId: peer.deviceId, code } });
+    } catch (error) {
+      toast.error('发起配对失败', { description: String(error) });
+    }
+  },
+
+  confirmPairRequest: async (requestId) => {
+    set((s) => ({ pendingPairRequests: s.pendingPairRequests.filter((r) => r.requestId !== requestId) }));
+    try {
+      const r = await client.confirmPairRequest({ requestId });
+      if (!r.ok) {
+        toast.warning('配对请求已失效', { description: '对端可能已取消或超时' });
+        return;
+      }
+      void get().refresh();
+    } catch (error) {
+      toast.error('确认配对失败', { description: String(error) });
+    }
+  },
+
+  rejectPairRequest: async (requestId) => {
+    set((s) => ({ pendingPairRequests: s.pendingPairRequests.filter((r) => r.requestId !== requestId) }));
+    try {
+      await client.rejectPairRequest({ requestId });
+    } catch (error) {
+      console.error('[sync] 拒绝配对失败:', error);
+    }
+  },
+
+  updateSyncOptions: async (patch) => {
+    try {
+      const sync = await client.setSyncOptions(patch);
+      set({ syncOptions: sync });
+    } catch (error) {
+      toast.error('保存同步设置失败', { description: String(error) });
+    }
+  },
+
+  setWorkspaceSync: async (peerId, localWsid, enabled) => {
+    try {
+      const r = await client.setWorkspaceSync({ peerId, localWsid, enabled });
+      if (!r.success) {
+        toast.error('更新工作区同步开关失败', { description: r.error });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      toast.error('更新工作区同步开关失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  mapWorkspace: async (peerId, input) => {
+    try {
+      const r = await client.mapWorkspace({ peerId, ...input });
+      if (!r.success) {
+        toast.error('建立映射失败', { description: r.error });
+        return false;
+      }
+      // 建映射后自动仅拉取一次：交接体验顺，无需用户再手点（拉取档对端永不被修改）
+      void get().runSync(peerId, { direction: 'pull' });
+      return true;
+    } catch (error) {
+      toast.error('建立映射失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  unmapWorkspace: async (peerId, localWsid) => {
+    try {
+      const r = await client.unmapWorkspace({ peerId, localWsid });
+      if (!r.success) {
+        toast.error('断开映射失败', { description: r.error });
+        return false;
+      }
+      toast.success('已断开映射', { description: '两侧已有数据不动，重新建映射后靠同步自然收敛' });
+      return true;
+    } catch (error) {
+      toast.error('断开映射失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  ignoreRemoteWorkspace: async (peerId, remoteWsid) => {
+    try {
+      await client.ignoreRemoteWorkspace({ peerId, remoteWsid });
+      return true;
+    } catch (error) {
+      toast.error('操作失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  unignoreRemoteWorkspace: async (peerId, remoteWsid) => {
+    try {
+      const r = await client.unignoreRemoteWorkspace({ peerId, remoteWsid });
+      if (!r.success) {
+        toast.error('操作失败', { description: r.error });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      toast.error('操作失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  requestSyncPanelFocus: () => set({ syncPanelFocusAt: Date.now() }),
+
+  consumeSyncPanelFocus: () => set({ syncPanelFocusAt: 0 }),
+}));

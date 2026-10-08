@@ -1,0 +1,67 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# vite
+/out/
+node_modules/.vite
+
+# production
+/dist
+/release
+/release2
+
+# build 目录：保留配置文件，忽略离线安装包
+build/installers/
+build/nm-host-dev/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# typescript
+*.tsbuildinfo
+nul
+/.claude-history
+/claude_code_doc_md
+
+# 应用配置目录（含 API Key 等敏感信息）
+.dogear/
+/claude_code_doc_md
+skills-lock.json
+
+# 热更新发布产物
+update-server/
+.release-state.json
+
+# git worktrees
+.worktrees/
+/python/article_parser
+
+# Python
+__pycache__/
+*.pyc
+/reports
+
+# 临时调研文件
+/tmp/

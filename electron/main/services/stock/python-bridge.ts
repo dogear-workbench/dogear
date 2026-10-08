@@ -1,0 +1,687 @@
+/**
+ * Python Bridge — Electron ↔ Python 进程通信桥
+ *
+ * 通过 child_process.spawn 启动持久化的 Python 守护进程，
+ * 使用 NDJSON (Newline-Delimited JSON) 通过 stdin/stdout 通信。
+ *
+ * 特性：
+ *   - 懒启动（首次调用时 spawn）
+ *   - 自动环境检测（python → python3 → py）
+ *   - 健康检查（ping/pong）
+ *   - 请求超时管理
+ *   - 崩溃自动恢复
+ *   - 断路器保护（连续 3 次崩溃触发冷却）
+ *   - 优雅关闭
+ */
+
+import { spawn, execSync, type ChildProcess } from 'child_process';
+import { v4 as uuidv4 } from 'uuid';
+import path from 'path';
+import fs from 'fs';
+import electron from 'electron';
+import { ensureVenv, shellQuotePath } from './python-venv.js';
+
+const { app } = electron;
+
+// ============================================================
+// 类型定义
+// ============================================================
+
+/** JSON-RPC 请求 */
+interface PythonRequest {
+  id: string;
+  method: string;
+  params: Record<string, unknown>;
+}
+
+/** JSON-RPC 响应 */
+interface PythonResponse {
+  id: string;
+  result?: unknown;
+  error?: { code: number | string; message: string; data?: { attempts?: [string, string][] } };
+  progress?: { current: number; total: number; message: string };
+}
+
+/** 双源数据源全部失败（一级候选池根基场景），携带各源失败详情 */
+export class DataSourceExhaustedError extends Error {
+  attempts: [string, string][];
+
+  constructor(message: string, attempts: [string, string][]) {
+    super(message);
+    this.name = 'DataSourceExhaustedError';
+    this.attempts = attempts;
+  }
+}
+
+/** 挂起的请求 */
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (reason: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+  onProgress?: (progress: { current: number; total: number; message: string }) => void;
+}
+
+/** Bridge 状态 */
+export interface PythonBridgeStatus {
+  available: boolean;
+  pythonPath: string | null;
+  processRunning: boolean;
+  consecutiveCrashes: number;
+  pendingRequests: number;
+}
+
+// ============================================================
+// 常量
+// ============================================================
+
+/** 默认请求超时 */
+const DEFAULT_TIMEOUT_MS = 30_000;
+/** 健康检查超时 */
+const HEALTH_CHECK_TIMEOUT_MS = 10_000;
+/** 崩溃冷却时间 */
+const CRASH_COOLDOWN_MS = 30_000;
+/** 崩溃阈值 */
+const CRASH_THRESHOLD = 3;
+/** 关闭等待时间 */
+const SHUTDOWN_WAIT_MS = 2_000;
+/** 空闲超时自动关闭 Python 进程（5 分钟无调用） */
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+/** 开发模式 .py 变更防抖，覆盖编辑器保存时的多次触发 */
+const WATCH_DEBOUNCE_MS = 300;
+
+// ============================================================
+// PythonBridge 类
+// ============================================================
+
+class PythonBridge {
+  private process: ChildProcess | null = null;
+  private pythonPath: string | null = null;
+  private pendingRequests: Map<string, PendingRequest> = new Map();
+  private requestMeta: Map<string, { method: string; startedAt: number }> = new Map();
+  private buffer = '';
+  private consecutiveCrashes = 0;
+  private cooldownUntil: number | null = null;
+  private initializing = false;
+  private initPromise: Promise<void> | null = null;
+  private logPath: string | null = null;
+  private watcher: fs.FSWatcher | null = null;
+  private watchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** .py 已变更、等待重启（可能被在跑的请求推迟） */
+  private restartPending = false;
+  /** 本次退出是热重启主动杀的，exit 处理里不能计入崩溃 */
+  private intentionalRestart = false;
+  /** 空闲超时计时器，触发后自动关闭 Python 进程释放内存 */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    // 注册应用退出时的清理（Worker 线程无 electron app，跳过）
+    app?.on('will-quit', () => {
+      this.log('▲ APP_QUIT');
+      this.stopWatching();
+      this.shutdown();
+    });
+  }
+
+  /** 落盘日志：`.dogear/logs/python-bridge.log`，同步 append 避免崩溃丢关键行 */
+  private log(msg: string): void {
+    try {
+      if (!this.logPath) {
+        const dogearConfigDir = process.env.DOGEAR_CONFIG_DIR
+          ?? (app?.isPackaged
+            ? path.join(app.getPath('userData'), '.dogear')
+            : path.join(process.cwd(), '.dogear'));
+        const logDir = path.join(dogearConfigDir, 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        this.logPath = path.join(logDir, 'python-bridge.log');
+      }
+      const ts = new Date().toISOString().slice(11, 23);
+      fs.appendFileSync(this.logPath, `[${ts}] ${msg}\n`);
+    } catch {
+      // 日志失败不能影响业务
+    }
+  }
+
+  private shortId(id: string): string {
+    return id.slice(0, 8);
+  }
+
+  private truncate(s: string, max = 500): string {
+    return s.length > max ? `${s.slice(0, max)}…(+${s.length - max})` : s;
+  }
+
+  // ----------------------------------------------------------
+  // 公开 API
+  // ----------------------------------------------------------
+
+  /**
+   * 调用 Python 方法
+   *
+   * @param method 方法名
+   * @param params 参数对象
+   * @param timeoutMs 超时毫秒数（默认 30s）
+   * @param onProgress 进度回调（可选）
+   */
+  async call<T = unknown>(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs: number = DEFAULT_TIMEOUT_MS,
+    onProgress?: (progress: { current: number; total: number; message: string }) => void,
+  ): Promise<T> {
+    await this.ensureRunning();
+    this.resetIdleTimer();
+
+    const id = uuidv4();
+    const request: PythonRequest = { id, method, params };
+    const startedAt = Date.now();
+
+    const paramsPreview = this.truncate(JSON.stringify(params), 300);
+    this.log(`→ REQ id=${this.shortId(id)} method=${method} timeout=${timeoutMs}ms params=${paramsPreview}`);
+
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        this.requestMeta.delete(id);
+        const elapsed = Date.now() - startedAt;
+        this.log(`⏰ TIMEOUT id=${this.shortId(id)} method=${method} elapsed=${elapsed}ms pending=${this.pendingRequests.size}`);
+        reject(new Error(`Python 请求超时（${timeoutMs}ms）: method=${method}`));
+        this.maybeRestart();
+      }, timeoutMs);
+
+      this.pendingRequests.set(id, {
+        resolve: resolve as (value: unknown) => void,
+        reject,
+        timer,
+        onProgress,
+      });
+      this.requestMeta.set(id, { method, startedAt });
+
+      const line = JSON.stringify(request) + '\n';
+      this.process!.stdin!.write(line);
+    });
+  }
+
+  /** 获取 Bridge 状态 */
+  getStatus(): PythonBridgeStatus {
+    return {
+      available: this.pythonPath !== null,
+      pythonPath: this.pythonPath,
+      processRunning: this.process !== null && this.process.exitCode === null,
+      consecutiveCrashes: this.consecutiveCrashes,
+      pendingRequests: this.pendingRequests.size,
+    };
+  }
+
+  /** 优雅关闭 */
+  shutdown(): void {
+    if (!this.process) return;
+
+    this.log(`← SHUTDOWN pid=${this.process.pid} pending=${this.pendingRequests.size}`);
+
+    try {
+      const shutdownReq = JSON.stringify({ id: 'shutdown', method: 'shutdown', params: {} }) + '\n';
+      this.process.stdin!.write(shutdownReq);
+    } catch {
+      // stdin 可能已关闭
+    }
+
+    const proc = this.process;
+    setTimeout(() => {
+      if (proc && proc.exitCode === null) {
+        this.log(`✂ SIGTERM pid=${proc.pid}（shutdown 超时未退出）`);
+        proc.kill('SIGTERM');
+      }
+    }, SHUTDOWN_WAIT_MS);
+
+    this.process = null;
+    this.rejectAllPending(new Error('Python Bridge 正在关闭'));
+    this.clearIdleTimer();
+  }
+
+  /**
+   * 重置空闲计时器：每次调用 Python 时调用，超时后自动关闭进程释放内存
+   */
+  private resetIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.pendingRequests.size > 0) return;
+      this.log('⏸ IDLE_TIMEOUT — 自动关闭 Python 进程');
+      this.shutdown();
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  /** 清除空闲计时器 */
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 开发模式热重启
+  // ----------------------------------------------------------
+
+  /**
+   * 监听 python/ 下的 .py 变更，改完自动重启守护进程。
+   * 打包后不生效；进程是懒启动的，这里只负责杀，下次 call 时自然重新 spawn。
+   */
+  private startWatching(): void {
+    if (!app || app.isPackaged || this.watcher) return;
+
+    const dir = this.getPythonDir();
+    try {
+      this.watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
+        if (!filename || !filename.toString().endsWith('.py')) return;
+        if (this.watchTimer) clearTimeout(this.watchTimer);
+        this.watchTimer = setTimeout(() => {
+          this.watchTimer = null;
+          this.requestRestart(filename.toString());
+        }, WATCH_DEBOUNCE_MS);
+      });
+      console.log(`[PythonBridge] 已监听 Python 代码变更: ${dir}`);
+    } catch (err) {
+      console.warn('[PythonBridge] 监听 Python 目录失败，热重启不可用:', err);
+    }
+  }
+
+  private stopWatching(): void {
+    if (this.watchTimer) {
+      clearTimeout(this.watchTimer);
+      this.watchTimer = null;
+    }
+    this.watcher?.close();
+    this.watcher = null;
+  }
+
+  /** 挂起重启请求：有请求在跑就等它跑完，避免斩断几分钟的预热任务 */
+  private requestRestart(filename: string): void {
+    this.restartPending = true;
+    const pending = this.pendingRequests.size;
+    console.log(
+      `[PythonBridge] 检测到 ${filename} 变更，${pending > 0 ? `等待 ${pending} 个在跑请求完成后重启` : '重启守护进程'}`,
+    );
+    this.log(`⟳ RESTART_REQ file=${filename} pending=${pending}`);
+    this.maybeRestart();
+  }
+
+  /** 请求排空后真正执行重启，在每次请求收尾时调用 */
+  private maybeRestart(): void {
+    if (!this.restartPending || this.pendingRequests.size > 0) return;
+    this.restartPending = false;
+
+    const proc = this.process;
+    if (!proc || proc.exitCode !== null) return;
+
+    this.intentionalRestart = true;
+    this.log(`⟳ RESTART_KILL pid=${proc.pid}`);
+    console.log('[PythonBridge] 重启 Python 守护进程（下次调用时自动拉起）');
+    proc.kill();
+  }
+
+  // ----------------------------------------------------------
+  // 内部方法
+  // ----------------------------------------------------------
+
+  /** 确保 Python 进程在运行 */
+  private async ensureRunning(): Promise<void> {
+    if (this.process && this.process.exitCode === null) {
+      return; // 进程正在运行
+    }
+
+    // 断路器检查
+    if (this.cooldownUntil && Date.now() < this.cooldownUntil) {
+      throw new Error(
+        `Python Bridge 断路器已打开（连续崩溃 ${this.consecutiveCrashes} 次），` +
+        `冷却至 ${new Date(this.cooldownUntil).toLocaleTimeString()}`
+      );
+    }
+
+    // 防止并发初始化
+    if (this.initializing && this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initializing = true;
+    this.initPromise = this.startProcess();
+
+    try {
+      await this.initPromise;
+    } finally {
+      this.initializing = false;
+      this.initPromise = null;
+    }
+  }
+
+  /** 检测 Python 解释器路径 */
+  private detectPython(): string {
+    // 如果已缓存，直接返回
+    if (this.pythonPath) return this.pythonPath;
+
+    // darwin 必须走 venv：Homebrew Python 的 PEP 668 拒绝 pip 直装系统解释器
+    if (process.platform === 'darwin') {
+      const { pythonPath: venvPython, recreated } = ensureVenv();
+      // venv 重建后第三方依赖已丢失，需重新走安装检测
+      if (recreated) this.depsVerified = false;
+      this.pythonPath = venvPython;
+      console.log(`[PythonBridge] 使用 venv Python: ${venvPython}`);
+      return venvPython;
+    }
+
+    const candidates = process.platform === 'win32'
+      ? ['python', 'python3', 'py']
+      : ['python3', 'python'];
+
+    for (const cmd of candidates) {
+      try {
+        const version = execSync(`${cmd} --version`, {
+          timeout: 5000,
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+
+        // 确保是 Python 3
+        if (version.startsWith('Python 3')) {
+          this.pythonPath = cmd;
+          console.log(`[PythonBridge] 检测到 Python: ${cmd} (${version})`);
+          return cmd;
+        }
+      } catch {
+        // 该命令不可用，继续尝试
+      }
+    }
+
+    throw new Error(
+      'Python 3 未找到。请安装 Python 3.10+ 并确保在 PATH 中。\n' +
+      '下载地址: https://www.python.org/downloads/'
+    );
+  }
+
+  /** 获取 Python 脚本目录 */
+  private getPythonDir(): string {
+    if (process.env.DOGEAR_PYTHON_DIR) return process.env.DOGEAR_PYTHON_DIR;
+    if (!app?.isPackaged) {
+      // 开发模式：项目根目录/python/
+      return path.join(process.cwd(), 'python');
+    }
+    // 打包模式：extraResources 解压到 resources/python/
+    return path.join(process.resourcesPath, 'python');
+  }
+
+  /** 获取 Python 脚本路径 */
+  private getScriptPath(): string {
+    return path.join(this.getPythonDir(), 'main.py');
+  }
+
+  /** 依赖已验证标记，避免每次启动都检测 */
+  private depsVerified = false;
+
+  /**
+   * 检测并安装 Python 依赖
+   * 首次运行时自动 pip install requirements.txt 中的依赖
+   */
+  private async ensureDependencies(pythonCmd: string): Promise<void> {
+    if (this.depsVerified) return;
+
+    const pythonDir = this.getPythonDir();
+    const reqFile = path.join(pythonDir, 'requirements.txt');
+
+    if (!fs.existsSync(reqFile)) {
+      console.log('[PythonBridge] requirements.txt 不存在，跳过依赖检测');
+      this.depsVerified = true;
+      return;
+    }
+
+    // 用 Python 检测核心依赖是否可导入
+    const checkScript = 'import pandas,numpy,akshare,lark,bs4,lxml,markdownify';
+
+    // darwin 传入的是含空格的 venv 绝对路径，shell 字符串命令需引号；win 命令名原样
+    const py = process.platform === 'darwin' ? shellQuotePath(pythonCmd) : pythonCmd;
+
+    try {
+      execSync(`${py} -c "${checkScript}"`, {
+        timeout: 15_000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      console.log('[PythonBridge] Python 依赖检测通过');
+      this.depsVerified = true;
+      return;
+    } catch {
+      console.log('[PythonBridge] 检测到缺失依赖，开始自动安装...');
+    }
+
+    // 执行 pip install
+    try {
+      execSync(
+        `${py} -m pip install -r "${reqFile}" --quiet`,
+        {
+          timeout: 300_000, // 5分钟超时（大包如 numpy 可能较慢）
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+      console.log('[PythonBridge] 依赖安装完成');
+      this.depsVerified = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Python 依赖安装失败。请手动执行:\n  ${pythonCmd} -m pip install -r "${reqFile}"\n${msg}`
+      );
+    }
+  }
+
+  /** 启动 Python 进程 */
+  private async startProcess(): Promise<void> {
+    const pythonCmd = this.detectPython();
+    const scriptPath = this.getScriptPath();
+
+    // 首次启动前确保依赖已安装
+    await this.ensureDependencies(pythonCmd);
+
+    console.log(`[PythonBridge] 启动 Python 进程: ${pythonCmd} ${scriptPath}`);
+    this.log(`▶ SPAWN cmd=${pythonCmd} script=${scriptPath}`);
+
+    // 剥离代理环境变量：akshare 内部走 requests，会自动读 HTTP_PROXY/HTTPS_PROXY，
+    // Electron 启动时继承的代理端口若已失效（例如用户切到 TUN 模式关掉了 HTTP 代理），
+    // 会导致所有东财请求报 "Unable to connect to proxy"。让 Python 走直连，交给 TUN 接管。
+    const cleanEnv: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(cleanEnv)) {
+      if (/^(https?|all)_proxy$/i.test(key)) delete cleanEnv[key];
+    }
+
+    // Python 侧 get_dogear_root() 优先读 DOGEAR_CONFIG_DIR，不注入则回退到 ~/.dogear，
+    // 导致 snapshot 落在用户目录、与 TS 侧项目目录 .dogear/stocks/ 分裂——每次都重新拉全 A（7 分钟），缓存失效
+    const dogearConfigDir = process.env.DOGEAR_CONFIG_DIR
+      ?? (app?.isPackaged
+        ? path.join(app.getPath('userData'), '.dogear')
+        : path.join(process.cwd(), '.dogear'));
+
+    this.process = spawn(pythonCmd, [scriptPath], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...cleanEnv,
+        PYTHONUNBUFFERED: '1',       // 禁用 Python 输出缓冲
+        PYTHONIOENCODING: 'utf-8',   // 确保 UTF-8 编码
+        NO_PROXY: '*',               // 兜底：即使某些库自动探测系统代理也强制直连
+        DOGEAR_CONFIG_DIR: dogearConfigDir,
+      },
+    });
+
+    // 监听 stdout（JSON 响应）
+    this.process.stdout!.on('data', (chunk: Buffer) => {
+      this.buffer += chunk.toString('utf-8');
+      this.processBuffer();
+    });
+
+    this.log(`▶ SPAWNED pid=${this.process.pid}`);
+
+    // 监听 stderr（日志）
+    this.process.stderr!.on('data', (chunk: Buffer) => {
+      const msg = chunk.toString('utf-8').trim();
+      if (msg) {
+        console.log(`[PythonBridge:stderr] ${msg}`);
+        // stderr 可能一次到多行，逐行落盘保留 Python 端进度
+        for (const line of msg.split(/\r?\n/)) {
+          if (line) this.log(`[stderr] ${line}`);
+        }
+      }
+    });
+
+    // 监听进程退出
+    this.process.on('exit', (code, signal) => {
+      this.log(`■ EXIT code=${code} signal=${signal} pending=${this.pendingRequests.size}`);
+      this.process = null;
+      this.clearIdleTimer();
+
+      // 热重启是主动杀的，计入崩溃会让连改三次文件直接触发断路器
+      if (this.intentionalRestart) {
+        this.intentionalRestart = false;
+        this.log('⟳ RESTART_DONE（等待下次调用懒启动）');
+        return;
+      }
+
+      console.warn(`[PythonBridge] Python 进程退出: code=${code}, signal=${signal}`);
+      this.consecutiveCrashes++;
+
+      if (this.consecutiveCrashes >= CRASH_THRESHOLD) {
+        this.cooldownUntil = Date.now() + CRASH_COOLDOWN_MS;
+        console.error(
+          `[PythonBridge] 连续崩溃 ${this.consecutiveCrashes} 次，` +
+          `断路器开启，冷却 ${CRASH_COOLDOWN_MS / 1000}s`
+        );
+        this.log(`✖ BREAKER_OPEN crashes=${this.consecutiveCrashes} cooldown_until=${new Date(this.cooldownUntil).toISOString()}`);
+      }
+
+      this.rejectAllPending(new Error(`Python 进程异常退出 (code=${code})`));
+    });
+
+    this.process.on('error', (err) => {
+      console.error(`[PythonBridge] 进程启动失败:`, err);
+      this.log(`✖ PROC_ERROR ${err.message}`);
+      this.process = null;
+      this.rejectAllPending(new Error(`Python 进程启动失败: ${err.message}`));
+    });
+
+    // 健康检查
+    try {
+      const pong = await this.call<string>('ping', {}, HEALTH_CHECK_TIMEOUT_MS);
+      if (pong !== 'pong') {
+        throw new Error(`健康检查失败: 期望 "pong"，收到 "${pong}"`);
+      }
+      // 健康检查成功，重置崩溃计数
+      this.consecutiveCrashes = 0;
+      this.cooldownUntil = null;
+      console.log('[PythonBridge] 健康检查通过');
+      this.startWatching();
+    } catch (err) {
+      // 健康检查失败，杀掉进程
+      this.process?.kill();
+      this.process = null;
+      throw new Error(`Python Bridge 健康检查失败: ${err}`);
+    }
+  }
+
+  /** 处理 stdout 缓冲区中的完整 JSON 行 */
+  private processBuffer(): void {
+    const lines = this.buffer.split('\n');
+    // 最后一个元素可能是不完整的行，保留在 buffer 中
+    this.buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // 关键：把每行 raw stdout 都记下来，用于验证/证伪 stdout 污染假设
+      this.log(`← RAW ${this.truncate(trimmed)}`);
+
+      try {
+        const response: PythonResponse = JSON.parse(trimmed);
+        this.handleResponse(response);
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[PythonBridge] 无法解析响应: ${trimmed}`);
+        this.log(`⚠ PARSE_FAIL err=${errMsg} raw=${this.truncate(trimmed)}`);
+      }
+    }
+  }
+
+  /** 处理单条响应 */
+  private handleResponse(response: PythonResponse): void {
+    const pending = this.pendingRequests.get(response.id);
+    if (!pending) {
+      // 可能是超时后收到的响应
+      this.log(`⚠ ORPHAN id=${this.shortId(response.id)}（pending map 无此 id，可能已超时）`);
+      return;
+    }
+
+    const meta = this.requestMeta.get(response.id);
+    const method = meta?.method ?? '?';
+    const elapsed = meta ? Date.now() - meta.startedAt : -1;
+
+    // 进度更新（不完成请求）
+    if (response.progress) {
+      const { current, total, message } = response.progress;
+      this.log(`← RESP id=${this.shortId(response.id)} type=progress ${current}/${total} ${message}`);
+      pending.onProgress?.(response.progress);
+      return;
+    }
+
+    // 完成请求
+    this.pendingRequests.delete(response.id);
+    this.requestMeta.delete(response.id);
+    clearTimeout(pending.timer);
+
+    if (response.error) {
+      this.log(`← RESP id=${this.shortId(response.id)} method=${method} elapsed=${elapsed}ms type=error code=${response.error.code} msg=${this.truncate(response.error.message, 200)}`);
+      if (response.error.code === 'DATA_SOURCE_EXHAUSTED') {
+        pending.reject(new DataSourceExhaustedError(response.error.message, response.error.data?.attempts ?? []));
+      } else {
+        pending.reject(new Error(response.error.message));
+      }
+    } else {
+      this.log(`← RESP id=${this.shortId(response.id)} method=${method} elapsed=${elapsed}ms type=result`);
+      pending.resolve(response.result);
+    }
+
+    this.maybeRestart();
+  }
+
+  /** 拒绝所有挂起的请求 */
+  private rejectAllPending(error: Error): void {
+    if (this.pendingRequests.size > 0) {
+      this.log(`✖ REJECT_ALL pending=${this.pendingRequests.size} reason=${error.message}`);
+    }
+    for (const [, pending] of this.pendingRequests) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
+    this.pendingRequests.clear();
+    this.requestMeta.clear();
+  }
+}
+
+// ============================================================
+// 导出单例
+// ============================================================
+
+/** 全局 PythonBridge 单例 */
+export const pythonBridge = new PythonBridge();
+
+// ============================================================
+// 公告 PDF 解析
+// ============================================================
+
+/**
+ * 解析公告 PDF 为 markdown。
+ * Python bridge 调用异常视为解析失败，不做兜底。
+ */
+export async function parseAnnouncementPdf(
+  pdfPath: string,
+): Promise<{ ok: true; data: { markdown: string } } | { ok: false; error: string }> {
+  try {
+    const result = await pythonBridge.call<{ markdown: string }>('parse_announcement_pdf', { path: pdfPath });
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

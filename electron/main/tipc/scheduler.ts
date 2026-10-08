@@ -1,0 +1,142 @@
+import { tipc } from '@egoist/tipc/main';
+import { loadTasks, saveTasks } from '../services/scheduler/plan-store.js';
+import { queryHistory } from '../services/scheduler/run-history-store.js';
+import { minNextDueAt } from '../services/scheduler/time-rule-engine.js';
+import { getSchedulerService } from '../services/scheduler/scheduler-service.js';
+import {
+  assignTaskIds,
+  mergeFiredState,
+  sanitizeSkillsOverride,
+  sanitizeToolPacksOverride,
+  validateTaskForSave,
+} from '../services/scheduler/plan-validate.js';
+import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
+import type { RunHistorySource, ScheduledTask } from '../services/scheduler/types.js';
+
+const t = tipc.create();
+
+export const schedulerRouter = {
+  listTasks: t.procedure
+    .action(async () => {
+      try {
+        const tasks = await loadTasks();
+        const now = Date.now();
+        return { tasks: tasks.map((task) => ({ ...task, nextRunAt: minNextDueAt(task, now) ?? undefined })) };
+      } catch (error) {
+        console.error('[scheduler] listTasks 失败:', error);
+        return { tasks: [], error: String(error) };
+      }
+    }),
+
+  saveTask: t.procedure
+    .input<{ task: ScheduledTask }>()
+    .action(async ({ input }) => {
+      try {
+        const existing = await loadTasks();
+        let prepared = assignTaskIds(input.task);
+        prepared = {
+          ...prepared,
+          toolPacksOverride: sanitizeToolPacksOverride(prepared),
+          skillsOverride: await sanitizeSkillsOverride(prepared),
+        };
+        const isNew = !existing.some((t) => t.id === prepared.id);
+        const allTasks = isNew
+          ? [...existing, prepared]
+          : existing.map((t) => (t.id === prepared.id ? prepared : t));
+        const workspaces = await getAllWorkspaces().catch(() => []);
+        const error = validateTaskForSave(prepared, {
+          workspaceIds: new Set(workspaces.map((w) => w.id)),
+          allTasks,
+        });
+        if (error) return { ok: false, error };
+        if (!isNew) mergeFiredState(prepared, existing.find((t) => t.id === prepared.id));
+        await saveTasks(allTasks);
+        return { ok: true };
+      } catch (error) {
+        console.error('[scheduler] saveTask 失败:', error);
+        return { ok: false, error: String(error) };
+      }
+    }),
+
+  deleteTask: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const tasks = await loadTasks();
+        const target = tasks.find((t) => t.id === input.taskId);
+        if (!target) return { ok: false, error: '任务不存在' };
+        await saveTasks(tasks.filter((t) => t.id !== input.taskId));
+        return { ok: true };
+      } catch (error) {
+        console.error('[scheduler] deleteTask 失败:', error);
+        return { ok: false, error: String(error) };
+      }
+    }),
+
+  setTaskEnabled: t.procedure
+    .input<{ taskId: string; enabled: boolean }>()
+    .action(async ({ input }) => {
+      try {
+        const tasks = await loadTasks();
+        const task = tasks.find((t) => t.id === input.taskId);
+        if (!task) return { ok: false, error: '任务不存在' };
+        if (task.enabled !== input.enabled) {
+          task.enabled = input.enabled;
+          task.updatedAt = Date.now();
+          await saveTasks(tasks);
+        }
+        return { ok: true };
+      } catch (error) {
+        console.error('[scheduler] setTaskEnabled 失败:', error);
+        return { ok: false, error: String(error) };
+      }
+    }),
+
+  runTaskNow: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        return await getSchedulerService().runTaskManual(input.taskId);
+      } catch (error) {
+        console.error('[scheduler] runTaskNow 失败:', error);
+        return { started: false, error: String(error) };
+      }
+    }),
+
+  stopTask: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        return getSchedulerService().stopTask(input.taskId);
+      } catch (error) {
+        console.error('[scheduler] stopTask 失败:', error);
+        return { ok: false, error: String(error) };
+      }
+    }),
+
+  listRunHistory: t.procedure
+    .input<{ planId?: string; cursor?: number; limit?: number; source?: RunHistorySource }>()
+    .action(async ({ input }) => {
+      try {
+        return await queryHistory({
+          planId: input.planId,
+          before: input.cursor,
+          limit: input.limit,
+          source: input.source,
+        });
+      } catch (error) {
+        console.error('[scheduler] listRunHistory 失败:', error);
+        return { entries: [], error: String(error) };
+      }
+    }),
+
+  getSchedulerActivity: t.procedure
+    .action(async () => {
+      try {
+        return { activity: getSchedulerService().getActivity() };
+      } catch (error) {
+        console.error('[scheduler] getSchedulerActivity 失败:', error);
+        return { activity: { running: [], lastTickAt: 0 }, error: String(error) };
+      }
+    }),
+};

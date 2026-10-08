@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Dogear 连接器",
+  "version": "0.5.1",
+  "description": "将当前标签页快照发送给 Dogear 桌面应用",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjnaUysq1uAFFuhFcUJSQAJlD8bZNU0TdFKfJdze9sdY+d6L4z5sJfmV6VMChFSAkplTOkxzxh6OV/GRUK3uxlyIPhRz5WW4ix3Z03mK4MXIgIQS2tdcHhMVukFH8x7vE/GqD8YdzvXz36GHqU1lUY70XZ8NcAk3OTP0ozkGq5D0onsGklfgBxIGZsk4zvLsnvM/KlxWN8Jtc8hg1HeX546YvsOEYwy/xFlBKRonFowNsBC3G9WD0tFnx5F98b7ytM+fxA7kaYC3UdZ1wtAydCXK3GnLxOGYb4/VWjZoXx1zCHFoLEgVH2typ766OTmZL15UuCbsKFdl3thMSMJjyhwIDAQAB",
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "storage", "tabs", "tabGroups", "contextMenus", "alarms"],
+  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Dogear",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  }
+}

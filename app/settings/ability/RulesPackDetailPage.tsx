@@ -1,0 +1,133 @@
+import { useState } from 'react';
+import { ArrowLeft, ChevronRight, ScrollText } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { client } from '@/lib/client';
+import type { Workspace } from '@/types/electron-api';
+import { AbilityMountsSection } from './AbilityMountsSection';
+import { RuleFileEditor } from './RuleFileEditor';
+
+interface RulesPackDetailPageProps {
+  workspace: Workspace | null;
+  workspaceId: string | null;
+  refreshKey: number;
+  onBack: () => void;
+}
+
+type RuleContext = 'workspace' | 'global';
+
+function RuleContextBadge({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center rounded-full border px-3 py-1 text-xs transition-colors',
+        active
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+export function RulesPackDetailPage({
+  workspace,
+  workspaceId,
+  refreshKey,
+  onBack,
+}: RulesPackDetailPageProps) {
+  const [activeRule, setActiveRule] = useState<RuleContext>('workspace');
+
+  return (
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex items-center gap-2 border-b px-4 py-2 shrink-0">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          返回
+        </Button>
+        <span className="text-sm text-muted-foreground">能力</span>
+        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+        <span className="text-sm font-medium">规则</span>
+        {workspace && (
+          <>
+            <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{workspace.name}</span>
+          </>
+        )}
+      </div>
+
+      <div className="flex-1 flex min-h-0">
+        <div className="flex-1 min-w-0 flex flex-col gap-3 p-4 overflow-y-auto">
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-muted/60 p-2 shrink-0">
+              <ScrollText className="w-5 h-5 text-foreground/80" />
+            </div>
+            <div className="space-y-1 min-w-0">
+              <h3 className="text-base font-semibold">规则</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                工作区与全局 agent.md 注入每个会话，各自独立编辑；启停配置在场景页调整。
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <RuleContextBadge label="工作区规则" active={activeRule === 'workspace'} onClick={() => setActiveRule('workspace')} />
+            <RuleContextBadge label="全局规则" active={activeRule === 'global'} onClick={() => setActiveRule('global')} />
+          </div>
+
+          <div className={cn('flex-1 min-h-0 flex flex-col', activeRule !== 'workspace' && 'hidden')}>
+            {workspaceId ? (
+              <RuleFileEditor
+                title={`工作区 agent.md（${workspace?.name ?? ''}）`}
+                emptyHint={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令…'}
+                read={() => client.readWorkspaceAgentMd({ workspaceId })}
+                write={(content) => client.writeWorkspaceAgentMd({ workspaceId, content })}
+                loadTemplate={() => client.getWorkspaceAgentTemplate()}
+              />
+            ) : (
+              <div className="rounded-md border bg-muted/10 px-3 py-2">
+                <p className="text-sm text-muted-foreground">请先选择工作区，再编辑工作区 agent.md。</p>
+              </div>
+            )}
+          </div>
+
+          <div className={cn('flex-1 min-h-0 flex flex-col', activeRule !== 'global' && 'hidden')}>
+            <RuleFileEditor
+              title="全局规则 agent.md（.dogear/agent.md，跨工作区生效）"
+              emptyHint={'# 全局指令\n\n在此编写跨工作区生效的全局指令…'}
+              read={() => client.readUserAgentMd()}
+              write={(content) => client.writeUserAgentMd({ content })}
+              loadTemplate={() => client.getUserAgentTemplate()}
+            />
+          </div>
+        </div>
+
+        <div className="w-80 shrink-0 space-y-5 overflow-y-auto border-l p-4">
+          <section className="space-y-2">
+            <span className="text-xs text-muted-foreground">加载情况</span>
+            <p className="text-xs font-medium pt-1">工作区规则</p>
+            <AbilityMountsSection packKey="workspace-rules" workspaceId={workspaceId} refreshKey={refreshKey} />
+            <p className="text-xs font-medium pt-2">全局规则</p>
+            <AbilityMountsSection packKey="global-rules" workspaceId={workspaceId} refreshKey={refreshKey} />
+          </section>
+
+          <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">
+            启停配置在场景页调整；修改后需重启会话生效。
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

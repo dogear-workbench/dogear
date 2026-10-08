@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy>=1.24
+akshare>=1.14
+lark>=1.1
+beautifulsoup4>=4.12
+lxml>=5.0
+markdownify>=0.12
+pdfplumber>=0.11
+baostock

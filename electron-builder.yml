@@ -1,0 +1,123 @@
+# Electron Builder 配置文件
+# 用于将 Electron 应用打包为 Windows NSIS 安装包
+
+# Electron 下载镜像配置（解决国内网络问题）
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+# 应用唯一标识符（反向域名格式）
+appId: com.dogear.app
+
+# 应用程序显示名称
+productName: Dogear
+
+# 构建输出目录配置
+directories:
+  output: release
+
+# 需要打包的文件和目录
+files:
+  # 编译后的 Electron 主进程 + preload 代码
+  - dist/**/*
+  # Node.js 依赖包
+  - node_modules/**/*
+  # 包描述文件
+  - package.json
+
+# 额外资源（不打入 app.asar，安装后可直接访问；跨平台条目，Windows 专属见 win.extraResources）
+extraResources:
+  # Python 计算分析层脚本（首次运行自动 pip install 依赖）
+  - from: python/
+    to: python/
+    filter:
+      - "**/*.py"
+      - "requirements.txt"
+      - "!**/__pycache__/**"
+  # Skill 模板源（内置模板，订阅/恢复时复制到工作区）
+  - from: resources/skill-templates/
+    to: skill-templates/
+    filter:
+      - "**/*"
+  # agent.md 模板（工作区级 + 用户级，设置页「恢复模板」用）
+  - from: resources/agent-templates/
+    to: agent-templates/
+    filter:
+      - "**/*"
+  # 浏览器扩展 NM host（manifest 为构建生成物，dist 前由 build-nm-manifest.mjs 生成）
+  - from: resources/nm-host/
+    to: nm-host/
+    filter:
+      - "**/*"
+  # 浏览器扩展本体（设置页安装引导指向此目录，用户以「加载已解压的扩展程序」方式安装）
+  - from: extension/
+    to: extension/
+    filter:
+      - "**/*"
+  # 前端构建产物（移出 asar，支持热更新覆盖）
+  - from: out/
+    to: out/
+
+# asar 配置
+asar: true
+
+# 原生模块解包（.node 二进制无法从 asar 内加载）
+asarUnpack:
+  - "**/node-pty/**"
+
+# Windows 平台打包配置
+win:
+  target:
+    - target: nsis
+      arch: x64
+  # Windows 应用图标（256x256 像素以上的 .ico 文件）
+  icon: build/icon.ico
+  # 不进行代码签名（无证书时跳过 winCodeSign 下载）
+  signtoolOptions: null
+  # Windows 专属资源（顶层 extraResources 与平台段是并集，mac 包不能排除顶层条目，故放这里）
+  extraResources:
+    # Git 离线安装包（安装时自动检测并安装）
+    - from: build/installers/
+      to: installers/
+      filter:
+        - "**/*"
+    # 托盘图标（createTray 通过 process.resourcesPath 访问）
+    - from: build/icon.ico
+      to: icon.ico
+
+# NSIS 安装包配置
+nsis:
+  # 非一键安装，显示安装向导
+  oneClick: false
+  # 安装到用户目录，无需管理员权限
+  perMachine: false
+  # 允许用户更改安装路径
+  allowToChangeInstallationDirectory: true
+  # 不创建桌面快捷方式（仅开始菜单）
+  createDesktopShortcut: false
+  # 创建开始菜单快捷方式
+  createStartMenuShortcut: true
+  # 自定义 NSIS 安装脚本（Git 检测+安装）
+  include: build/installer.nsh
+  # 安装包显示名称
+  installerHeaderIcon: build/icon.ico
+  # 卸载时显示的图标
+  uninstallerIcon: build/icon.ico
+  # 安装包语言
+  language: 2052
+
+# macOS 打包配置（Apple Silicon）
+mac:
+  # zip 供后续自动更新通道使用，dmg 为分发安装镜像
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  icon: build/icon.icns
+  # 不做 Developer ID 签名/公证（ad-hoc 签名，构建机可启动）
+  identity: null
+  category: public.app-category.productivity
+  extraResources:
+    # 托盘 template image（tray.ts darwin 分支从 resourcesPath 根加载）
+    - from: build/icon-tray.png
+      to: icon-tray.png
