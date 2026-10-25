@@ -12,7 +12,6 @@ import {
 } from '../agents/session-append-templates.js';
 import { getAllToolGroups, type ToolGroupInfo, type ToolInfo } from '../agents/tools/tool-registry.js';
 import { loadSettings, getConfigDir } from '../services/settings-service.js';
-import { loadStateExtractPrompt, STATE_EXTRACT_SYSTEM_PROMPT } from '../services/memory/state-extract-prompt.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { loadArticleParseSkill, readArticleParseSkillMd } from '../agents/tasks/parse-article-task.js';
 import type { AppSettings } from '../services/settings-types.js';
@@ -20,12 +19,12 @@ import { OPTIONAL_TOOL_PACKS } from '../services/tool-packs.js';
 import { listSkillTemplates } from '../services/skill-template-service.js';
 import { getWorkspaceConfig, type WorkspaceConfig } from '../services/workspace-config-service.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
-import { PERSONAL_WORKSPACE_ID } from '../types.js';
 import {
   SYSTEM_MOUNTS_PACK_KEY,
   buildMountRows,
   buildSceneOverview,
   buildSystemMountRows,
+  detectUserGitRepo,
   packEnabledOf,
   type AbilityMountSceneKind,
   type AbilityMountSceneRow,
@@ -54,6 +53,8 @@ export interface AbilityToolGroupMeta {
   id: string;
   label: string;
   tools: ToolInfo[];
+  /** 该组按需挂载（registry deferredToolGroups 声明） */
+  deferred: boolean;
   pack?: {
     mcpServer: string;
     toolCount: number;
@@ -108,13 +109,14 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/group-tools.js'),
   () => import('../agents/tools/reference-tools.js'),
   () => import('../agents/tools/task-tools.js'),
+  () => import('../agents/tools/skill-tools.js'),
+  () => import('../agents/tools/scheduler-tools.js'),
   () => import('../agents/tools/git-tools.js'),
   () => import('../agents/tools/stock-tools.js'),
   () => import('../agents/tools/stock-analysis-tools.js'),
   () => import('../agents/tools/stock-announcement-tools.js'),
   () => import('../agents/tools/stock-picking-tools.js'),
   () => import('../agents/tools/article-tools.js'),
-  () => import('../agents/tools/browser-tools.js'),
   () => import('../agents/tools/extension-tools.js'),
   () => import('../agents/tools/web-mcp-tools.js'),
 ] as const;
@@ -149,13 +151,16 @@ function buildToolGroupMeta(
   id: string,
   groupByServer: Map<string, { label: string; tools: ToolInfo[] }>,
   packByName: Map<string, (typeof OPTIONAL_TOOL_PACKS)[number]>,
+  deferredGroups: ReadonlySet<string>,
 ): AbilityToolGroupMeta {
+  const deferred = deferredGroups.has(id);
   const optionalPack = packByName.get(id);
   if (optionalPack) {
     return {
       id,
       label: optionalPack.label,
       tools: groupByServer.get(optionalPack.mcpServerName)?.tools ?? [],
+      deferred,
       pack: {
         mcpServer: optionalPack.mcpServerName,
         toolCount: optionalPack.toolCount,
@@ -168,6 +173,7 @@ function buildToolGroupMeta(
     id,
     label: groupByServer.get(id)?.label ?? id,
     tools: groupByServer.get(id)?.tools ?? [],
+    deferred,
   };
 }
 
@@ -184,19 +190,22 @@ export const abilityRouter = {
       const packByName = new Map(OPTIONAL_TOOL_PACKS.map((p) => [p.name, p]));
       const templateByName = new Map(skillTemplates.map((s) => [s.name, s]));
 
-      const packs: AbilityPackView[] = ABILITY_PACKS.map((pack) => ({
-        ...pack,
-        segments: (pack.segmentKeys ?? []).map((key) => segmentMetaOf(segmentMap, key)),
-        toolGroupMetas: (pack.toolGroups ?? []).map((id) =>
-          buildToolGroupMeta(id, groupByServer, packByName),
-        ),
-        skillMetas: (pack.skills ?? []).map((name) => ({
-          name,
-          title: templateByName.get(name)?.title,
-          description: templateByName.get(name)?.description,
-          toolPacks: SKILL_PACK_MAP[name] ?? [],
-        })),
-      }));
+      const packs: AbilityPackView[] = ABILITY_PACKS.map((pack) => {
+        const deferredGroups = new Set(pack.deferredToolGroups ?? []);
+        return {
+          ...pack,
+          segments: (pack.segmentKeys ?? []).map((key) => segmentMetaOf(segmentMap, key)),
+          toolGroupMetas: (pack.toolGroups ?? []).map((id) =>
+            buildToolGroupMeta(id, groupByServer, packByName, deferredGroups),
+          ),
+          skillMetas: (pack.skills ?? []).map((name) => ({
+            name,
+            title: templateByName.get(name)?.title,
+            description: templateByName.get(name)?.description,
+            toolPacks: SKILL_PACK_MAP[name] ?? [],
+          })),
+        };
+      });
 
       // 固定注入的提示词段归系统行为展示（不可关闭、不归能力包管）；段数据从 segmentMap 取单一来源
       const appDataSegment = segmentMetaOf(segmentMap, 'app-data-guidance');
@@ -234,7 +243,6 @@ export const abilityRouter = {
           return { error: `工作区不存在: ${input.workspaceId}` };
         }
         const config = await getWorkspaceConfig(input.workspaceId);
-        const personalConfig = await getWorkspaceConfig(PERSONAL_WORKSPACE_ID);
         const hasWorkspace = !!workspace.path;
 
         let packSummary: { key: string; label: string; type: AbilityPackType } | null = null;
@@ -247,7 +255,7 @@ export const abilityRouter = {
             return { error: `未知能力包: ${input.key}` };
           }
           packSummary = { key: found.key, label: found.label, type: found.type };
-          rows = buildMountRows(found, config, settings, hasWorkspace, personalConfig);
+          rows = buildMountRows(found, config, settings, hasWorkspace, detectUserGitRepo(workspace.path));
         }
 
         return { pack: packSummary, rows };
@@ -268,17 +276,6 @@ export const abilityRouter = {
         return { error: String(error) };
       }
     }),
-
-  /** 状态抽取场景提示词（只读）：systemPrompt=固定角色语，template=可编辑模板（缺失自动播种默认值） */
-  getStateExtractPrompt: t.procedure.action(async () => {
-    try {
-      const template = await loadStateExtractPrompt(getConfigDir());
-      return { systemPrompt: STATE_EXTRACT_SYSTEM_PROMPT, template };
-    } catch (error) {
-      console.error('[ability] getStateExtractPrompt 失败:', error);
-      return { error: String(error) };
-    }
-  }),
 
   /** 文章解析场景提示词（只读）：与解析任务同源同 fallback（loadArticleParseSkill），skillMd 为含 frontmatter 的原始全文 */
   getParseArticlePrompt: t.procedure.action(async () => {

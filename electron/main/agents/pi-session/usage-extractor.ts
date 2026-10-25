@@ -12,6 +12,8 @@
  * - cacheWrite → cacheCreationInputTokens（pi 不区分 5m/1h，cacheWrite1h 是 1h 子集）
  * - cacheCreation.ephemeral1h = cacheWrite1h；ephemeral5m = cacheWrite - cacheWrite1h
  * - cost.total → totalCostUsd
+ * - durationApiMs = Σ AssistantMessage.durationMs（各次 LLM call 串行不重叠）；
+ *   durationMs = 首次请求发出 → 末次响应结束的差值（含中间工具执行，不含队列等待）
  * - reasoning / serviceTier / speed / serverToolUse：pi 不暴露，丢弃
  *
  * 累加语义：inputTokens 等字段是"每轮 LLM call 的全部输入 token"——会重复计算
@@ -76,6 +78,11 @@ export interface PiUsageAccumulator {
   cacheWrite1hTokens: number;
   totalCostUsd: number;
   messageCount: number;
+  /** Σ AssistantMessage.durationMs（各次 LLM call 串行不重叠） */
+  durationApiMs: number;
+  /** 首次请求发出时点 / 末次响应结束时点（timestamp + durationMs），差值即本轮 API+工具全程 */
+  firstRequestAt?: number;
+  lastResponseEndAt?: number;
   lastModelId?: string;
   lastResponseId?: string;
   lastStopReason?: string;
@@ -98,6 +105,7 @@ export function createPiUsageAccumulator(): PiUsageAccumulator {
     cacheWrite1hTokens: 0,
     totalCostUsd: 0,
     messageCount: 0,
+    durationApiMs: 0,
     modelUsageBreakdown: new Map(),
   };
 }
@@ -216,6 +224,18 @@ export function accumulatePiUsage(accum: PiUsageAccumulator, message: AssistantM
   accum.totalCostUsd += costTotal;
   accum.messageCount += 1;
 
+  const callDuration = Number.isFinite(message.durationMs) ? message.durationMs! : 0;
+  accum.durationApiMs += callDuration;
+  if (Number.isFinite(message.timestamp)) {
+    if (accum.firstRequestAt === undefined || message.timestamp < accum.firstRequestAt) {
+      accum.firstRequestAt = message.timestamp;
+    }
+    const end = message.timestamp + callDuration;
+    if (accum.lastResponseEndAt === undefined || end > accum.lastResponseEndAt) {
+      accum.lastResponseEndAt = end;
+    }
+  }
+
   const modelId = message.responseModel || message.model;
   accum.lastModelId = modelId;
   if (message.responseId) accum.lastResponseId = message.responseId;
@@ -312,8 +332,11 @@ export function extractPiUsageEntry(
     uuid: '',
     turnIndex,
     timestamp: Date.now(),
-    durationMs: 0,
-    durationApiMs: 0,
+    durationMs:
+      accum.firstRequestAt !== undefined && accum.lastResponseEndAt !== undefined
+        ? Math.max(0, accum.lastResponseEndAt - accum.firstRequestAt)
+        : 0,
+    durationApiMs: accum.durationApiMs,
     numTurns: accum.messageCount,
     terminalReason,
     stopReason,

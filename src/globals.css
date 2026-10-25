@@ -186,20 +186,29 @@
     z-index: 9999;
   }
 
-  /* 滚动条美化 — 编辑室风格：细窄、暗色、融入背景 */
+  /* 主窗口 TopBar 自带 drag 分区，此全局层会让它下面的按钮吞点击（z-9999 命中优先）；无 TopBar 的子窗口仍靠此层拖拽 */
+  html.has-topbar #root::before {
+    display: none;
+  }
+
+  /* 滚动条统一原生：10px 宽，thumb 常显淡色、悬停滚动条时加深 */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 10px;
+    height: 10px;
   }
 
   ::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  /* 变量驱动：html 自身滚动条不会命中 .dark 后代选择器 */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* Chromium 下通配 *:hover 选不中滚动条伪元素，显色只能常显或 thumb 自身 hover（见 scripts/scrollbar-probe 复现） */
   ::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
+    background: color-mix(in srgb, var(--scrollbar-thumb) 35%, transparent);
+    border-radius: 5px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
@@ -629,7 +638,7 @@
 
 .notes-prose {
   font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
-  font-size: 1.0625rem;
+  font-size: 0.875rem;
   line-height: 1.9;
 }
 

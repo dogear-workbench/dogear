@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo, Newspaper } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ContentBlockItem } from './ContentBlockItem';
@@ -13,6 +13,7 @@ import { CommCollapseBar, SessionPeerLink } from './AgentCommCard';
 import { GatedPathChip, useWorkspacePath, useWorkspaceRoots, resolvePathCandidates } from './path-link';
 import { useWorkspaceId } from './workspace-id-context';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
+import { isArticlePath } from '@/components/workspace-explorer/tree-model';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -115,7 +116,7 @@ function TaskExecutionCard({
           <span className="ml-auto flex-shrink-0 text-muted-foreground/60">点击展开</span>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-1 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground max-h-[400px] overflow-y-auto">
+          <div className="mt-1 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground">
             <div className="flex flex-col gap-1 mb-2 pb-2 border-b border-border/60">
               <div className="text-muted-foreground">
                 任务 ID：<span className="font-mono text-foreground break-all">{parsed.taskId}</span>
@@ -234,7 +235,7 @@ export const MessageItem = memo(function MessageItem({
   readOnly?: boolean;
 }) {
   const isUser = message.role === 'user';
-  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
+  const stickyUserMessage = useSettingsStore(s => s.settings?.ui?.stickyUserMessage ?? true);
   const currentWorkspaceId = useWorkspaceStore(s => s.workspace?.id);
   const conversationWorkspaceId = useWorkspaceId();
   const conversationWorkspacePath = useWorkspacePath(conversationWorkspaceId);
@@ -261,7 +262,7 @@ export const MessageItem = memo(function MessageItem({
             <span className="text-muted-foreground/60 ml-auto">点击展开</span>
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <div className="mt-1 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+            <div className="mt-1 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground whitespace-pre-wrap">
               {message.content}
             </div>
           </CollapsibleContent>
@@ -349,7 +350,7 @@ export const MessageItem = memo(function MessageItem({
       className={cn(
         'w-full my-2 group',
         // sticky 在最外层: 用 margin 而非 padding,避免 padding 区出现多余底色
-        isUser && 'sticky top-0 z-10',
+        isUser && stickyUserMessage && 'sticky top-0 z-10',
       )}
       data-message-id={message.id ?? messageId}
     >
@@ -403,12 +404,19 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.fileRefs.map((ref, i) => (
                           <span
                             key={`file-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300"
+                            className={cn(
+                              'inline-flex items-center gap-1 px-2 py-1 border rounded-full text-xs',
+                              isArticlePath(ref.path)
+                                ? 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300'
+                                : 'bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300',
+                            )}
                             title={ref.path}
                           >
                             {ref.type === 'folder'
                               ? <Folder className="w-3 h-3 flex-shrink-0" />
-                              : <FileText className="w-3 h-3 flex-shrink-0" />}
+                              : isArticlePath(ref.path)
+                                ? <Newspaper className="w-3 h-3 flex-shrink-0" />
+                                : <FileText className="w-3 h-3 flex-shrink-0" />}
                             <span className="max-w-[160px] truncate">{ref.name}</span>
                           </span>
                         ))}
@@ -509,9 +517,9 @@ export const MessageItem = memo(function MessageItem({
             )}
             {/* 按照接收顺序渲染所有内容块 */}
             {(() => {
-              const entries: RenderBlockEntry[] = (message.contentBlocks && displayMode === 'compact')
+              const entries: RenderBlockEntry[] = message.contentBlocks
                 ? groupBlocks(message.contentBlocks)
-                : (message.contentBlocks || []).map((block, originalIndex) => ({ block, originalIndex }));
+                : [];
               return entries.length > 0 ? (
                 <div className="space-y-2">
                   {entries.map((entry, idx) => (

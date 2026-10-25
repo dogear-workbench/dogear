@@ -27,7 +27,7 @@ interface CategoryMeta {
 
 export const CATEGORY_META: Record<BackupCategoryKey, CategoryMeta> = {
   'notes-groups': {
-    name: '笔记与工作区',
+    name: '话题与会话',
     scopeSummary: '笔记卡片、话题组与工作区配置，每个工作区一份',
     defaultConfig: BACKUP_CATEGORY_DEFAULTS['notes-groups'],
   },

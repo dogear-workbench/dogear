@@ -96,7 +96,7 @@ function connectAndHello(extensionVersion) {
       });
       socket.on('data', (chunk) => decoder.push(chunk));
       socket.write(
-        encodeNmFrame({ type: 'hello', extensionVersion, protocolVersion: 3, tabId: TAB_ID }),
+        encodeNmFrame({ type: 'hello', extensionVersion, protocolVersion: 4, tabId: TAB_ID }),
       );
     });
   });
@@ -159,8 +159,7 @@ check(
   isErr(rivalObserve) &&
     textOf(rivalObserve).includes('扩展通道正被另一个会话使用') &&
     textOf(rivalObserve).includes('最近活动于 1 分钟前') &&
-    textOf(rivalObserve).includes('空闲 10 分钟后自动释放') &&
-    textOf(rivalObserve).includes('内嵌浏览器'),
+    textOf(rivalObserve).includes('空闲 10 分钟后自动释放'),
   textOf(rivalObserve),
 );
 const busyEvent = getBrowserActionHistory().filter((e) => e.result === 'busy').at(-1);

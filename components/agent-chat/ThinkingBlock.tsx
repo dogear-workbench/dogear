@@ -30,7 +30,7 @@ export function ThinkingBlock({ block, searchQuery, activeMatchId, matchIdPrefix
       }
       title={hasContent ? (displayMode === 'compact' ? `思考 · ${charCount}字` : '思考') : '思考中...'}
       previewLines={displayMode === 'compact' ? 0 : 3}
-      defaultOpen={false}
+      defaultOpen={displayMode === 'detailed'}
       forceOpen={searchHit}
     >
       {hasContent && (

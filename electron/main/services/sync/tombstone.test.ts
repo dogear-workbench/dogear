@@ -94,6 +94,33 @@ test('tombstoneCandidates：merge 记录文件整文件删除走墓碑（文件�
   expect(tombstoneCandidates(prev, [entry('notifications.json')])).toEqual(['plans.json']);
 });
 
+test('tombstoneCandidates：退役目录条目豁免排除拦截照常候选（驱动对端跟随删除）', () => {
+  const prev = [entry('conversations/c.json'), entry('conversations/deep/x.jsonl'), entry('memory/gone.md')];
+  const candidates = tombstoneCandidates(prev, [], {
+    excludes: { conflictCopies: false, shadowGit: false, disabledItems: new Set(['memory']), optionalDirs: { stocks: false, feishu: false } },
+  });
+  expect(candidates).toEqual(['conversations/c.json', 'conversations/deep/x.jsonl']);
+});
+
+test('tombstoneCandidates：退役虚拟声明条目豁免排除拦截（tasks 关开关不产；articles 已退役恒产）', () => {
+  const prev = [entry('__ws-external__/ws-a/.dogear/tasks.json'), entry('__ws-external__/ws-a/.dogear/articles/x/m.json')];
+  expect(tombstoneCandidates(prev, [])).toEqual(['__ws-external__/ws-a/.dogear/tasks.json', '__ws-external__/ws-a/.dogear/articles/x/m.json']);
+  // tasks 关开关是开关状态而非删除事实不产；articles 声明已退役（无开关），残值 disabledItems 也不拦截，恒产驱动旧对端清理
+  const off = tombstoneCandidates(prev, [], {
+    excludes: { conflictCopies: false, shadowGit: false, disabledItems: new Set(['tasks', 'articles']), optionalDirs: { stocks: false, feishu: false } },
+  });
+  expect(off).toEqual(['__ws-external__/ws-a/.dogear/articles/x/m.json']);
+});
+
+test('tombstoneCandidates：退役实路径 workspaces/{wsid}/articles 豁免拦截照常候选（驱动旧对端删旧位置）', () => {
+  const prev = [entry('workspaces/ws-a/articles/uuid-1/meta.json'), entry('workspaces/ws-a/notes/gone.md')];
+  const candidates = tombstoneCandidates(prev, [], {
+    excludes: { conflictCopies: false, shadowGit: false, disabledItems: new Set(['articles']), optionalDirs: { stocks: false, feishu: false } },
+    enabledWorkspaceIds: ['ws-a'],
+  });
+  expect(candidates).toEqual(['workspaces/ws-a/articles/uuid-1/meta.json', 'workspaces/ws-a/notes/gone.md']);
+});
+
 // ── diffManifests：墓碑分支 ──
 
 test('diffManifests：remote-only 命中本端墓碑 → deletePropagation 不进 pull', async () => {

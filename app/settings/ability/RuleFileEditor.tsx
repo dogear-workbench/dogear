@@ -10,10 +10,11 @@ interface RuleFileEditorProps {
   emptyHint: string;
   read: () => Promise<{ content?: string | null; error?: string }>;
   write: (content: string) => Promise<{ success?: boolean; error?: string }>;
-  loadTemplate: () => Promise<{ content?: string; error?: string }>;
+  loadTemplate?: () => Promise<{ content?: string; error?: string }>;
+  onSaved?: () => Promise<void> | void;
 }
 
-export function RuleFileEditor({ title, emptyHint, read, write, loadTemplate }: RuleFileEditorProps) {
+export function RuleFileEditor({ title, emptyHint, read, write, loadTemplate, onSaved }: RuleFileEditorProps) {
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [loading, setLoading] = useState(true);
@@ -63,12 +64,14 @@ export function RuleFileEditor({ title, emptyHint, read, write, loadTemplate }: 
       setSavedContent(content);
       setEditing(false);
       toast.success(`已保存${title}`);
+      await onSaved?.();
     } finally {
       setSaving(false);
     }
   };
 
   const handleRestoreTemplate = async () => {
+    if (!loadTemplate) return;
     const res = await loadTemplate();
     if (res && 'error' in res && res.error) {
       toast.error('加载模板失败', { description: res.error });
@@ -119,10 +122,12 @@ export function RuleFileEditor({ title, emptyHint, read, write, loadTemplate }: 
           {dirty && <span className="ml-2 text-amber-600">● 未保存</span>}
         </span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleRestoreTemplate}>
-            <RotateCcw className="w-3 h-3 mr-1" />
-            恢复模板
-          </Button>
+          {loadTemplate && (
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={handleRestoreTemplate}>
+              <RotateCcw className="w-3 h-3 mr-1" />
+              恢复模板
+            </Button>
+          )}
           <Button variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={saving} onClick={handleCancel}>
             取消
           </Button>

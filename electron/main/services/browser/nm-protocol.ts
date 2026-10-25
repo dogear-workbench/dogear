@@ -13,7 +13,7 @@ const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 export type NmMessage = Record<string, unknown>;
 
-export const ProtocolVersion = 4;
+export const ProtocolVersion = 5;
 
 export type CommandKind =
   | 'observe'
@@ -26,7 +26,7 @@ export type CommandKind =
   | 'scroll'
   | 'open_tab'
   | 'close_tab'
-  | 'close_group_tabs'
+  | 'close_agent_window'
   | 'list_tabs'
   | 'wait_for'
   | 'readArticle'
@@ -93,11 +93,6 @@ export interface CloseTabCommandParams {
   targetTabId?: number;
 }
 
-export interface CloseGroupTabsCommandParams {
-  /** 收尾清理豁免的 tabId（一键移交过、保留给用户的 tab） */
-  exemptTabIds?: number[];
-}
-
 export type WaitForCondition = 'visible' | 'hidden' | 'text_contains';
 
 export interface WaitForCommandParams {
@@ -113,7 +108,7 @@ export interface ReadArticleCommandParams {
 }
 
 export interface CaptureCommandParams {
-  /** 缺省截帧内 tabId（焦点 tab）；扩展侧只截 Dogear 分组内 tab */
+  /** 缺省截帧内 tabId（焦点 tab）；扩展侧只截 agent 窗口内或焦点 tab */
   tabId?: number;
 }
 
@@ -138,12 +133,11 @@ export interface TabSnapshotMessage {
 /** 扩展主动推送的一键移交帧；与 tab_snapshot 同类无 requestId，NmMessage 为宽 Record 故此类型仅作文档 */
 export interface PageHandoffMessage {
   type: 'page_handoff';
-  /** 移交源标签页；gateway 据此记入收尾清理豁免集合，缺省（旧版扩展）不豁免 */
+  /** 移交源标签页；gateway 据此同步操作焦点，缺省（旧版扩展）仅保留事件 */
   tabId?: number;
   url: string;
   title: string;
   selectionText?: string;
-  textExcerpt?: string;
 }
 
 /** 扩展 watch 中的 tab 导航完成且 pageState 恢复 ready 时回推；与 tab_snapshot 同类无 requestId，仅作文档 */

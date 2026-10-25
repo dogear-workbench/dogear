@@ -11,19 +11,21 @@ import type { SystemPromptSegmentKey } from './session-append-templates.js';
 
 export type AbilityPackType = 'prompt-only' | 'segment-tools' | 'skill-packs';
 
-export type AbilityCategory = 'system' | 'context-memory' | 'extension';
+export type AbilityCategory = 'system' | 'context-memory' | 'extension' | 'custom-skills';
 
 export interface AbilityCategoryMeta {
   key: AbilityCategory;
   label: string;
-  description: string;
+  /** 场景页分组头不再渲染描述，仅能力页兜底分组可用；新分类直接不设 */
+  description?: string;
 }
 
-/** 能力页/场景页共用的三大类分组头（有序），分组是展示维度不是配置单元，无开关 */
+/** 能力页/场景页共用的分组头（有序），分组是展示维度不是配置单元，无开关；custom-skills 类无包，由场景页动态出用户 skill 行 */
 export const ABILITY_CATEGORIES: readonly AbilityCategoryMeta[] = [
   { key: 'system', label: '系统功能', description: '核心会话流程的基础能力，建议保持开启' },
   { key: 'context-memory', label: '上下文与记忆', description: '跨会话的上下文承载与记忆沉淀能力' },
   { key: 'extension', label: '扩展能力', description: '按需选装的领域扩展，默认关闭' },
+  { key: 'custom-skills', label: '自定义 Skill' },
 ];
 
 export interface AbilityPack {
@@ -40,6 +42,8 @@ export interface AbilityPack {
    *   例外：browser-extension 包的 'dogear-extension' 是 server 名（扩展通道工具组无可选包条目）
    */
   toolGroups?: string[];
+  /** toolGroups 中按需挂载的子集；与拼装侧（tool-assembly）deferToolDefs 同步维护，能力页按需区与徽章的数据源 */
+  deferredToolGroups?: string[];
   skills?: string[];
   /** 仅主会话生效（子会话不挂载工具） */
   mainOnly?: boolean;
@@ -60,10 +64,9 @@ export const SKILL_PACK_MAP: Record<string, string[]> = {
 };
 
 /** 自治包 key → Profile enabledAbilities 子开关字段（subAutonomous 包的裁决入口）；扩展包沿用 extension 字段 */
-const SUB_AUTONOMOUS_SWITCH: Record<string, 'stock' | 'article' | 'browser' | 'extension' | 'web'> = {
+const SUB_AUTONOMOUS_SWITCH: Record<string, 'stock' | 'article' | 'extension' | 'web'> = {
   stock: 'stock',
   article: 'article',
-  browser: 'browser',
   'browser-extension': 'extension',
   'web-mcp': 'web',
 };
@@ -103,12 +106,13 @@ export const ABILITY_PACKS: AbilityPack[] = [
     type: 'segment-tools',
     segmentKeys: ['notes-discipline'],
     toolGroups: ['dogear-notes', 'dogear-tasks'],
+    deferredToolGroups: ['dogear-tasks'],
     defaultEnabled: true,
   },
   {
     key: 'workspace-git',
-    label: 'git 版本管理',
-    description: '工作区双层 git 工具组（查历史/diff/blame、正式提交、回退、自动快照）+ git 历史意识段，绑定工作区时生效（主/子会话）',
+    label: 'git 历史与提交',
+    description: '工作区是 git 仓库时生效：查演进历史（GitLog/GitShow/Blame）、diff、落定稿提交、回退——git 历史是『做过什么』的佐证，不限代码开发',
     category: 'context-memory',
     type: 'segment-tools',
     segmentKeys: ['git-history-guidance'],
@@ -116,13 +120,13 @@ export const ABILITY_PACKS: AbilityPack[] = [
     defaultEnabled: true,
   },
   {
-    key: 'group-context',
-    label: '会话组',
-    description: '组上下文段（组头 + 话题状态）+ 组状态卡工具，会话属于某个组时生效',
-    category: 'context-memory',
+    key: 'workspace-snapshot',
+    label: '快照安全网',
+    description: '编辑操作自动打快照（agent 写入与 UI 文件操作后，含 .gitignore 私人文件），改坏可查可恢复、永远可逆，绑定工作区时生效',
+    category: 'system',
     type: 'segment-tools',
-    segmentKeys: ['group-context'],
-    toolGroups: ['dogear-group-context'],
+    segmentKeys: ['snapshot-safety-guidance'],
+    toolGroups: ['dogear-snapshot'],
     defaultEnabled: true,
   },
   {
@@ -153,47 +157,31 @@ export const ABILITY_PACKS: AbilityPack[] = [
     type: 'skill-packs',
     skills: ['stock-analysis', 'stock-picking'],
     toolGroups: ['stock-quote', 'stock-analysis', 'stock-announcement', 'stock-picking'],
+    deferredToolGroups: ['stock-quote', 'stock-analysis', 'stock-announcement', 'stock-picking'],
     subAutonomous: true,
     defaultEnabled: false,
   },
   {
     key: 'article',
     label: '文章解析',
-    description: '文章解析 skill + 文章管理工具包（读取/列举工作区文章）；子会话 Profile 独立生效，不受此开关约束',
+    description: '文章解析 skill + 文章入库工具（URL 抓取解析后落工作区文章库 md，读取检索走通用 Read/Grep/Glob，修复文章引用悬空）；浏览器解析子会话另挂自进化深度解析工具集（读原始 HTML/试跑与落盘平台脚本）。子会话 Profile 独立生效，不受此开关约束',
     category: 'extension',
     type: 'skill-packs',
     skills: ['article-parser'],
     toolGroups: ['article'],
+    deferredToolGroups: ['article'],
     subAutonomous: true,
-    defaultEnabled: false,
-  },
-  {
-    key: 'browser',
-    label: '内嵌浏览器',
-    description: '内嵌浏览器单通道（WebContentsView，无人值守 + 隔离环境）：读文章/搜索/原子探索 + present 页面交付；子会话 Profile 独立生效，不受此开关约束',
-    category: 'extension',
-    type: 'skill-packs',
-    toolGroups: ['browser'],
-    subAutonomous: true,
-    defaultEnabled: false,
+    defaultEnabled: true,
   },
   {
     key: 'browser-extension',
     label: '浏览器扩展',
-    description: '浏览器扩展通道（用户真实浏览器，登录态 + 在场协作 + tab group 定位）：标签页操作/读文章/截图/一键移交；子会话 Profile 独立生效，不受此开关约束',
+    description: '浏览器扩展通道（用户真实浏览器，登录态 + 在场协作 + tab group 定位）：标签页操作/读文章/截图/搜索/一键移交，附常驻通道纪律段；子会话 Profile 独立生效，不受此开关约束',
     category: 'extension',
     type: 'skill-packs',
+    segmentKeys: ['extension-browser-discipline'],
     toolGroups: ['dogear-extension'],
     subAutonomous: true,
-    defaultEnabled: false,
-  },
-  {
-    key: 'browser-methodology',
-    label: '浏览器方法论',
-    description: '浏览器调研方法论 skill（browser-exploration，双通道通用，与通道解耦）；主会话随工作区开关与 skill 细闸生效，子会话 skill 细选在派遣页 Profile',
-    category: 'extension',
-    type: 'skill-packs',
-    skills: ['browser-exploration'],
     defaultEnabled: false,
   },
   {
@@ -220,8 +208,31 @@ export const ABILITY_PACKS: AbilityPack[] = [
       'staged-execution',
       'staged-impl',
       'systematic-debugging',
+      'ui-prototype',
     ],
     defaultEnabled: false,
+  },
+  {
+    key: 'skill-admin',
+    label: 'Skill 管理',
+    description: '自定义 skill 的管理工具（创建/查看/更新/删除），低频能力默认关',
+    category: 'system',
+    type: 'segment-tools',
+    toolGroups: ['dogear-skill'],
+    deferredToolGroups: ['dogear-skill'],
+    mainOnly: true,
+    defaultEnabled: false,
+  },
+  {
+    key: 'scheduler',
+    label: '定时任务',
+    description: '定时任务的管理工具（查看/创建/修改启停/删除/手动运行/查运行历史），低频管理动作，仅主会话生效',
+    category: 'system',
+    type: 'segment-tools',
+    toolGroups: ['dogear-scheduler'],
+    deferredToolGroups: ['dogear-scheduler'],
+    mainOnly: true,
+    defaultEnabled: true,
   },
 ];
 
@@ -230,7 +241,7 @@ export const SUB_AUTONOMOUS_SKILLS: ReadonlySet<string> = new Set(
   ABILITY_PACKS.filter((p) => p.subAutonomous).flatMap((p) => p.skills ?? []),
 );
 
-/** 场景固定层覆盖键（WorkspaceConfig.sceneOverrides 的三个场景维度，与 ability-registry 解析共用） */
+/** 场景固定层覆盖键（WorkspaceConfig.sceneOverrides 的三个场景维度，与 ability-registry 解析共用）；scheduler 键被执行链消费（定时任务运行会话），executor 键只服务协作任务执行会话 */
 export const SCENE_KEYS = ['sub', 'executor', 'scheduler'] as const;
 export type SceneOverrideKey = (typeof SCENE_KEYS)[number];
 
@@ -251,6 +262,8 @@ export interface ResolveAbilitiesOpts {
   profile?: SubAgentProfile | null;
   /** 场景固定层覆盖（sub/executor/scheduler）：传入时包开关改走 scenePackEnabled 三级回退；未传保持裸 abilityOverrides 读取（现状行为） */
   sceneOverride?: SceneOverrideKey;
+  /** 物理可用性检查 = workspacePath 下 .git 存在（目录或文件——worktree/submodule——均算），缺省视为 false；探测由调用方做，本函数不碰文件系统 */
+  hasUserGitRepo?: boolean;
 }
 
 /**
@@ -259,9 +272,9 @@ export interface ResolveAbilitiesOpts {
  * 未传为 abilityOverrides ?? defaultEnabled；残留下线 key 静默忽略。场景代码条件（mainOnly/hasWorkspace/属组等）
  * 不受 sceneOverride 影响。
  * 子会话契约段与 Profile 子开关（enabledSkills）不在此处理；memory 对子会话归场景层裁决（不再查 Profile 闸）。
- * subAutonomous 包（browser/web-mcp/stock/article）例外：Profile 子开关是唯一裁决者，跳过包开关闸门；
+ * subAutonomous 包（browser-extension/web-mcp/stock/article）例外：Profile 子开关是唯一裁决者，跳过包开关闸门；
  * profile 缺失则不生效（无授权即无能力）。
- * reference 子开关已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
+ * reference 子开关已退役：ListSiblingSessions 随协作包，旧配置残留值静默忽略。
  */
 export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilitiesOpts): Set<string> {
   const result = new Set<string>();
@@ -280,8 +293,9 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
 
     if (pack.key === 'memory' && opts.role === 'main' && !opts.hasWorkspace) continue;
     if (pack.key === 'notes' && (opts.role !== 'main' || !opts.hasWorkspace)) continue;
-    if (pack.key === 'workspace-git' && !opts.hasWorkspace) continue;
-    if ((pack.key === 'group-context' || pack.key === 'agent-collab') && !opts.groupId) continue;
+    if (pack.key === 'workspace-git' && (!opts.hasWorkspace || !opts.hasUserGitRepo)) continue;
+    if (pack.key === 'workspace-snapshot' && !opts.hasWorkspace) continue;
+    if (pack.key === 'agent-collab' && !opts.groupId) continue;
     // executor 由拼装侧显式排除（同 notes-discipline 模式）：无人值守无分流场景
     if (pack.key === 'shunt' && (!opts.hasWorkspace || !opts.groupId)) continue;
     if (pack.mainOnly && opts.role !== 'main') continue;

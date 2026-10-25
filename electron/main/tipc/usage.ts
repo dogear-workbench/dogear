@@ -35,7 +35,7 @@ export const usageRouter = {
         return { stats: await collect(input.workspaceId) };
       }
       const { getAll } = await import('../services/workspace-json-service.js');
-      const workspaces = await getAll({ includePersonal: true });
+      const workspaces = await getAll();
       const stats = (await Promise.all(workspaces.map((ws) => collect(ws.id)))).flat();
       return { stats };
     }),

@@ -1,16 +1,20 @@
 /**
  * 文章解析工具（ToolDef 格式）
  *
- * 供 Agent Worker 中的 PARSE_ARTICLE 任务使用，提供：
+ * 两条消费路径：后台 AI 兜底任务（PARSE_ARTICLE runOnce）与浏览器解析子会话（article 包生效时装配层直接拼装，
+ * 刻意不走 registerToolGroup——不进主会话工具面与用户可见工具列表），提供：
  * - 读取原始 HTML、当前已解析内容、解析规则
- * - 覆盖保存解析结果（只更新 meta.json + content.md，保留 raw.html）
+ * - 覆盖保存解析结果（只更新 frontmatter + 正文，保留伴随 raw.html）
  * - 更新 Skill 规则文件（含路径安全校验，防越界写）
+ *
+ * 工具以文章 md 绝对路径（articlePath）为锚点，伴随文件为同名 .raw.html。
  */
 
 import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
-import { safeJsonWrite, safeFileWrite } from '../../services/safe-json.js';
+import { safeFileWrite } from '../../services/safe-json.js';
+import { parseArticleFile, serializeFrontmatter, type ParsedArticleFile } from '../../services/article/frontmatter.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 /** 安全校验：目标路径必须在允许的根目录之内 */
@@ -19,6 +23,19 @@ function assertPathSafe(targetPath: string, allowedRoot: string): void {
   const root = path.resolve(allowedRoot);
   if (!resolved.startsWith(root + path.sep) && resolved !== root) {
     throw new Error(`路径安全错误：${targetPath} 超出允许范围 ${allowedRoot}`);
+  }
+}
+
+/** 文章 md 绝对路径 → 伴随 raw.html 绝对路径 */
+function companionHtmlPath(articlePath: string): string {
+  return articlePath.replace(/\.md$/i, '.raw.html');
+}
+
+async function readArticleFile(articlePath: string): Promise<ParsedArticleFile | null> {
+  try {
+    return parseArticleFile(await fs.readFile(articlePath, 'utf-8'));
+  } catch {
+    return null;
   }
 }
 
@@ -34,12 +51,12 @@ export function createArticleParseToolDefs(): ToolDef[] {
       '读取文章的原始 HTML（最多 50KB，截断防止 token 超限）\n' +
       '供 AI 在固定解析失败或质量不达标时，重新分析 HTML 结构，找到正文内容。',
       z.object({
-        articleDir: z.string().describe('文章目录的绝对路径（payload.articleDir）'),
+        articlePath: z.string().describe('文章 md 文件的绝对路径（dogear__SaveArticle 返回的 articlePath）'),
         maxBytes: z.number().default(51200).describe('最多读取的字节数，默认 50KB'),
       }),
       async (args) => {
         try {
-          const htmlPath = path.join(args.articleDir, 'raw.html');
+          const htmlPath = companionHtmlPath(args.articlePath);
           const stat = await fs.stat(htmlPath).catch(() => null);
           if (!stat) {
             return { content: [{ type: 'text' as const, text: '❌ raw.html 不存在，无法重新解析。' }], isError: true };
@@ -60,20 +77,21 @@ export function createArticleParseToolDefs(): ToolDef[] {
     defineTool(
       'dogear__ReadCurrentContent',
       '读取当前已解析内容',
-      '读取当前已解析的文章内容（meta.json + content.md 合并展示）\n' +
+      '读取当前已解析的文章内容（frontmatter 元数据 + 正文合并展示）\n' +
       '用于质量检查：判断标题、正文长度、内容完整性等是否达标。',
       z.object({
-        articleDir: z.string().describe('文章目录的绝对路径（payload.articleDir）'),
+        articlePath: z.string().describe('文章 md 文件的绝对路径（dogear__SaveArticle 返回的 articlePath）'),
       }),
       async (args) => {
         try {
-          const metaRaw = await fs.readFile(path.join(args.articleDir, 'meta.json'), 'utf-8').catch(() => '{}');
-          const contentRaw = await fs.readFile(path.join(args.articleDir, 'content.md'), 'utf-8').catch(() => '');
-          const meta = JSON.parse(metaRaw);
+          const raw = await fs.readFile(args.articlePath, 'utf-8').catch(() => '');
+          const parsed = raw ? parseArticleFile(raw) : null;
+          const meta = parsed?.meta ?? {};
+          const content = parsed?.content ?? raw;
           return {
             content: [{
               type: 'text' as const,
-              text: `## 元数据\n\n\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\`\n\n## 正文（Markdown）\n\n${contentRaw}`,
+              text: `## 元数据\n\n\`\`\`json\n${JSON.stringify(meta, null, 2)}\n\`\`\`\n\n## 正文（Markdown）\n\n${content}`,
             }],
           };
         } catch (error) {
@@ -88,7 +106,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
       '读取解析规则文件（通用规则 + 匹配的平台规则）\n' +
       '在开始解析前调用，获取已积累的解析经验和策略。',
       z.object({
-        skillsDir: z.string().describe('Skill 规则目录的绝对路径（payload.skillsDir）'),
+        skillsDir: z.string().describe('Skill 规则目录的绝对路径（应用数据目录下 article-parser/ 的绝对路径）'),
         platform: z.string().optional().describe('平台名称（如 "wechat"），不传则只返回通用规则'),
       }),
       async (args) => {
@@ -118,10 +136,10 @@ export function createArticleParseToolDefs(): ToolDef[] {
       'dogear__SaveParsedArticle',
       '保存解析结果',
       '覆盖保存 AI 重新解析的文章结果\n' +
-      '只更新 meta.json 和 content.md，保留原始 raw.html 不变。\n' +
+      '更新 frontmatter 元数据与正文，保留伴随的 raw.html 不变。\n' +
       '调用前请确认内容质量达标（标题非空、正文 > 200 字符）。',
       z.object({
-        articleDir:    z.string().describe('文章目录的绝对路径（payload.articleDir）'),
+        articlePath:   z.string().describe('文章 md 文件的绝对路径（dogear__SaveArticle 返回的 articlePath）'),
         title:         z.string().describe('文章标题'),
         content:       z.string().describe('文章正文（Markdown 格式）'),
         author:        z.string().optional().describe('作者'),
@@ -130,27 +148,27 @@ export function createArticleParseToolDefs(): ToolDef[] {
       }),
       async (args) => {
         try {
-          const metaPath = path.join(args.articleDir, 'meta.json');
-          const metaRaw = await fs.readFile(metaPath, 'utf-8').catch(() => '{}');
-          const existingMeta = JSON.parse(metaRaw);
+          const parsed = await readArticleFile(args.articlePath);
+          if (!parsed) {
+            return { content: [{ type: 'text' as const, text: `❌ 文章文件不存在或格式无效: ${args.articlePath}` }], isError: true };
+          }
 
           const wordCount = args.content.replace(/\s+/g, '').length;
           const updatedMeta = {
-            ...existingMeta,
+            ...parsed.meta,
             title:     args.title,
-            author:    args.author   ?? existingMeta.author   ?? null,
-            siteName:  args.siteName ?? existingMeta.siteName ?? null,
-            excerpt:   args.excerpt  ?? existingMeta.excerpt  ?? null,
+            author:    args.author   ?? parsed.meta.author   ?? null,
+            siteName:  args.siteName ?? parsed.meta.siteName ?? null,
+            excerpt:   args.excerpt  ?? parsed.meta.excerpt  ?? null,
             wordCount,
           };
 
-          await safeJsonWrite(metaPath, updatedMeta);
-          await safeFileWrite(path.join(args.articleDir, 'content.md'), args.content);
+          await safeFileWrite(args.articlePath, serializeFrontmatter(updatedMeta) + args.content);
 
           return {
             content: [{
               type: 'text' as const,
-              text: `✅ 已保存解析结果\n标题：${args.title}\n字数：${wordCount}\n路径：${args.articleDir}`,
+              text: `✅ 已保存解析结果\n标题：${args.title}\n字数：${wordCount}\n路径：${args.articlePath}`,
             }],
           };
         } catch (error) {
@@ -232,10 +250,10 @@ export function createArticleParseToolDefs(): ToolDef[] {
       'dogear__RunPlatformScript',
       '试跑平台脚本',
       '在 Python 沙箱里试跑平台脚本。支持两种模式：\n' +
-      '- 生产模式：传 skillsDir+platform+articleDir，跑已落盘的脚本对当前 raw.html\n' +
-      '- 调试模式：传 scriptContent+articleDir，跑候选源码（不落盘）对当前 raw.html',
+      '- 生产模式：传 skillsDir+platform+articlePath，跑已落盘的脚本对当前 raw.html\n' +
+      '- 调试模式：传 scriptContent+articlePath，跑候选源码（不落盘）对当前 raw.html',
       z.object({
-        articleDir:    z.string().describe('文章目录的绝对路径（用来读 raw.html）'),
+        articlePath:   z.string().describe('文章 md 文件的绝对路径（用来读伴随的 raw.html）'),
         skillsDir:     z.string().optional().describe('Skill 目录（生产模式必填）'),
         platform:      z.string().optional().describe('平台名称（生产模式必填）'),
         scriptContent: z.string().optional().describe('脚本源码（调试模式必填）'),
@@ -243,15 +261,14 @@ export function createArticleParseToolDefs(): ToolDef[] {
       }),
       async (args) => {
         try {
-          const htmlPath = path.join(args.articleDir, 'raw.html');
+          const htmlPath = companionHtmlPath(args.articlePath);
           const html = await fs.readFile(htmlPath, 'utf-8').catch(() => null);
           if (html === null) {
             return { content: [{ type: 'text' as const, text: `❌ raw.html 不存在：${htmlPath}` }], isError: true };
           }
 
-          const metaRaw = await fs.readFile(path.join(args.articleDir, 'meta.json'), 'utf-8').catch(() => '{}');
-          const meta = JSON.parse(metaRaw);
-          const url: string = meta.url || '';
+          const parsed = await readArticleFile(args.articlePath);
+          const url: string = parsed?.meta.url ?? '';
 
           const params: Record<string, unknown> = { url, html, timeout_ms: args.timeoutMs };
           if (args.scriptContent) {

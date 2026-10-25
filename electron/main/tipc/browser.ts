@@ -1,31 +1,6 @@
-import { app, BrowserWindow, type Rectangle } from 'electron';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { app, shell } from 'electron';
 import { tipc } from '@egoist/tipc/main';
 import { broadcastToWindows } from '../services/renderer-broadcast.js';
-import {
-  getBrowserActionHistory,
-  getBrowserStreamStatus,
-  recordBrowserAction,
-  setBrowserActionBroadcaster,
-  setBrowserStreamLaunchedProvider,
-} from '../services/browser/browser-action-stream.js';
-import { getEmbeddedBrowserManager } from '../services/browser/embedded/embedded-browser-manager.js';
-import {
-  dismissPresentedTab,
-  getPresentationForWindow,
-  presentTab,
-  reportPageViewBounds,
-  setOverlayHidden,
-  setPresentationBroadcaster,
-} from '../services/browser/embedded/presentation.js';
-import {
-  closeWebAiTab,
-  getWebAiState,
-  openWebAiSite,
-  reportWebAiBounds,
-  setWebAiOverlayHidden,
-} from '../services/browser/embedded/webai.js';
 import {
   listPendingHumanInterventions,
   outcomeForActionKey,
@@ -38,13 +13,8 @@ import { ACTION_LEVEL_NOTES, builtinPaymentBlockedHosts, paymentBlockedHosts } f
 import { mainLogger } from '../agents/logger.js';
 
 const interventionLogger = mainLogger.child('intervention-tipc');
-import {
-  getExtensionStatus,
-  sendExtensionCommand,
-  setExtensionStatusBroadcaster,
-  setHandoffHandler,
-  setInterventionResolvedHandler,
-} from '../services/browser/browser-gateway.js';
+
+import { getExtensionStatus, sendExtensionCommand, setExtensionStatusBroadcaster, setHandoffHandler, setInterventionResolvedHandler } from '../services/browser/browser-gateway.js';
 import { routeBrowserHandoff, setHandoffDraftBroadcaster } from '../services/browser/extension-handoff.js';
 import {
   registerNmHost as registerNmHostService,
@@ -56,9 +26,14 @@ import {
   launchTaskBrowser,
   TASK_BROWSER_LABELS,
 } from '../services/browser/browser-launcher.js';
-import { loadSettings, saveSettings } from '../services/settings-service.js';
+import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { normalizeTaskBrowser, type AppSettings, type TaskBrowserConfig } from '../services/settings-types.js';
-import { setBrowserToolsActionListener, type BrowserToolsActionEvent } from '../agents/tools/browser-tool-shared.js';
+import {
+  builtinExtensionDir,
+  copyExtensionToCustom,
+  getExtensionTarget,
+  resetExtensionCustom,
+} from '../services/extension-custom-service.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import { handleInterventionRaised } from '../services/browser/intervention-notify.js';
 
@@ -66,22 +41,10 @@ const t = tipc.create();
 
 let bridgeRegistered = false;
 
-/**
- * 动作流统一接线（registerTipcHandlers 调用一次）：
- * - Agent 工具动作源：browser-tools 模块级 hook → recordBrowserAction
- * - 主进程 → 渲染层：增量广播 browserActionAdded
- * 手动解析动作源（kind 'article'）在 tipc/article.ts 调 readArticleWithBrowser 时传 onAction 接入。
- */
-export function registerBrowserActionBridge(): void {
+/** 人工等待接线（registerTipcHandlers 调用一次）：全量广播 + 新卡打扰（intervention-notify） */
+export function registerHumanInterventionBridge(): void {
   if (bridgeRegistered) return;
   bridgeRegistered = true;
-  setBrowserStreamLaunchedProvider(() => getEmbeddedBrowserManager().listTabs().length > 0);
-  setBrowserActionBroadcaster((event) => {
-    broadcastToWindows((h) => h.browserActionAdded.send(event));
-  });
-  setPresentationBroadcaster((data) => {
-    broadcastToWindows((h) => h.pagePresentationChanged.send(data));
-  });
   setHumanInterventionBroadcaster((pending, resolved) => {
     broadcastToWindows((h) => h.humanInterventionChanged.send({ pending, resolved }));
     if (resolved) {
@@ -92,19 +55,6 @@ export function registerBrowserActionBridge(): void {
     lastPendingInterventionIds = new Set(pending.map((p) => p.id));
     if (fresh.length === 0) return;
     void handleInterventionRaised(fresh[fresh.length - 1]);
-  });
-  getEmbeddedBrowserManager().setTakeoverChangeListener(() => {
-    broadcastToWindows((h) => h.tabTakeoverChanged.send({ takeovers: getEmbeddedBrowserManager().listTakeovers() }));
-  });
-  setBrowserToolsActionListener((event: BrowserToolsActionEvent) => {
-    recordBrowserAction({
-      source: event.source,
-      taskMeta: event.taskMeta,
-      action: event.action,
-      url: event.url,
-      detail: event.detail,
-      result: event.result,
-    });
   });
 }
 
@@ -134,16 +84,9 @@ export function registerExtensionHandoffBridge(): void {
   });
 }
 
-/** 扩展目录定位：prod = extraResources 打包产物，dev = 项目根源码目录；供设置页安装引导展示 */
+/** 内置扩展目录定位：prod = extraResources 打包产物，dev = 项目根源码目录 */
 function extensionDirPath(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'extension')
-    : join(app.getAppPath(), 'extension');
-}
-
-function windowFromContext(sender: Electron.WebContents): BrowserWindow | null {
-  const win = BrowserWindow.fromWebContents(sender);
-  return win && !win.isDestroyed() ? win : null;
+  return builtinExtensionDir(app, process.resourcesPath);
 }
 
 /** taskBrowser 写入唯一口：落盘 + 广播设置变更（设置页 store 热更） */
@@ -180,7 +123,7 @@ async function focusInterventionTab(id: string): Promise<void> {
   }
 }
 
-/** 唤醒链路唯一入口：services 层不 import agents，等待人工解除与接管交还都走这里 */
+/** 唤醒链路唯一入口：services 层不 import agents，等待人工解除走这里 */
 function resumeConversation(conversationId: string, message: string): void {
   const manager = getPiSessionManager();
   const sessionId = manager.getSessionIdByConversation(conversationId);
@@ -197,10 +140,27 @@ function resumeConversation(conversationId: string, message: string): void {
 export const browserRouter = {
   getExtensionStatus: t.procedure.action(async () => getExtensionStatus()),
 
-  /** 目录缺失（打包遗漏/安装损坏）返回 null，前端显示占位而非幽灵路径 */
-  getExtensionDirPath: t.procedure.action(async () => {
-    const dir = extensionDirPath();
-    return { path: existsSync(dir) ? dir : null };
+  /** 当前生效扩展目录：custom 副本优先（存在即生效），source/outdated 供设置页展示副本状态与落后提示 */
+  getExtensionDirPath: t.procedure.action(async () => getExtensionTarget(getConfigDir(), extensionDirPath())),
+
+  /** 从内置复制到自定义（副本已存在时整体覆盖 = 更新副本），返回复制后的目标状态 */
+  copyExtensionToCustom: t.procedure.action(async () => {
+    try {
+      return { ok: true as const, target: await copyExtensionToCustom(getConfigDir(), extensionDirPath()) };
+    } catch (error) {
+      console.error('[browser] 复制扩展到自定义区失败:', error);
+      return { ok: false as const, error: String(error) };
+    }
+  }),
+
+  /** 恢复默认：删除 custom 副本，浏览器加载回内置目录 */
+  resetExtensionCustom: t.procedure.action(async () => {
+    try {
+      return { ok: true as const, target: await resetExtensionCustom(getConfigDir(), extensionDirPath()) };
+    } catch (error) {
+      console.error('[browser] 恢复扩展默认失败:', error);
+      return { ok: false as const, error: String(error) };
+    }
   }),
 
   registerNmHost: t.procedure.action(async () => registerNmHostService()),
@@ -243,116 +203,19 @@ export const browserRouter = {
       return { ok: true as const };
     }),
 
-  getBrowserActions: t.procedure
-    .input<{ limit?: number }>()
-    .action(async ({ input }) => {
-      const history = getBrowserActionHistory();
-      const limit = Math.max(0, Math.min(input?.limit ?? history.length, history.length));
-      return {
-        events: limit < history.length ? history.slice(history.length - limit) : history,
-        status: getBrowserStreamStatus(),
-      };
-    }),
-
-  getSelfWindowId: t.procedure.action(async ({ context }) => windowFromContext(context.sender)?.id ?? null),
-
-  listEmbeddedTabs: t.procedure.action(async () => getEmbeddedBrowserManager().listTabs()),
-
-  /** 页面视图区状态：tab 列表 + 本窗口当前呈现 tab + 本窗口是否上报过视图区 bounds */
-  getPageViewState: t.procedure.action(async ({ context }) => {
-    const win = windowFromContext(context.sender);
-    const presentation = win ? getPresentationForWindow(win) : null;
-    return {
-      tabs: getEmbeddedBrowserManager().listTabs(),
-      selfWindowId: win?.id ?? null,
-      presentedTabId: presentation?.tabId ?? null,
-      hasPageView: presentation?.hasPageView ?? false,
-    };
-  }),
-
-  reportPageViewBounds: t.procedure
-    .input<{ bounds: Rectangle | null; revision: number }>()
-    .action(async ({ input, context }) => {
-      const win = windowFromContext(context.sender);
-      if (!win) return;
-      reportPageViewBounds(win, input.bounds, input.revision);
-    }),
-
-  reportPageViewOverlay: t.procedure
-    .input<{ hidden: boolean }>()
-    .action(async ({ input, context }) => {
-      const win = windowFromContext(context.sender);
-      if (!win) return;
-      setOverlayHidden(win, input.hidden);
-    }),
-
-  getWebAiState: t.procedure.action(async () => getWebAiState()),
-
-  openWebAiSite: t.procedure
+  /** 应用内 http/https 外链统一出口：系统默认浏览器打开，非 http(s) 拒绝 */
+  'browser:openExternal': t.procedure
     .input<{ url: string }>()
-    .action(async ({ input, context }) => openWebAiSite(windowFromContext(context.sender), input.url)),
-
-  closeWebAiTab: t.procedure.action(async () => {
-    closeWebAiTab();
-  }),
-
-  reportWebAiBounds: t.procedure
-    .input<{ bounds: Rectangle | null; revision: number }>()
-    .action(async ({ input, context }) => {
-      const win = windowFromContext(context.sender);
-      if (!win) return;
-      reportWebAiBounds(win, input.bounds, input.revision);
-    }),
-
-  reportWebAiOverlay: t.procedure
-    .input<{ hidden: boolean }>()
-    .action(async ({ input, context }) => {
-      const win = windowFromContext(context.sender);
-      if (!win) return;
-      setWebAiOverlayHidden(win, input.hidden);
-    }),
-
-  /** 地址栏导航/历史操作：只作用于呈现 tab，agent 当前 tab 不受影响 */
-  navigatePresentedTab: t.procedure
-    .input<{ tabId: string; url: string }>()
-    .action(async ({ input }) => getEmbeddedBrowserManager().navigateTabAsUser(input.tabId, input.url)),
-
-  goBackPresentedTab: t.procedure
-    .input<{ tabId: string }>()
-    .action(async ({ input }) => getEmbeddedBrowserManager().goBackTab(input.tabId)),
-
-  goForwardPresentedTab: t.procedure
-    .input<{ tabId: string }>()
-    .action(async ({ input }) => getEmbeddedBrowserManager().goForwardTab(input.tabId)),
-
-  reloadPresentedTab: t.procedure
-    .input<{ tabId: string }>()
-    .action(async ({ input }) => getEmbeddedBrowserManager().reloadTab(input.tabId)),
-
-  /** 渲染层「呈现」按钮与 agent present 工具共用后端；渲染层无会话语义，holder 固定 */
-  presentEmbeddedTab: t.procedure
-    .input<{ tabId?: string; url?: string; workspaceId?: string }>()
-    .action(async ({ input, context }) => {
-      if (input.tabId) {
-        return presentTab(getEmbeddedBrowserManager(), { tabId: input.tabId });
+    .action(async ({ input }) => {
+      if (!/^https?:\/\//i.test(input.url)) {
+        return { ok: false as const, error: '仅支持 http/https 链接' };
       }
-      if (input.url) {
-        const win = windowFromContext(context.sender);
-        return presentTab(getEmbeddedBrowserManager(), {
-          url: input.url,
-          workspaceId: input.workspaceId ?? (win ? `window-${win.id}` : 'companion-present'),
-          holderId: 'companion-present',
-        });
+      try {
+        await shell.openExternal(input.url);
+        return { ok: true as const };
+      } catch (err) {
+        return { ok: false as const, error: String(err) };
       }
-      return { ok: false as const, message: 'tabId 与 url 至少提供一个' };
-    }),
-
-  dismissPresentedTab: t.procedure
-    .input<{ tabId?: string }>()
-    .action(async ({ input, context }) => {
-      const win = windowFromContext(context.sender);
-      if (!win) return;
-      dismissPresentedTab(win, input.tabId);
     }),
 
   listHumanInterventions: t.procedure.action(async () => listPendingHumanInterventions()),
@@ -362,29 +225,6 @@ export const browserRouter = {
     paymentBlockedHosts: [...paymentBlockedHosts()],
     builtinPaymentBlockedHosts: [...builtinPaymentBlockedHosts()],
   })),
-
-  takeOverTab: t.procedure
-    .input<{ tabId: string; conversationId?: string }>()
-    .action(async ({ input }) => {
-      const taskMeta = input.conversationId ? { kind: 'agent' as const, conversationId: input.conversationId } : undefined;
-      const ok = getEmbeddedBrowserManager().takeOverTab(input.tabId, taskMeta);
-      return { ok };
-    }),
-
-  releaseTakeover: t.procedure
-    .input<{ tabId: string }>()
-    .action(async ({ input }) => {
-      const released = getEmbeddedBrowserManager().releaseTakeover(input.tabId);
-      if (!released) return { ok: false };
-      const conversationId = released.taskMeta?.conversationId;
-      if (conversationId) {
-        resumeConversation(
-          conversationId,
-          '用户已交还页面控制权。请重新 observe_page 观察当前页面后继续任务，旧 ref 已全部失效',
-        );
-      }
-      return { ok: true };
-    }),
 
   resolveHumanIntervention: t.procedure
     .input<{ id: string; result?: InterventionResult; actionKey?: string }>()
@@ -407,11 +247,9 @@ export const browserRouter = {
       if (!resolved.waiterConsumed) {
         const conversationId = resolved.taskMeta.conversationId;
         if (conversationId) {
-          const tab = getEmbeddedBrowserManager().getTab(resolved.request.tabId);
-          const url = tab?.url ?? resolved.request.url ?? '未知';
           resumeConversation(
             conversationId,
-            `用户已在浏览器完成人工处理（${resolved.request.reason}，页面当前 URL: ${url}）。请重新观察该 tab 的当前页面状态后继续任务，不要从头重跑，不要重放旧 ref。`,
+            `用户已在浏览器完成人工处理（${resolved.request.reason}，页面当前 URL: ${resolved.request.url ?? '未知'}）。请重新观察该 tab 的当前页面状态后继续任务，不要从头重跑，不要重放旧 ref。`,
           );
         }
       }

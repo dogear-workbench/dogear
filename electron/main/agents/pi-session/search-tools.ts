@@ -2,22 +2,30 @@
  * pi 会话的 Grep/Glob 工具。
  *
  * pi-agent-core 的 harness/tools 目录没有对应的现成实现（只有 read/write/edit/bash），
- * 项目也没有引入 glob 库依赖，这里用 Node 原生 fs 递归 + 手写 glob→正则转换实现，
- * 走既有的 ToolDef/zod 约定（toPiTools 转换），不新增依赖。
+ * 这里走既有的 ToolDef/zod 约定（toPiTools/toHarnessTools 转换），不新增依赖。
  *
- * 路径边界：根目录（可选 path 参数）和被遍历到的每一层都复用 resolveWithinPaths 校验；
- * 遍历过程中遇到符号链接（文件或目录）一律跳过，不follow，避免通过工作区内的软链接读到区外内容。
+ * 文件收集统一走 ExecutionEnv.listFiles（gitignore-aware、有界、不跟随符号链接，
+ * 实现见 list-files.ts / workspace-execution-env.ts）；Grep 的内容读取与行匹配仍是自研逻辑。
+ * 根目录（可选 path 参数）和被遍历到的每一层经 env 的 guard 或 resolveWithinPaths 校验。
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { z } from 'zod';
-import { truncateLine, GREP_MAX_LINE_LENGTH } from '@earendil-works/pi-agent-core';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
+import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 import { resolveWithinPaths } from './workspace-boundary.js';
 
-/** 遍历时永远跳过的目录，避免扫进版本控制/依赖/内部数据目录 */
-const SKIP_DIR_NAMES = new Set(['node_modules', '.git', '.dogear']);
-const MAX_WALK_FILES = 5000;
+const GREP_MAX_LINE_LENGTH = 500;
+
+function truncateLine(line: string, maxChars: number): { text: string } {
+  if (line.length <= maxChars) return { text: line };
+  return { text: `${line.slice(0, maxChars)}... [truncated]` };
+}
+
+/** listFiles 的 exclude 名单：.git 由后端无条件跳过，这里补依赖与内部数据目录 */
+const LIST_EXCLUDE_NAMES = ['node_modules', '.dogear'];
+const MAX_LIST_ENTRIES = 5000;
 const MAX_GREP_FILE_BYTES = 2 * 1024 * 1024;
 
 function globToRegExp(pattern: string): RegExp {
@@ -43,43 +51,31 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`^${out}$`);
 }
 
-/** 递归收集文件的相对路径（相对 root，统一用 / 分隔），跳过隐藏基础设施目录和符号链接 */
-async function walkFiles(rootPath: string, dir: string, results: string[]): Promise<void> {
-  if (results.length >= MAX_WALK_FILES) return;
-  let entries: import('fs').Dirent[];
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (results.length >= MAX_WALK_FILES) return;
-    if (entry.isSymbolicLink()) continue;
-    if (entry.isDirectory()) {
-      if (SKIP_DIR_NAMES.has(entry.name)) continue;
-      await walkFiles(rootPath, path.join(dir, entry.name), results);
-    } else if (entry.isFile()) {
-      results.push(path.relative(rootPath, path.join(dir, entry.name)).replace(/\\/g, '/'));
-    }
-  }
-}
-
 interface FileEntry {
   display: string;
   abs: string;
 }
 
 async function collectFiles(
+  env: ExecutionEnv,
   roots: { abs: string; isPrimary: boolean }[],
 ): Promise<FileEntry[]> {
   const entries: FileEntry[] = [];
   for (const root of roots) {
-    const temp: string[] = [];
-    await walkFiles(root.abs, root.abs, temp);
-    for (const rel of temp) {
-      const abs = path.join(root.abs, rel);
+    const listFiles = env.listFiles;
+    if (!listFiles) continue;
+    const listing = await listFiles.call(
+      env,
+      root.abs,
+      { exclude: LIST_EXCLUDE_NAMES, maxEntries: MAX_LIST_ENTRIES },
+      BACKGROUND_CONTEXT,
+    );
+    if (!listing.ok) continue;
+    for (const entry of listing.value.entries) {
+      if (entry.kind !== 'file') continue;
+      const abs = path.join(root.abs, entry.path);
       entries.push({
-        display: root.isPrimary ? rel : abs.replace(/\\/g, '/'),
+        display: root.isPrimary ? entry.path : abs.replace(/\\/g, '/'),
         abs,
       });
     }
@@ -87,7 +83,7 @@ async function collectFiles(
   return entries;
 }
 
-export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
+export function createSearchToolDefs(allowedPaths: string[], env: ExecutionEnv): ToolDef[] {
   const primaryPath = allowedPaths[0];
   const allRoots = allowedPaths.map((abs, i) => ({ abs, isPrimary: i === 0 }));
   return [
@@ -95,6 +91,7 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
       'Glob',
       '按通配符匹配文件路径',
       '按 glob 模式匹配工作区内的文件路径，支持 * / ? / ** 通配符（如 "**/*.ts"、"src/*.tsx"）。' +
+      '遵循 .gitignore 忽略规则，被 git 忽略的文件不参与匹配。' +
       '返回匹配的相对路径列表（按路径排序，默认最多 100 条）。' +
       '`.dogear` 数据目录默认跳过以防数据文件淹没结果；需搜索其中内容（如文章库）时把 path 显式指到对应子目录。',
       z.object({
@@ -109,9 +106,9 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
           if (subPath) {
             const root = await resolveWithinPaths(allowedPaths, subPath);
             const isPrimary = path.relative(primaryPath, root).startsWith('..') === false;
-            entries = await collectFiles([{ abs: root, isPrimary }]);
+            entries = await collectFiles(env, [{ abs: root, isPrimary }]);
           } else {
-            entries = await collectFiles(allRoots);
+            entries = await collectFiles(env, allRoots);
           }
           const matched = entries
             .filter((e) => regex.test(e.display))
@@ -129,12 +126,14 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
           };
         }
       },
+      { replay: 'safe', outputLimits: { maxBytes: 256 * 1024 } },
     ),
 
     defineTool(
       'Grep',
       '正则搜索文件内容',
       '在工作区文件内容中按正则表达式搜索匹配行，返回 "相对路径:行号: 内容"（超长行自动截断）。' +
+      '遵循 .gitignore 忽略规则，被 git 忽略的文件不参与搜索。' +
       '可选 glob 参数按文件名过滤，可选 path 参数限定搜索的子目录。' +
       '`.dogear` 数据目录默认跳过以防数据文件淹没结果；需搜索其中内容（如文章库）时把 path 显式指到对应子目录。',
       z.object({
@@ -164,10 +163,10 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
               entries = [{ display: isPrimary ? path.relative(primaryPath, root).replace(/\\/g, '/') : root.replace(/\\/g, '/'), abs: root }];
             } else {
               const isPrimary = path.relative(primaryPath, root).startsWith('..') === false;
-              entries = await collectFiles([{ abs: root, isPrimary }]);
+              entries = await collectFiles(env, [{ abs: root, isPrimary }]);
             }
           } else {
-            entries = await collectFiles(allRoots);
+            entries = await collectFiles(env, allRoots);
           }
           const globRegex = glob ? globToRegExp(glob) : null;
           const maxMatches = limit ?? 200;
@@ -207,6 +206,7 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
           };
         }
       },
+      { replay: 'safe', outputLimits: { maxBytes: 256 * 1024 } },
     ),
   ];
 }

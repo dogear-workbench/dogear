@@ -42,7 +42,6 @@ export const LiveTail = memo(function LiveTail({
     ? liveTail[liveTail.length - 1].contentBlocks?.slice(-1)[0]
     : undefined;
   const lastBlockType = lastBlock?.type ?? fallbackLastBlockType;
-  const lastToolName = lastBlock?.type === 'tool_use' ? lastBlock.toolName : undefined;
 
   return (
     <>
@@ -74,7 +73,6 @@ export const LiveTail = memo(function LiveTail({
         pendingState={pendingState}
         pendingCount={pendingCount}
         lastBlockType={lastBlockType}
-        lastToolName={lastToolName}
       />
     </>
   );

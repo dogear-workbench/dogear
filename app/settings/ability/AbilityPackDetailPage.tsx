@@ -4,7 +4,6 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
-import type { WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView, AbilitySegmentMeta, AbilitySkillMeta } from '../../../electron/main/tipc/ability';
 import { AbilityPackSidebar } from './AbilityPackSidebar';
 import { ToolDetailDialog } from '../ToolDetailDialog';
@@ -94,11 +93,9 @@ const SkillMarkdown = memo(function SkillMarkdown({ name }: { name: string }) {
 
 function SkillContentSection({
   skill,
-  enabled,
   packEnabled,
 }: {
   skill: AbilitySkillMeta;
-  enabled: boolean;
   packEnabled: boolean;
 }) {
   return (
@@ -109,16 +106,6 @@ function SkillContentSection({
           {!skill.description && (
             <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground shrink-0">文件缺失</span>
           )}
-          <span
-            className={cn(
-              'ml-auto shrink-0 text-xs px-1.5 py-0.5 rounded',
-              enabled
-                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400',
-            )}
-          >
-            {enabled ? '已启用' : '已停用'}
-          </span>
         </div>
         {skill.description && (
           <p className="text-xs text-muted-foreground leading-relaxed">{skill.description}</p>
@@ -135,7 +122,6 @@ function SkillContentSection({
 interface AbilityPackDetailPageProps {
   pack: AbilityPackView;
   workspaceId: string | null;
-  config: WorkspaceConfig;
   packEnabled: boolean;
   refreshKey: number;
   onBack: () => void;
@@ -144,7 +130,6 @@ interface AbilityPackDetailPageProps {
 export function AbilityPackDetailPage({
   pack,
   workspaceId,
-  config,
   packEnabled,
   refreshKey,
   onBack,
@@ -156,7 +141,6 @@ export function AbilityPackDetailPage({
   const activeSkill = isSkillPack
     ? pack.skillMetas.find((s) => s.name === selectedSkillName) ?? pack.skillMetas[0]
     : null;
-  const isSkillEnabled = (name: string) => config.enabledSkills.includes(name);
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -199,7 +183,6 @@ export function AbilityPackDetailPage({
             {isSkillPack && activeSkill && (
               <SkillContentSection
                 skill={activeSkill}
-                enabled={isSkillEnabled(activeSkill.name)}
                 packEnabled={packEnabled}
               />
             )}

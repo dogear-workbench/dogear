@@ -30,6 +30,7 @@ import {
 import { blockedDomainMessage, findBlockedEntry } from '../../services/browser/browser-blocklist-service.js';
 import { siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import { pageStateSuffix } from './extension-observe-format.js';
+import { loginWallGate } from './extension-login-wall.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
 export interface ExtensionTabToolDeps {
@@ -107,7 +108,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
       'dogear__extension__open_tab',
       '在用户浏览器新开标签页并设为操作焦点',
       `${scopeNote}\n` +
-        '在用户浏览器新开标签页打开目标 URL（加入 Dogear 分组），导航不受域名限制（支付与网银域名禁用）；打开后即成为操作焦点。' +
+        '在用户浏览器新开标签页打开目标 URL（新页进入 agent 专属窗口），导航不受域名限制（支付与网银域名禁用）；打开后即成为操作焦点。' +
         '用户已屏蔽的站点会被拒绝（返回屏蔽提示，改用其他来源，不要再尝试该站）。' +
         `单会话最多同时持有 ${MAX_TABS_PER_SESSION} 个标签页，超限时调用会被拒绝，需先 close_tab 释放。` +
         'background=true 时在后台打开（不抢占用户正在看的页面），但仍成为操作焦点。' +
@@ -175,13 +176,21 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
           ...(finalUrl !== args.url ? { urlAfter: finalUrl } : {}),
           durationMs: Date.now() - startedAt,
         });
+        const wall = await loginWallGate({
+          conversationId,
+          pageState: tab.pageState,
+          url: finalUrl,
+          tabId: tab.tabId,
+          resumeNote: '请先 observe_page 获取页面元素',
+        });
+        if (wall) return wall;
         const redirectNote = finalUrl !== args.url ? `（重定向到 ${finalUrl}）` : '';
         const titleNote = tab.title ? `\n标题: ${tab.title}` : '';
         const pointer = siteKnowledgePointer(finalUrl);
         const policyTip = sitePolicyPointer(finalUrl);
         const groupNote =
           tab.grouped === false
-            ? `\n⚠ 新标签页未能加入 Dogear 分组（原因见扩展 Service Worker console 的 [dogear] 日志），close_tab / list_tabs 将无法管理它。`
+            ? `\n⚠ 新标签页未落入 agent 窗口（原因见扩展 Service Worker console 的 [dogear] 日志），close_tab / list_tabs 将无法管理它。`
             : '';
         return textResult(
           `已在新标签页打开目标页面（tabId ${tab.tabId ?? '未知'}${redirectNote}）。${titleNote}\n` +
@@ -193,10 +202,10 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
 
     defineTool(
       'dogear__extension__close_tab',
-      '关闭用户浏览器 Dogear 分组内标签页',
+      '关闭 agent 窗口内标签页',
       `${scopeNote}\n` +
-        '关闭 Dogear 分组内标签页：不传 tab_id 关闭当前操作焦点标签页；传 tab_id 关闭组内指定标签页（非焦点 tab 的 tabId 用 list_tabs 查询）。' +
-        '关闭焦点标签页后操作焦点自动回落到组内最近使用的标签页；组内最后一个也被关闭后分组为空，需先 open_tab 重新打开。',
+        '关闭 agent 窗口内标签页：不传 tab_id 关闭当前操作焦点标签页；传 tab_id 关闭窗口内指定标签页（非焦点 tab 的 tabId 用 list_tabs 查询）。' +
+        '关闭焦点标签页后操作焦点自动回落到窗口内最近使用的标签页；窗口内最后一个也被关闭后无可用标签页，需先 open_tab 重新打开。',
       z.object({
         tab_id: z.number().int().optional().describe('要关闭的标签页 tabId；不传则关闭当前焦点标签页'),
       }),
@@ -243,7 +252,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
         });
         let focusNote: string;
         if (wasFocus && r.value.focusedTabId === null) {
-          focusNote = `Dogear 分组已空，后续页面操作请先 open_tab`;
+          focusNote = `agent 窗口已空，后续页面操作请先 open_tab`;
         } else if (wasFocus) {
           focusNote = `操作焦点已回落到 tabId ${r.value.focusedTabId}，后续页面操作将作用于它，请先 observe_page`;
         } else {
@@ -256,14 +265,14 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
 
     defineTool(
       'dogear__extension__list_tabs',
-      '列出用户浏览器 Dogear 分组内标签页',
+      '列出 Dogear 管理的标签页',
       `${scopeNote}\n` +
-        '列出 Dogear 分组内全部标签页（tabId / 地址 / 标题 / 焦点标记），无页面交互、不受站点策略约束。' +
+        '列出 Dogear 管理的全部标签页（tabId / 地址 / 标题 / 焦点标记），无页面交互、不受站点策略约束。' +
         '非焦点标签页只有摘要信息（无正文预览），读取其正文需先使其成为操作焦点：请用户在浏览器中切换到该标签页；' +
         '或直接 open_tab 重新打开目标地址（新开页即焦点）。',
       z.object({}),
       async () => {
-        const busy = acquireGate('list_tabs', '分组标签页', undefined);
+        const busy = acquireGate('list_tabs', '标签页清单', undefined);
         if (busy) return busy;
         const startedAt = Date.now();
         const r = await runCommand('list_tabs', {}, parseListTabsPayload);
@@ -288,7 +297,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
           return `- ${focusMark}tabId ${t.tabId}${title}\n  ${t.url}`;
         });
         return textResult(
-          `Dogear 分组内共 ${tabs.length} 个标签页：\n${lines.join('\n')}\n\n` +
+          `Dogear 共管理 ${tabs.length} 个标签页：\n${lines.join('\n')}\n\n` +
             '页面操作只作用于焦点标签页；非焦点标签页只有摘要，读取正文请让用户切换到该标签页或用 open_tab 重开。',
         );
       },

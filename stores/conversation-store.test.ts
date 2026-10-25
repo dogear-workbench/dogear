@@ -116,3 +116,23 @@ describe('failover 横幅单条化与生命周期', () => {
     expect(useConversationStore.getState().failoverNoticesByConversation['conv-expire']).toBeUndefined();
   });
 });
+
+describe('压缩失败持续态', () => {
+  test('compactionFailureChanged 置位后恢复：Set 增删按 conversationId', () => {
+    expect(useConversationStore.getState().compactionFailureConversationIds.has('conv-cf')).toBe(false);
+
+    emitEvent('compactionFailureChanged', { conversationId: 'conv-cf', failed: true });
+    expect(useConversationStore.getState().compactionFailureConversationIds.has('conv-cf')).toBe(true);
+
+    emitEvent('compactionFailureChanged', { conversationId: 'conv-cf', failed: false });
+    expect(useConversationStore.getState().compactionFailureConversationIds.has('conv-cf')).toBe(false);
+  });
+
+  test('sessionClosed 清除压缩失败态，不等恢复事件', () => {
+    emitEvent('compactionFailureChanged', { conversationId: 'conv-cf-close', failed: true });
+    expect(useConversationStore.getState().compactionFailureConversationIds.has('conv-cf-close')).toBe(true);
+
+    emitEvent('sessionClosed', { conversationId: 'conv-cf-close' });
+    expect(useConversationStore.getState().compactionFailureConversationIds.has('conv-cf-close')).toBe(false);
+  });
+});

@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { client } from '@/lib/client';
-import { rendererEvents } from '@/lib/events';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { TitleBar } from '@/components/TitleBar';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useTaskFocusStore } from '@/stores/task-focus-store';
 
 export function NotesWindowPage() {
   const [initError, setInitError] = useState<string | null>(null);
@@ -45,27 +43,6 @@ export function NotesWindowPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  // 主进程直发的任务定位（通知点击）：切到目标工作区（如需）后请求任务视图选中
-  useEffect(() => {
-    const unsub = rendererEvents.notesTaskFocus.listen(({ taskId, workspaceId }) => {
-      (async () => {
-        try {
-          const currentWs = useWorkspaceStore.getState().workspace;
-          if (currentWs?.id !== workspaceId) {
-            const { workspaces } = await client.getAll();
-            const target = workspaces?.find((w) => w.id === workspaceId);
-            if (!target) return;
-            await useWorkspaceStore.getState().setWorkspace(target, { skipSetDefault: true });
-          }
-          useTaskFocusStore.getState().requestTaskFocus(taskId);
-        } catch (err) {
-          console.error('[notes-window] 任务定位失败:', err);
-        }
-      })();
-    });
-    return () => unsub();
   }, []);
 
   return (

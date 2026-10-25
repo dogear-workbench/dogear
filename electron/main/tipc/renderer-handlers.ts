@@ -5,8 +5,6 @@
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
-import type { BrowserActionEvent } from '../services/browser/browser-action-stream.js';
-import type { EmbeddedTabSnapshot } from '../services/browser/embedded/types.js';
 import type { HumanInterventionRequest } from '../services/browser/human-intervention.js';
 import type { ExtensionStatus } from '../services/browser/browser-gateway.js';
 import type { HandoffDraftBroadcast } from '../services/browser/extension-handoff.js';
@@ -33,7 +31,7 @@ export type RendererHandlers = {
     result: unknown;
   }) => void;
 
-  // 队列长度变化（插话/正常消息进出 pendingMessages）
+  // 队列长度变化（插话进出队列）
   pendingCountChanged: (data: {
     sessionId: string;
     count: number;
@@ -88,15 +86,8 @@ export type RendererHandlers = {
   // 文章解析状态变化（脚本/AI 质量检查/重新解析后端广播）
   articleParseStatusChanged: (data: {
     articleId: string;
-    workspacePath: string;
-    parseStatus: 'script_ok' | 'fixed' | 'need_login' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
-  }) => void;
-
-  // 浏览器解析遇登录墙（解析编排广播，前端 toast 提示 + 文章条目展示需要登录状态）
-  browserLoginRequired: (data: {
-    articleId: string;
-    url: string;
     workspaceId: string;
+    parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
   }) => void;
 
   // === 飞书 Bot ===
@@ -107,7 +98,7 @@ export type RendererHandlers = {
     errorMessage?: string;
   }) => void;
 
-  // 飞书 Bot 自动初始化数据（connect 成功后推送）
+  // 飞书 Bot 自动初始化数据（connect 成功后推送；结构镜像 types/feishu.ts 的 FeishuBotStatus）
   feishuBotAutoInit: (data: {
     status: {
       workspaceId: string | null;
@@ -115,12 +106,19 @@ export type RendererHandlers = {
       conversationId: string | null;
       conversationTitle: string | null;
       debugMode: boolean;
+      pendingNew: boolean;
     };
-    conversations: Array<{
-      index: number;
-      id: string;
-      title: string;
-      updatedAt: string;
+    chatBindings: Array<{
+      chatId: string;
+      workspaceName: string | null;
+      groupTitle: string | null;
+      hasManageCard: boolean;
+      lastActiveAt: string;
+      threadBindings: Array<{
+        threadId: string;
+        conversationTitle: string | null;
+        lastActiveAt: string;
+      }>;
     }>;
   }) => void;
 
@@ -141,10 +139,10 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
-  // 会话未读标记实际翻转（setUnread 落盘成功后广播，前端据此更新绿点分片与 tab 未读置顶）
+  // 会话未读标记实际翻转（setUnread 落盘成功后广播，前端据此更新绿点分片与 tab 未读置顶）；'error' = 上一轮执行失败（红点）
   conversationUnreadChanged: (data: {
     conversationId: string;
-    unread: boolean;
+    unread: boolean | 'error';
   }) => void;
 
   // 对话用量有新条目写入（Task 6 写完后广播，渲染层收到后重新 getUsage）
@@ -188,6 +186,12 @@ export type RendererHandlers = {
     conversationId: string;
   }) => void;
 
+  // 会话压缩失败持续态翻转（置位/恢复；重启恢复时创建后主动对账一次），驱动会话告警横幅显隐
+  compactionFailureChanged: (data: {
+    conversationId: string;
+    failed: boolean;
+  }) => void;
+
   // 通知点击后定位到目标对话（主窗口收到后切换到对应工作区并激活对话）
   focusConversation: (data: {
     conversationId: string;
@@ -200,7 +204,7 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
-  // 任务通知点击深链（主窗口收到后切换到笔记页任务视图并选中该任务）
+  // 任务通知点击深链（主窗口切任务面板并选中该任务）
   focusTask: (data: { taskId: string; workspaceId: string }) => void;
 
   // 消息中心变更（notification-center-service 写操作后广播，载荷为未读数；渲染层收到后重拉列表）
@@ -238,17 +242,8 @@ export type RendererHandlers = {
   // PTY 进程退出
   ptyExit: (data: { terminalId: string; exitCode: number }) => void;
 
-  // 浏览器动作流增量事件（action-stream 广播，browser-store 追加渲染）
-  browserActionAdded: (data: BrowserActionEvent) => void;
-
-  // 页面呈现状态变化（presentation 广播；渲染层按 windowId 匹配本窗口高亮）
-  pagePresentationChanged: (data: { windowId: number; tabId: string | null }) => void;
-
   // 等待人工请求变化（human-intervention 广播；pending 为全量待处理列表，resolved 为刚解除的请求（含 result），供会话消息流卡片置 resolved 态）
   humanInterventionChanged: (data: { pending: HumanInterventionRequest[]; resolved?: HumanInterventionRequest }) => void;
-
-  // tab 接管状态变化（embedded-browser-manager 变化回调；payload 为全量接管中的 tab 列表）
-  tabTakeoverChanged: (data: { takeovers: Array<{ tabId: string; active: boolean }> }) => void;
 
   // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
   extensionStatusChanged: (data: ExtensionStatus) => void;
@@ -282,9 +277,6 @@ export type RendererHandlers = {
 
   // 数据中心窗口关闭（主窗口恢复数据中心 tab）
   dataCenterWindowClosed: (data: null) => void;
-
-  // 通知点击定位笔记窗口内任务（笔记窗口打开时主进程直发该窗口，主窗口仍走 focusTask）
-  notesTaskFocus: (data: { taskId: string; workspaceId: string }) => void;
 
   // 局域网同步事件总线（状态/对端/同步进度/配对四路合一，前端 sync store 按 kind 分发）
   syncEvent: (data: SyncEventPayload) => void;

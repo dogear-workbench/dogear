@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import {
   MAIN_AGENT_DELEGATION_APPEND,
+  EXTENSION_BROWSER_DISCIPLINE_APPEND,
   buildSubAgentProfileIndex,
   subAgentContractFor,
 } from './session-append-templates.js';
@@ -37,6 +38,20 @@ test('MAIN_AGENT_DELEGATION_APPEND 含复用判断四条与验收闭环三分支
   expect(text).toContain('方向全错 → 重派新会话');
   expect(text).toContain('交付以收到子会话的 delivery 消息为准（送达事实）；是否合格由你验收判断');
   expect(text).not.toContain('不要重派或调起');
+});
+
+test('EXTENSION_BROWSER_DISCIPLINE_APPEND 五条纪律齐全且在 400 字内', () => {
+  const text = EXTENSION_BROWSER_DISCIPLINE_APPEND;
+  expect(text).toContain('不轮询不重试');
+  expect(text).toContain('16 个标签页');
+  expect(text).toContain('发送到 Dogear');
+  expect(text).toContain('豁免收尾清理');
+  expect(text).toContain('3 次失败即停');
+  expect(text).toContain('dogear__extension__site_knowledge');
+  expect(text).toContain('dogear__extension__site_finding');
+  expect(text).toContain('去哪个标签页');
+  expect(text.length).toBeLessThanOrEqual(400);
+  expect(text).not.toContain('dogear__browser__');
 });
 
 test('渲染目检：主会话规范 + Profile 索引 + 两种契约的完整渲染结果', () => {

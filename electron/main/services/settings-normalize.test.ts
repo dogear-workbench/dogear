@@ -3,8 +3,13 @@ import { normalizeSettings, normalizePiModels, migratePiProfiles } from './setti
 import { normalizeFailoverChain, normalizePaymentBlockedHosts } from './settings-types.js';
 import {
   DEFAULT_SETTINGS,
+  createDefaultSubAgentProfile,
+  createBrowserParseSubAgentProfile,
+  createExploreSubAgentProfile,
+  createStockSubAgentProfile,
   type AppSettings,
   type ModelProfile,
+  type SubAgentProfile,
 } from './settings-types.js';
 
 function baseSettings(): AppSettings {
@@ -42,6 +47,14 @@ test('未知模式映射为 default', () => {
   (s.ai as Record<string, unknown>).permissionMode = 'something-weird';
   normalizeSettings(s);
   expect(s.ai.permissionMode).toBe('default');
+});
+
+test('存量 stateModelSelection 键剥离（话题状态卡退役残留）', () => {
+  const s = baseSettings();
+  (s.ai as Record<string, unknown>).stateModelSelection = { profileId: 'glm', modelId: 'glm-a' };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect('stateModelSelection' in s.ai).toBe(false);
 });
 
 test('新模式值保持不变', () => {
@@ -116,7 +129,6 @@ test('ai 对象结构损坏时恢复为安全默认', () => {
     const changed = normalizeSettings(s);
     expect(changed).toBe(true);
     expect(s.ai.permissionMode).toBe('default');
-    expect(s.ai.effort).toBe(null);
   }
 });
 
@@ -158,69 +170,156 @@ test('subAgent.profiles 中 profile 缺失 enabledBasicTools 时补全', () => {
   expect(s.subAgent.profiles[0].enabledAbilities).toEqual({});
 });
 
-test('subAgent.profiles 结构完整时不产生改动', () => {
+test('subAgent.profiles 结构完整时不产生改动（四内置齐全）', () => {
   const s = baseSettings();
   const changed = normalizeSettings(s);
   expect(changed).toBe(false);
-  expect(s.subAgent.profiles).toHaveLength(2);
-  expect(s.subAgent.profiles[0]!.id).toBe('default');
-  expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
+  expect(s.subAgent.profiles.map((p) => p.id)).toEqual(['default', 'browser-parse', 'explore', 'stock']);
 });
 
-test('subAgent.profiles 为空数组时补全默认 Profile', () => {
+test('subAgent.profiles 为空数组时补全四内置预设', () => {
   const s = baseSettings();
   s.subAgent.profiles = [];
   const changed = normalizeSettings(s);
   expect(changed).toBe(true);
-  expect(s.subAgent.profiles).toHaveLength(2);
-  expect(s.subAgent.profiles[0]!.id).toBe('default');
-  expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
+  expect(s.subAgent.profiles.map((p) => p.id)).toEqual(['default', 'browser-parse', 'explore', 'stock']);
 });
 
-test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保留且幂等', () => {
+test('缺失内置预设时自动补齐，已有自定义 Profile 保留且幂等', () => {
   const s = baseSettings();
   s.subAgent.profiles = [{ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} }];
   const changed = normalizeSettings(s);
   expect(changed).toBe(true);
-  expect(s.subAgent.profiles).toHaveLength(2);
+  expect(s.subAgent.profiles).toHaveLength(5);
   expect(s.subAgent.profiles[0]).toEqual({ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} });
-  expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
-  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true, skills: ['browser-exploration'] });
+  expect(s.subAgent.profiles.slice(1).map((p) => p.id)).toEqual(['default', 'browser-parse', 'explore', 'stock']);
+  expect(s.subAgent.profiles[2]!.enabledAbilities).toEqual({ web: true, extension: true, article: true });
   expect(normalizeSettings(s)).toBe(false);
 });
 
-test('用户自定义 description 不被迁移', () => {
+test('内置条目文案无条件刷成模板版（含用户自定义过的）', () => {
   const s = baseSettings();
+  s.subAgent.profiles[0]!.name = '我的默认';
   s.subAgent.profiles[0]!.description = '我自己的默认描述';
   s.subAgent.profiles[1]!.description = '我自己的浏览器解析描述';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[0]!.name).toBe('默认');
+  expect(s.subAgent.profiles[0]!.description).toBe(createDefaultSubAgentProfile().description);
+  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
   expect(normalizeSettings(s)).toBe(false);
-  expect(s.subAgent.profiles[0]!.description).toBe('我自己的默认描述');
-  expect(s.subAgent.profiles[1]!.description).toBe('我自己的浏览器解析描述');
 });
 
-test('enabledAbilities.browser 清洗与拆包迁移：布尔值保留，缺失 skills 键补 browser-exploration，已有数组与显式关闭不动', () => {
+test('收编映射：同名自建「探索」条目改挂内置 slug，配置字段继承、文案接管', () => {
   const s = baseSettings();
-  s.subAgent.profiles[0]!.enabledAbilities = { browser: 'yes' as unknown as boolean };
+  const legacyExplore: SubAgentProfile = {
+    id: '94132af8-e2f4-40b3-a070-f5cb72323074',
+    name: '探索',
+    description: '旧版自建描述',
+    modelSelection: { profileId: 'default', tier: 'glm-5.3' },
+    timeoutMinutes: 45,
+    enabledBasicTools: ['read', 'bash', 'Glob', 'Grep'],
+    enabledAbilities: { reference: true, memory: true, extension: false, web: true },
+  };
+  s.subAgent.profiles = [s.subAgent.profiles[0]!, s.subAgent.profiles[1]!, legacyExplore];
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  const adopted = s.subAgent.profiles.find((p) => p.id === 'explore')!;
+  expect(adopted.description).toBe(createExploreSubAgentProfile().description);
+  expect(adopted.modelSelection).toEqual({ profileId: 'default', tier: 'glm-5.3' });
+  expect(adopted.timeoutMinutes).toBe(45);
+  expect(adopted.enabledBasicTools).toEqual(['read', 'bash', 'Glob', 'Grep']);
+  expect(adopted.enabledAbilities).toEqual({ reference: true, memory: true, extension: false, web: true });
+  expect(s.subAgent.profiles.some((p) => p.id === '94132af8-e2f4-40b3-a070-f5cb72323074')).toBe(false);
+  expect(s.subAgent.profiles.map((p) => p.id)).toEqual(['default', 'browser-parse', 'explore', 'stock']);
+  expect(normalizeSettings(s)).toBe(false);
+});
+
+test('收编映射：同名自建「股票」条目继承停用与能力域，文案接管', () => {
+  const s = baseSettings();
+  const legacyStock: SubAgentProfile = {
+    id: 'cafd7e16-88d6-4d8b-81aa-b09a2f5f0354',
+    name: '股票',
+    description: '旧版股票描述',
+    modelSelection: { profileId: 'default', tier: 'glm-5.3' },
+    timeoutMinutes: 30,
+    enabled: false,
+    enabledBasicTools: ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'],
+    enabledAbilities: { stock: true },
+  };
+  s.subAgent.profiles = [s.subAgent.profiles[0]!, legacyStock];
+  normalizeSettings(s);
+  const adopted = s.subAgent.profiles.find((p) => p.id === 'stock')!;
+  expect(adopted.description).toBe(createStockSubAgentProfile().description);
+  expect(adopted.enabled).toBe(false);
+  expect(adopted.enabledAbilities).toEqual({ stock: true });
+  expect(s.subAgent.profiles.some((p) => p.id === 'cafd7e16-88d6-4d8b-81aa-b09a2f5f0354')).toBe(false);
+  expect(normalizeSettings(s)).toBe(false);
+});
+
+test('收编幂等保护：内置 slug 已在场时，同名自定义条目不被收编', () => {
+  const s = baseSettings();
+  const twin: SubAgentProfile = {
+    id: 'twin-uuid',
+    name: '探索',
+    description: '另一个探索',
+    timeoutMinutes: 20,
+    enabledBasicTools: ['read'],
+    enabledAbilities: {},
+  };
+  s.subAgent.profiles = [...s.subAgent.profiles, twin];
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(false);
+  const twinAfter = s.subAgent.profiles.find((p) => p.id === 'twin-uuid')!;
+  expect(twinAfter.name).toBe('探索');
+  expect(twinAfter.description).toBe('另一个探索');
+});
+
+test('内置能力域只补缺失键，显式 false 不动（配置自治）', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[1]!.enabledAbilities = { web: true, extension: false };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, extension: false, article: true });
+  expect(normalizeSettings(s)).toBe(false);
+});
+
+test('内嵌浏览器下线迁移：browser 键一律清除，显式关闭同样清', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[0]!.enabledAbilities = { browser: true, web: true, extension: true };
   const changed = normalizeSettings(s);
   expect(changed).toBe(true);
   expect('browser' in s.subAgent.profiles[0]!.enabledAbilities).toBe(false);
+  expect(s.subAgent.profiles[0]!.enabledAbilities).toEqual({ web: true, extension: true });
 
   const s2 = baseSettings();
-  s2.subAgent.profiles[0]!.enabledAbilities = { browser: true };
-  const changed2 = normalizeSettings(s2);
-  expect(changed2).toBe(true);
-  expect(s2.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true, skills: ['browser-exploration'] });
-  expect(normalizeSettings(s2)).toBe(false);
+  s2.subAgent.profiles[0]!.enabledAbilities = { browser: false };
+  normalizeSettings(s2);
+  expect('browser' in s2.subAgent.profiles[0]!.enabledAbilities).toBe(false);
+});
 
-  const s3 = baseSettings();
-  s3.subAgent.profiles[0]!.enabledAbilities = { browser: true, skills: ['brainstorming'] };
-  normalizeSettings(s3);
-  expect(s3.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true, skills: ['brainstorming'] });
+test('内嵌浏览器下线迁移：skills 细选去 browser-exploration，清空删键，其他 skill 保留', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[0]!.enabledAbilities = { skills: ['browser-exploration'] };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect('skills' in s.subAgent.profiles[0]!.enabledAbilities).toBe(false);
 
-  const s4 = baseSettings();
-  s4.subAgent.profiles[0]!.enabledAbilities = { browser: false };
-  normalizeSettings(s4);
-  expect(s4.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: false, web: true });
+  const s2 = baseSettings();
+  s2.subAgent.profiles[0]!.enabledAbilities = { skills: ['brainstorming', 'browser-exploration', 'staged-impl'] };
+  normalizeSettings(s2);
+  expect(s2.subAgent.profiles[0]!.enabledAbilities.skills).toEqual(['brainstorming', 'staged-impl']);
+});
+
+test('内嵌浏览器下线迁移：browser 键清除、skills 清空删键、description 接管为模板版后幂等', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[1]!.description = '历代任意旧文案';
+  s.subAgent.profiles[1]!.enabledAbilities = { web: true, browser: true, extension: true, article: true, skills: ['browser-exploration'] };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
+  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, extension: true, article: true });
+  expect(normalizeSettings(s)).toBe(false);
 });
 
 test('normalizePiModels：存量 string[] 迁移为 { id } 对象数组', () => {
@@ -241,6 +340,48 @@ test('normalizePiModels：对象元素保留 id 与合法 label，非法 label �
   ]);
 });
 
+test('normalizePiModels：合法 effort 字面量保留，非法值丢弃', () => {
+  expect(normalizePiModels([
+    { id: 'a', effort: 'off' },
+    { id: 'b', effort: 'low' },
+    { id: 'c', effort: 'medium' },
+    { id: 'd', effort: 'high' },
+    { id: 'e', effort: 'xhigh' },
+    { id: 'f', effort: 'max' },
+    { id: 'g', effort: null },
+    { id: 'h', effort: 'ultra' },
+    { id: 'i', effort: 3 },
+    { id: 'j', effort: '' },
+  ])).toEqual([
+    { id: 'a', effort: 'off' },
+    { id: 'b', effort: 'low' },
+    { id: 'c', effort: 'medium' },
+    { id: 'd', effort: 'high' },
+    { id: 'e', effort: 'xhigh' },
+    { id: 'f', effort: 'max' },
+    { id: 'g' },
+    { id: 'h' },
+    { id: 'i' },
+    { id: 'j' },
+  ]);
+});
+
+test('normalizePiModels：布尔 true 的 supportsVision 保留，false 与非布尔丢弃', () => {
+  expect(normalizePiModels([
+    { id: 'a', supportsVision: true },
+    { id: 'b', supportsVision: false },
+    { id: 'c', supportsVision: 'yes' },
+    { id: 'd', supportsVision: 1 },
+    { id: 'e' },
+  ])).toEqual([
+    { id: 'a', supportsVision: true },
+    { id: 'b' },
+    { id: 'c' },
+    { id: 'd' },
+    { id: 'e' },
+  ]);
+});
+
 test('normalizePiModels：按 id 去重保首现顺序', () => {
   expect(normalizePiModels([
     'gpt-5',
@@ -257,7 +398,7 @@ test('normalizePiModels：非法元素丢弃，非数组输入返回空数组', 
 });
 
 test('normalizePiModels：已是规范形状时输出不变（幂等）', () => {
-  const input = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
+  const input = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7', supportsVision: true, effort: 'high' }];
   expect(normalizePiModels(input)).toEqual(input);
 });
 
@@ -338,6 +479,20 @@ test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等
   s.profiles.default.piModels = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
   const changed = migratePiProfiles(s);
   expect(changed).toBe(false);
+});
+
+test('migratePiProfiles：supportsVision 与 effort 不被归一化剥离（重启不丢标记）', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [
+    { id: 'gpt-5', supportsVision: true, effort: 'high' },
+    { id: 'glm-4.7', effort: 'off' },
+  ];
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(false);
+  expect(s.profiles.default.piModels).toEqual([
+    { id: 'gpt-5', supportsVision: true, effort: 'high' },
+    { id: 'glm-4.7', effort: 'off' },
+  ]);
 });
 
 test('migratePiProfiles：已是 piModels 模型 id 的 selection 不受影响', () => {

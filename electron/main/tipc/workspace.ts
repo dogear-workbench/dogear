@@ -5,11 +5,12 @@ const { dialog } = electron;
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
-import * as articleService from '../services/article-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
+import * as workspaceSearchService from '../services/workspace-search-service.js';
 import * as conversationService from '../services/conversation-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
-import { scanOrphanWorkspaces, importOrphanToWorkspace } from '../services/workspace-recovery-service.js';
+import { getUntrackedPaths } from '../services/git-service/index.js';
+import { scanOrphanWorkspaces, importOrphanToWorkspace, discardOrphanWorkspace } from '../services/workspace-recovery-service.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { WorkspaceFileNode } from '../types.js';
 import type { Workspace } from '../services/workspace-json-service.js';
@@ -111,6 +112,7 @@ export const workspaceRouter = {
       }
     }),
 
+  // 文件树根层一层（树懒加载，展开时逐层 getDirLevel；dogear/articles 内 md 由扫描层识别为文章节点）
   getFiles: t.procedure
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
@@ -118,17 +120,45 @@ export const workspaceRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { files: [], error: '工作区不存在' };
 
-        // 1. 扫描文章树（.dogear/articles/）
-        const articleTree = await articleService.listArticleTree(workspace.path);
+        // 根层单层扫描；快照排除清单不参与树扫描（排除目录以普通节点+EyeOff 标记回原位），
+        // 标注 git 未跟踪顶层节点（非 git 工作区静默跳过）
+        const rootFiles = await workspaceFsService.scanDirectoryLevel(workspace.path, '');
+        const untrackedPaths = await getUntrackedPaths(workspace.path);
+        if (untrackedPaths) workspaceFsService.markUntrackedNodes(rootFiles, untrackedPaths);
 
-        // 2. 扫描工作区普通文件（排除 .dogear）
-        const workspaceFiles = await workspaceFsService.scanWorkspaceFiles(workspace.path);
-
-        // 3. 合并：文章树在前，普通文件在后
-        return { files: [...articleTree, ...workspaceFiles] };
+        return { files: rootFiles };
       } catch (error) {
         console.error('获取工作区文件树失败:', error);
         return { files: [], error: String(error) };
+      }
+    }),
+
+  // 目录单层扫描（树懒加载逐层拉取；.. 段可借字符串前缀逃逸，先拒）
+  getDirLevel: t.procedure
+    .input<{ workspaceId: string; relPath: string }>()
+    .action(async ({ input }): Promise<{ nodes: WorkspaceFileNode[] } | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        const relPath = input.relPath.replace(/\\/g, '/').replace(/\/+$/, '');
+        if (relPath === '' || relPath.split('/').includes('..')) return { error: '无效路径' };
+        const nodes = await workspaceFsService.scanDirectoryLevel(workspace.path, relPath);
+        return { nodes };
+      } catch (error) {
+        console.error('扫描目录失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  // 文件名搜索：主进程全量路径索引（TTL 缓存+watcher 失效），名称前缀>包含>路径包含排序
+  searchWorkspaceFiles: t.procedure
+    .input<{ workspaceId: string; query: string; limit?: number }>()
+    .action(async ({ input }) => {
+      try {
+        return await workspaceSearchService.searchWorkspaceFiles(input.workspaceId, input.query, input.limit ?? 50);
+      } catch (error) {
+        console.error('搜索工作区文件失败:', error);
+        return { results: [], total: 0, truncated: false, error: String(error) };
       }
     }),
 
@@ -158,6 +188,18 @@ export const workspaceRouter = {
       } catch (error) {
         console.error('导入孤儿工作区失败:', error);
         return { importedCount: 0, error: String(error) };
+      }
+    }),
+
+  discardOrphanWorkspace: t.procedure
+    .input<{ orphanId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await discardOrphanWorkspace(input.orphanId);
+        return { success: true };
+      } catch (error) {
+        console.error('舍弃丢失的会话失败:', error);
+        return { success: false, error: String(error) };
       }
     }),
 

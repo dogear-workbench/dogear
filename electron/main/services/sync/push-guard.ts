@@ -1,4 +1,4 @@
-import { EXTERNAL_ANCHOR_PREFIX, EXTERNAL_ARTICLES_REL, EXTERNAL_TASKS_REL, sensitiveRelPaths } from '../data-registry.js';
+import { EXTERNAL_ANCHOR_PREFIX, sensitiveRelPaths } from '../data-registry.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
 import { isWorkspacePathSyncEnabled, type WorkspaceMapEntry } from './workspace-map.js';
 
@@ -29,9 +29,8 @@ function segsMatch(rest: string[], prefix: string[]): boolean {
 }
 
 /**
- * 虚拟路径白名单（纯函数）：仅放行 workspaces.json 注册工作区下、registry 声明
- * （.dogear/tasks.json 含其冲突副本名 / .dogear/articles 子树）或 userSyncPaths 勾选子树内的路径；
- * 其余 __ws-external__ 路径（未注册 wsid、.dogear 其他文件、勾选树外）一律拒绝。
+ * 虚拟路径白名单（纯函数）：仅放行 workspaces.json 注册工作区下 userSyncPaths 勾选子树内的路径；
+ * 其余 __ws-external__ 路径（未注册 wsid、旧固定声明的 tasks/articles 退役路径、勾选树外）一律拒绝。
  */
 export function isRegisteredVirtualPath(
   relPath: string,
@@ -42,13 +41,6 @@ export function isRegisteredVirtualPath(
   if (segs[0] !== EXTERNAL_ANCHOR_PREFIX || segs.length < 3 || !isSafeSegs(segs)) return false;
   if (!registeredIds?.has(segs[1])) return false;
   const rest = segs.slice(2);
-  const tasksSegs = EXTERNAL_TASKS_REL.split('/');
-  if (rest.length === tasksSegs.length) {
-    const last = rest[rest.length - 1];
-    const dirsOk = tasksSegs.slice(0, -1).every((s, i) => rest[i] === s);
-    if (dirsOk && (last === tasksSegs[tasksSegs.length - 1] || last.startsWith(`${tasksSegs[tasksSegs.length - 1]}.conflict-`))) return true;
-  }
-  if (segsMatch(rest, EXTERNAL_ARTICLES_REL.split('/'))) return true;
   for (const rel of userSyncPaths?.[segs[1]] ?? []) {
     if (segsMatch(rest, rel.split('/'))) return true;
   }
@@ -57,15 +49,17 @@ export function isRegisteredVirtualPath(
 
 /**
  * push 接收端校验（D1/S1）：与 pull 侧对称的范围/开关/禁写检查，拒绝对端经 push 写入
- * 本端不同步或不可触碰的路径。检查顺序：引擎自身状态 → registry 敏感路径 → registry 外部锚点
- * （白名单：注册工作区的 tasks/articles/勾选子树放行，落盘由 apply 侧反解到工作区真实路径）
- * → 本端同步范围（isExcluded）→ 工作区映射 enabled。
+ * 本端不同步或不可触碰的路径。检查顺序：引擎自身状态 → registry 敏感路径 + 退役遗留
+ * login-accounts.json → registry 外部锚点（白名单：注册工作区的勾选子树放行，落盘由 apply
+ * 侧反解到工作区真实路径）→ 本端同步范围（isExcluded，含退役目录/退役虚拟声明拦截）→
+ * 工作区映射 enabled。
  */
 export function checkIncomingPushRelPath(relPath: string, input: PushGuardInput): PushGuardVerdict {
   if (isUnder(relPath, 'sync-state.json') || isUnder(relPath, 'backups')) {
     return { ok: false, status: 403, reason: `引擎状态路径禁止推送: ${relPath}` };
   }
-  for (const sensitive of sensitiveRelPaths()) {
+  // login-accounts.json 已从数据字典退役，禁运防线硬编码保留
+  for (const sensitive of [...sensitiveRelPaths(), 'login-accounts.json']) {
     if (isUnder(relPath, sensitive)) {
       return { ok: false, status: 403, reason: `敏感数据不参与同步: ${relPath}` };
     }

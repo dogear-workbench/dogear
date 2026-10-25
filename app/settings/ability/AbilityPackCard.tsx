@@ -12,6 +12,7 @@ export function AbilityPackCard({ pack, onOpen }: AbilityPackCardProps) {
     pack.toolGroupMetas.length > 0 && `工具组 ${pack.toolGroupMetas.length}`,
     pack.skillMetas.length > 0 && `Skill ${pack.skillMetas.length}`,
   ].filter(Boolean) as string[];
+  const onDemand = (pack.deferredToolGroups?.length ?? 0) > 0;
 
   return (
     <button
@@ -27,6 +28,9 @@ export function AbilityPackCard({ pack, onOpen }: AbilityPackCardProps) {
             <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
               {PACK_TYPE_LABELS[pack.type]}
             </span>
+            {onDemand && (
+              <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">按需</span>
+            )}
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
             {pack.description}

@@ -21,18 +21,21 @@ const dir = import.meta.dir;
 // 并发 install 共享同一次加载，快照在首次 mock.module 注册之前完成
 let realCsSpread: Record<string, unknown> = {};
 let realSettingsSpread: Record<string, unknown> = {};
+let realSharedSpread: Record<string, unknown> = {};
 let realGetByIdGlobal: ((id: string) => Promise<unknown>) | null = null;
 let realModulesPromise: Promise<void> | null = null;
 
 function loadRealServiceModules(): Promise<void> {
   if (!realModulesPromise) {
     realModulesPromise = (async () => {
-      const [cs, ss] = await Promise.all([
+      const [cs, ss, gs] = await Promise.all([
         import(path.join(dir, '../services/conversation-service.js')),
         import(path.join(dir, '../services/settings-service.js')),
+        import(path.join(dir, '../services/group-shared-service.js')),
       ]);
       realCsSpread = { ...cs };
       realSettingsSpread = { ...ss };
+      realSharedSpread = { ...gs };
       realGetByIdGlobal = cs.getByIdGlobal;
     })();
   }
@@ -83,6 +86,8 @@ export const updateModelSelectionCalls: Array<{ id: string; modelSelection: any 
 export const sendCalls: Array<{ sessionId: string; text: string }> = [];
 export const runtimeDetachCalls: Array<{ conversationId: string; holderType: string }> = [];
 export const conversationListChangedCalls: string[] = [];
+export const closeSessionCalls: string[] = [];
+export const pushDirectCalls: Array<{ title: string; summary?: string; conversationId?: string; workspaceId?: string }> = [];
 
 let childSeq = 0;
 let parentSeq = 0;
@@ -117,7 +122,15 @@ function makeFakeSession(sessionId: string): any {
   s.getHarnessSessionId = () => sessionId;
   s.sendMessage = (text: string) => { sendCalls.push({ sessionId, text }); return Promise.resolve(); };
   s.interrupt = () => Promise.resolve();
+  s.runningFlag = false;
+  s.isRunning = () => s.runningFlag;
   return s;
+}
+
+/** 终态强杀测试用：把假 session 置为 run 卡死未 settle 的僵尸态 */
+export function setSessionRunning(sessionId: string, running: boolean): void {
+  const s = sessions.get(sessionId);
+  if (s) s.runningFlag = running;
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -252,6 +265,7 @@ export async function installDelegationMocks(): Promise<void> {
   }));
 
   mock.module(path.join(dir, '../services/group-shared-service.js'), () => ({
+    ...realSharedSpread,
     claimOutputPath: async () => ({ ok: true }),
     releaseOutputPath: () => {},
     previewClaim: async () => ({ ok: true }),
@@ -285,7 +299,8 @@ export async function installDelegationMocks(): Promise<void> {
       },
       detachAttachment: (attachmentId: string) => {
         // 对齐真实 detach→release：refCount 归零即销毁 session 并摘除绑定；
-        // 复用场景（transient 复活）旧 attachment detach 后 refCount 仍 >0，绑定保留
+        // 复用场景（transient 复活）旧 attachment detach 后 refCount 仍 >0，绑定保留；
+        // session 仍 running 时对齐真实 manager 的 orphan 保活语义，不销毁（终态强杀测试依赖）
         const meta = attachmentMeta.get(attachmentId);
         if (!meta) return;
         attachmentMeta.delete(attachmentId);
@@ -293,6 +308,7 @@ export async function installDelegationMocks(): Promise<void> {
         sessionRefCounts.set(meta.sessionId, next);
         if (next > 0) return;
         sessionRefCounts.delete(meta.sessionId);
+        if (sessions.get(meta.sessionId)?.isRunning?.()) return;
         sessions.delete(meta.sessionId);
         if (attachSessionByConv.get(meta.conversationId) === meta.sessionId) {
           attachSessionByConv.delete(meta.conversationId);
@@ -316,6 +332,22 @@ export async function installDelegationMocks(): Promise<void> {
       getConversationIdBySession: (sessionId: string) => sessionOwnerConv.get(sessionId),
       acquireHold: (sessionId: string) => sessions.has(sessionId),
       releaseHold: async () => {},
+      // 对齐真实 closeSession：强制销毁并摘除 conversation 绑定
+      closeSession: async (sessionId: string) => {
+        closeSessionCalls.push(sessionId);
+        sessions.delete(sessionId);
+        const convId = sessionOwnerConv.get(sessionId);
+        if (convId && attachSessionByConv.get(convId) === sessionId) attachSessionByConv.delete(convId);
+      },
     }),
+  }));
+
+  // 无人值守直连推送 mock：记录调用供断言，避免测试进程触碰真实飞书配置/网络
+  mock.module(path.join(dir, '../services/feishu/feishu-notify-outlet.js'), () => ({
+    feishuNotifyOutlet: {
+      pushDirect: async (input: { title: string; summary?: string; conversationId?: string; workspaceId?: string }) => {
+        pushDirectCalls.push(input);
+      },
+    },
   }));
 }

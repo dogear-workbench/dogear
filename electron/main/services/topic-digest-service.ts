@@ -1,9 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as conversationService from './conversation-service.js';
-import { getGroupDir } from './memory/background-store.js';
+import { getGroupDir } from './group-service.js';
 import { buildSessionHistory, type HistoryMessage } from '../agents/pi-session/history-adapter.js';
 import { FAILOVER_CONTINUE_SENTINEL } from '../agents/model-failover.js';
+import { stripInjectedBlocks } from './session-text-strip.js';
 import { mainLogger } from '../agents/logger.js';
 import { safeJsonWrite } from './safe-json.js';
 
@@ -46,31 +47,7 @@ function isInjectedUserContent(content: string): boolean {
   return false;
 }
 
-// ─── 真人原话剥离（对齐前端 parseUserMessageReferences + extractMessagePreview 的剥离口径）───
-
-const STRIPPED_BLOCK_PATTERNS: RegExp[] = [
-  /<referenced_articles>[\s\S]*?<\/referenced_articles>/g,
-  /<referenced_files>[\s\S]*?<\/referenced_files>/g,
-  /<referenced_conversations>[\s\S]*?<\/referenced_conversations>/g,
-  /<referenced_shared_files>[\s\S]*?<\/referenced_shared_files>/g,
-  /<referenced_notes>[\s\S]*?<\/referenced_notes>/g,
-  /<quoted_snippet\s+source="[^"]*">[\s\S]*?<\/quoted_snippet>/g,
-  /<sender\s+kind="[^"]*"[^>]*\/>/g,
-  /<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g,
-  /<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/g,
-  /<task-execution>[\s\S]*?<\/task-execution>/g,
-  /\n?（注：引用的会话可能属于其他工作区[^\n]*/g,
-];
-
-function stripInjectedBlocks(content: string): string {
-  let text = content;
-  for (const pattern of STRIPPED_BLOCK_PATTERNS) {
-    text = text.replace(pattern, '');
-  }
-  return text.replace(/^\n+/, '').trim();
-}
-
-// ─── 轮次提取（对齐前端 turns.ts 的 isHeader 语义；HistoryMessage 无 isMeta /
+// ─── 轮次提取（真人原话剥离用共享的 stripInjectedBlocks）───（对齐前端 turns.ts 的 isHeader 语义；HistoryMessage 无 isMeta /
 // isCompactSummary 字段——两者是本地乐观态标记，不落盘）───
 
 function extractTurns(messages: HistoryMessage[]): DigestTurn[] {

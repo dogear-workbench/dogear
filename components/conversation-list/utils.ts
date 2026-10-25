@@ -2,7 +2,6 @@ import type { Conversation } from '@/components/ConversationList';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { client } from '@/lib/client';
 
 export function getRelativeTime(timestamp: string | number): string {
@@ -42,6 +41,24 @@ export { RECENT_THRESHOLD_MS, OLDER_THRESHOLD_MS };
 export const RECENT_DAYS = RECENT_THRESHOLD_MS / 86400_000;
 export const OLDER_DAYS = OLDER_THRESHOLD_MS / 86400_000;
 
+export function ancestorChainIds(conv: Conversation, conversations: Conversation[]): string[] {
+  const bySessionId = new Map<string, Conversation>();
+  for (const c of conversations) {
+    if (c.sessionId) bySessionId.set(c.sessionId, c);
+  }
+  const ids: string[] = [];
+  const seen = new Set([conv.id]);
+  let meta = conv.contractMetadata;
+  while (meta?.createdBy === 'agent' && meta.parentSessionId) {
+    const parent = bySessionId.get(meta.parentSessionId);
+    if (!parent || seen.has(parent.id)) break;
+    seen.add(parent.id);
+    ids.push(parent.id);
+    meta = parent.contractMetadata;
+  }
+  return ids;
+}
+
 /**
  * 节点高亮状态：
  * - isOpen: conversationId 在 tabs 里（淡色背景，可能多节点）
@@ -76,15 +93,4 @@ export function openOrFocusConversation(conv: Conversation, nodeId?: string): vo
   useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), useWorkspaceStore.getState().workspace?.id ?? '');
 }
 
-/**
- * personal 临时会话行打开：只开 tab，不写当前工作区分片与组状态（personal 平铺无组概念）
- */
-export function openPersonalConversation(conv: Conversation): void {
-  const sessionWindowIds = useSessionStore.getState().sessionWindowIds;
-  if (sessionWindowIds.has(conv.id)) {
-    client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
-    return;
-  }
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), PERSONAL_WORKSPACE_ID);
-}
 

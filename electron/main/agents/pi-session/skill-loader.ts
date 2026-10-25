@@ -1,22 +1,14 @@
 /**
- * 薄封装 pi-agent-core 的 loadSkills + formatSkillInvocation（阶段二 Step 1）
+ * skill 索引与 Skill 工具装配
  *
- * 替换原手写 frontmatter 解析 + 自造索引文本 + 自造 Skill 工具。
- * 对外签名保持不变（loadSkillIndex / formatSkillIndexForPrompt / createSkillTool），
- * 内部复用 loadSkills 的递归扫描 / .gitignore / yaml 解析 / name 校验 / 错误诊断聚合。
+ * 扫描与格式化实现在 skill-scanner.ts（对齐 pi-agent-core 0.99.2 的发现规则与输出格式，
+ * 升级 1.x 时不再依赖其 skills API）。对外签名保持不变（loadSkillIndex / loadAllSkillEntries /
+ * formatSkillIndexForPrompt / createSkillTool）。
  */
 import path from 'path';
-import os from 'os';
 import fs from 'fs/promises';
 import { z } from 'zod';
-import {
-  loadSkills,
-  formatSkillInvocation,
-  type ExecutionEnv,
-  type Skill,
-  type SkillDiagnostic,
-} from '@earendil-works/pi-agent-core';
-import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node';
+import { formatSkillInvocation, scanSkillDirs, type SkillDiagnostic, type SkillInfo } from './skill-scanner.js';
 import { defineTool } from '../pi/tool-adapter.js';
 import { mainLogger } from '../logger.js';
 import { getConfigDir } from '../../services/settings-service.js';
@@ -27,11 +19,11 @@ export interface SkillEntry {
   description: string;
   dir: string;
   bodyPath: string;
-  /** loadSkills 已读入的 SKILL.md 正文缓存，createSkillTool 命中时直接用，避免再 fs.readFile */
+  /** 扫描时已读入的 SKILL.md 正文缓存，createSkillTool 命中时直接用，避免再 fs.readFile */
   content?: string;
 }
 
-function entryFromSkill(skill: Skill): SkillEntry {
+function entryFromSkill(skill: SkillInfo): SkillEntry {
   return {
     name: skill.name,
     description: skill.description,
@@ -48,22 +40,20 @@ function logDiagnostics(diagnostics: SkillDiagnostic[]): void {
 }
 
 /**
- * 扫描给定目录下的 SKILL.md，委托给 pi-agent-core loadSkills（递归 + .gitignore + yaml 解析 + name 校验）。
- * env 缺省用 NodeExecutionEnv(process.cwd())；调用方传 WorkspaceExecutionEnv 能让 .gitignore 用工作区相对路径正确解析。
+ * 扫描给定目录下的 SKILL.md（递归 + .gitignore + yaml 解析 + name 校验，目录含 SKILL.md 即 skill root 不再递归）。
+ * 诊断走 mainLogger.warn；缺失目录静默跳过。
  */
-export async function loadSkillIndex(dirs: string[], env?: ExecutionEnv): Promise<SkillEntry[]> {
-  const executionEnv = env ?? new NodeExecutionEnv({ cwd: process.cwd() });
-  const { skills, diagnostics } = await loadSkills(executionEnv, dirs);
+export async function loadSkillIndex(dirs: string[]): Promise<SkillEntry[]> {
+  const { skills, diagnostics } = await scanSkillDirs(dirs);
   logDiagnostics(diagnostics);
   return skills.map(entryFromSkill);
 }
 
-/** 会话装配（pi-session）、定时任务 sanitize 与 SKILL.md 拼接共用的三目录 skill 索引 */
+/** 会话装配（pi-session）、定时任务 sanitize 与 SKILL.md 拼接共用的两目录 skill 索引 */
 export async function loadAllSkillEntries(): Promise<SkillEntry[]> {
   return loadSkillIndex([
     getTemplatesDir(),
-    path.join(getConfigDir(), 'skills'),
-    path.join(os.homedir(), '.claude', 'skills'),
+    path.join(getConfigDir(), 'custom', 'skills'),
   ]);
 }
 
@@ -85,12 +75,15 @@ export function formatSkillIndexForPrompt(entries: SkillEntry[]): string {
   return lines.join('\n');
 }
 
-/** 命中索引后的懒加载工具：优先用 entry.content（loadSkills 已读），缺失再 fs.readFile 兜底；输出走 formatSkillInvocation 包 <skill> 块 */
-export function createSkillTool(entries: SkillEntry[]) {
+/**
+ * 命中索引后的懒加载工具：优先用 entry.content（扫描已读），缺失再 fs.readFile 兜底；输出走 formatSkillInvocation 包 <skill> 块。
+ * skillLinkedTools（skillName→配套工具名，仅主会话装配传入）：命中且有映射时返回 control.addTools 请求挂载配套工具。
+ */
+export function createSkillTool(entries: SkillEntry[], skillLinkedTools?: Record<string, string[]>) {
   return defineTool(
     'Skill',
     '加载 skill 指引全文',
-    '加载指定 skill 的完整指引内容（SKILL.md 全文）。name 必须是 <available_skills> 索引中列出的 skill 名称。',
+    '加载指定 skill 的完整指引内容（SKILL.md 全文）。name 必须是 <available_skills> 索引中列出的 skill 名称。若该 skill 配套领域工具，加载时这些工具会一并就位，无需另行搜索。',
     z.object({ name: z.string().describe('skill 名称，如 article-parser / brainstorming') }),
     async ({ name }) => {
       const entry = entries.find((e) => e.name === name);
@@ -105,13 +98,17 @@ export function createSkillTool(entries: SkillEntry[]) {
       }
       mainLogger.info('Skill 工具命中:', { name });
       const content = entry.content ?? await fs.readFile(entry.bodyPath, 'utf-8');
-      const skill: Skill = {
+      const skill: SkillInfo = {
         name: entry.name,
         description: entry.description,
         content,
         filePath: entry.bodyPath,
       };
-      return { content: [{ type: 'text', text: formatSkillInvocation(skill) }] };
+      const linkedTools = skillLinkedTools?.[name];
+      return {
+        content: [{ type: 'text', text: formatSkillInvocation(skill) }],
+        ...(linkedTools?.length ? { control: { addTools: linkedTools } } : {}),
+      };
     },
   );
 }

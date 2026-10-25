@@ -11,7 +11,24 @@ interface CategoryGroup {
   children: Array<{ name: string; tokens: number }>;
 }
 
-/** 按 `·` 前缀聚合：`提示词·agent.md` 归入主行「提示词」；无 `·` 的 name 自成一主行（未知 name 容错） */
+/** 旧快照分类名 → 现行名；映射后同名项合并（人格纪律 + agent.md 并入系统提示词） */
+const LEGACY_CATEGORY_RENAMES: Record<string, string> = {
+  '提示词·人格纪律': '固定·系统提示词',
+  '提示词·agent.md': '固定·系统提示词',
+  '提示词·skill 索引': '固定·扩展',
+  工具定义: '固定·工具定义',
+};
+
+function normalizeCategories(categories: Array<{ name: string; tokens: number }>): Array<{ name: string; tokens: number }> {
+  const merged = new Map<string, number>();
+  for (const c of categories) {
+    const name = LEGACY_CATEGORY_RENAMES[c.name] ?? c.name;
+    merged.set(name, (merged.get(name) ?? 0) + c.tokens);
+  }
+  return [...merged].map(([name, tokens]) => ({ name, tokens }));
+}
+
+/** 按 `·` 前缀聚合：`固定·系统提示词` 归入主行「固定」；无 `·` 的 name 自成一主行（未知 name 容错） */
 function groupCategories(categories: Array<{ name: string; tokens: number }>): CategoryGroup[] {
   const groups = new Map<string, CategoryGroup>();
   for (const c of categories) {
@@ -30,7 +47,7 @@ export function UsageSummaryHeader({ context }: Props) {
   const used = context.used;
   const limit = context.limit;
   const pct = used !== null && limit > 0 ? Math.round(context.percentage) : null;
-  const groups = context.categories.length > 0 ? groupCategories(context.categories) : [];
+  const groups = context.categories.length > 0 ? groupCategories(normalizeCategories(context.categories)) : [];
 
   return (
     <div className="p-3">
@@ -48,17 +65,19 @@ export function UsageSummaryHeader({ context }: Props) {
       </div>
       {groups.length > 0 && (
         <div className="mt-1.5 space-y-0.5 text-muted-foreground">
-          <div className="tabular-nums">
-            {groups.map((g) => `${g.name} ${formatTokens(g.tokens)}`).join(' · ')}
-            <span>（估算）</span>
-          </div>
-          {groups
-            .filter((g) => g.children.length > 0)
-            .map((g) => (
-              <div key={g.name} className="tabular-nums pl-3">
-                {g.children.map((c) => `${c.name} ${formatTokens(c.tokens)}`).join(' · ')}
+          {groups.map((g, i) => (
+            <div key={g.name}>
+              <div className="tabular-nums">
+                {g.name} {formatTokens(g.tokens)}
+                {i === 0 && <span>（估算）</span>}
               </div>
-            ))}
+              {g.children.length > 0 && (
+                <div className="tabular-nums pl-3">
+                  {g.children.map((c) => `${c.name} ${formatTokens(c.tokens)}`).join(' · ')}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>

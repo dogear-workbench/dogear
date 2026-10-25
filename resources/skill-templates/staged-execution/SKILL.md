@@ -1,6 +1,6 @@
 ---
 name: staged-execution
-description: 按已有分步实施计划（docs/plans/**/stepN-*.md）编排执行的主/子会话协议：step 状态流转、分派、回填打勾、每 step 一提交。触发：主会话读到 stepN-*.md 且用户意图是开始/继续实施；工程纪律按 code-discipline，协作协议按系统协作规范段。
+description: 按已有分步实施计划（dogear/plans/**/stepN-*.md）编排执行的主/子会话协议：step 状态流转、分派、回填打勾、每 step 一提交。触发：主会话读到 stepN-*.md 且用户意图是开始/继续实施；工程纪律按 code-discipline，协作协议按系统协作规范段。
 ---
 
 # Staged Execution
@@ -13,12 +13,12 @@ description: 按已有分步实施计划（docs/plans/**/stepN-*.md）编排执�
 
 ## 何时触发 / 何时不触发
 
-- **必须触发**：主会话读到 `docs/plans/**/stepN-*.md` 且用户意图是"开始实施 / 继续实施 / 跑下一步"；用户说「按计划来 / 按步骤实施 / 跑 step N」而当前 CWD 下有对应 plan
+- **必须触发**：主会话读到 `dogear/plans/**/stepN-*.md` 且用户意图是"开始实施 / 继续实施 / 跑下一步"；用户说「按计划来 / 按步骤实施 / 跑 step N」而当前 CWD 下有对应 plan
 - **不触发**：单纯写/改 plan.md 或 stepN.md 内容（staged-impl 的规划阶段）；「解释一下 step N 什么意思」（纯问答）；修 bug、探索代码（用别的 skill）；已派子会话在跑、主会话等交付时（skill 已生效，不重复触发）
 
 ## 前置检查（进入本 skill 后立即做）
 
-1. 确认 plan 位置：`docs/plans/YYYY-MM/YYYY-MM-DD/<feature>/`
+1. 确认 plan 位置：`dogear/plans/YYYY-MM/YYYY-MM-DD/<feature>/`
 2. 读 plan.md 的「全局决策」段（不读全文，只读这一节）
 3. 读当前要执行的 stepN.md 全文
 4. 确认 step 状态：`pending` 继续；`done` 停下确认；`in_progress` 说明上次没跑完，看「实施回填」段判断续做点

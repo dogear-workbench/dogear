@@ -3,7 +3,6 @@ import { ArchiveRestore, CircleAlert, Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { getConversationTitle, getRelativeTime } from '@/components/conversation-list/utils';
 import { useGroupStore } from '@/stores/group-store';
@@ -78,7 +77,7 @@ export function DigestView({ workspaceId, topic, conversationId }: DigestViewPro
           恢复话题
         </Button>
       </header>
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-6 py-2">
           {loading && (
             <div className="py-16 flex items-center justify-center">
@@ -102,7 +101,7 @@ export function DigestView({ workspaceId, topic, conversationId }: DigestViewPro
             <div className="py-16 text-center text-sm text-muted-foreground">（无对话内容）</div>
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

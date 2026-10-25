@@ -22,7 +22,6 @@ import {
   closeAllChildWindows,
   setMainWindow,
   syncTitleBarOverlay,
-  getNotesWindow,
   sendToDebugWindow,
   createDataCenterWindow,
   createWorkbenchWindow,
@@ -41,7 +40,6 @@ export {
   createNotesWindow,
   createSessionWindow,
   getWorkbenchWindowOpen,
-  getNotesWindow,
   broadcastSettingsChanged,
 };
 
@@ -115,21 +113,9 @@ async function createWindow() {
 }
 
 /**
- * 任务通知点击分流：笔记窗口存活则前置并直发定位事件，否则主窗口切笔记 tab（现状）
+ * 任务通知点击：主窗口切任务面板选中任务（任务面板是协作任务唯一入口，不再分流笔记窗口）
  */
 function routeFocusTask(taskId: string, workspaceId: string) {
-  const notes = getNotesWindow();
-  if (notes) {
-    if (notes.isMinimized()) notes.restore();
-    notes.focus();
-    try {
-      const h = getRendererHandlers<RendererHandlers>(notes.webContents);
-      h.notesTaskFocus.send({ taskId, workspaceId });
-    } catch {
-      // 写后即广播，发送失败静默
-    }
-    return;
-  }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
     const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
@@ -254,8 +240,36 @@ app.whenReady().then(async () => {
       ? path.join(app.getPath('userData'), '.dogear')
       : path.join(process.cwd(), '.dogear');
     initConfigDir(configDir);
+    const { setWorkspaceDataConfigDir } = await import('./services/workspace-data-root.js');
+    setWorkspaceDataConfigDir(configDir);
   } catch (error) {
     console.error('初始化配置目录失败:', error);
+  }
+
+  // 工作区数据归位迁移（tasks.json/articles → configDir/workspaces/{wsid}/）：
+  // 必须先于任务队列恢复与局域网同步启动，await 保证迁移完成后才读新位置
+  try {
+    const { migrateWorkspaceDataIfNeeded } = await import('./services/workspace-data-migration.js');
+    await migrateWorkspaceDataIfNeeded();
+  } catch (error) {
+    console.error('工作区数据迁移失败:', error);
+  }
+
+  // 文章库迁移（configDir UUID 目录 → {工作区}/dogear/articles/ md 形态）：先于任何文章读写入口，await 保证一次性完成
+  try {
+    const { migrateArticlesIfNeeded } = await import('./services/article-migration.js');
+    await migrateArticlesIfNeeded();
+  } catch (error) {
+    console.error('文章库迁移失败:', error);
+  }
+
+  // custom/ 统一自定义区迁移（skills/ 与提示词模板归位）：先于任何 skill/模板加载，await 保证读到新位置
+  try {
+    const { migrateCustomResourcesIfNeeded } = await import('./services/custom-resources-migration.js');
+    const { getConfigDir } = await import('./services/settings-service.js');
+    await migrateCustomResourcesIfNeeded(getConfigDir());
+  } catch (error) {
+    console.error('custom 自定义资源迁移失败:', error);
   }
 
   // 初始化日志文件写入
@@ -274,11 +288,22 @@ app.whenReady().then(async () => {
     console.error('初始化文章解析 Skill 目录失败:', error);
   }
 
+  // 记忆库启动对账修复：孤儿索引 rebuild + .bak/.conflict 垃圾清理（sync 事故兜底，失败仅 log）
+  void import('./services/memory/memory-maintenance.js')
+    .then((m) => m.repairAllMemoryDirs())
+    .then((summary) => {
+      for (const o of summary.outcomes) {
+        console.log(
+          `[memory-maintenance] 启动修复 ${o.target.scope}:${o.target.workspaceId || 'global'}: rebuiltIndex=${o.rebuiltIndex} garbageRemoved=${o.garbageRemoved.length}`,
+        );
+      }
+    })
+    .catch((err) => console.error('记忆库启动对账修复失败:', err));
+
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
     maxWorkers: 4,
     workerIdleTimeout: 60000,
-    taskRetryLimit: 2,
     enableAutoCleanup: true
   });
   await agentManager.start();
@@ -305,15 +330,11 @@ app.whenReady().then(async () => {
     setQuitting: (v) => { isQuitting = v; },
   });
 
-  // 内嵌浏览器宿主自测：DOGEAR_EMBEDDED_BROWSER_SELFTEST=1 bun run dev:electron 时验证后台 tab 加载链路
-  if (isDev && process.env.DOGEAR_EMBEDDED_BROWSER_SELFTEST === '1') {
-    void import('./services/browser/embedded/dev-selftest.js')
-      .then((m) => m.runEmbeddedBrowserSelfTest())
-      .catch((err) => console.error('[embedded-selftest] 失败:', err));
-  }
-
+  // 记忆库每周体检定时任务补建（调度器就绪后落库，下一分钟 tick 起可触发）
   void import('./services/scheduler/scheduler-service.js')
     .then((m) => m.getSchedulerService().init())
+    .then(() => import('./services/memory/memory-checkup.js'))
+    .then((m) => m.ensureMemoryCheckupTask())
     .catch((err) => console.error('调度器初始化失败:', err));
 
   // 数据备份调度：启动即查 + 每 30 分钟 tick，配置实时读 settings（改动即生效）
@@ -332,10 +353,27 @@ app.whenReady().then(async () => {
     .then((m) => m.getNotificationCenterService().pruneExpired())
     .catch((err) => console.error('通知过期清理失败:', err));
 
-  // sessionId 丢失自愈：按 harness 文件创建时间对齐回填
-  void import('./services/session-id-repair.js')
+  // 工具调用记录过期清理：启动时删除 90 天前的按天文件
+  void import('./services/tool-usage/tool-usage-service.js')
+    .then((m) => m.cleanupOldToolUsage())
+    .catch((err) => console.error('工具调用记录清理失败:', err));
+
+  // 存量会话存储迁移（v3/v4 → durable 目录布局）：必须先于 sessionId 自愈（新文件名契约）
+  // 与首次会话列表打开；repository 各入口另有幂等闸兜底未完成窗口
+  void import('./agents/pi-session/storage-migrator.js')
+    .then((m) => m.migrateAllWorkspaces({ dryRun: false }))
+    .then((reports) => {
+      const converted = reports.reduce((sum, r) => sum + r.converted, 0);
+      const failed = reports.reduce((sum, r) => sum + r.failed.length, 0);
+      if (converted > 0 || failed > 0) {
+        console.log(`会话存储迁移完成：converted=${converted} failed=${failed}`);
+      }
+    })
+    .then(() => import('./services/session-id-repair.js'))
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
-    .catch((err) => console.error('sessionId 自愈扫描失败:', err));
+    .then(() => import('./services/executor-session-migrator.js'))
+    .then((m) => m.migrateExecutorSessionsAcrossWorkspaces())
+    .catch((err) => console.error('会话存储迁移/sessionId 自愈/执行会话迁移失败:', err));
 
   // 任务队列启动：各工作区遗留 running 任务回 queued 后开跑
   void import('./services/task-queue.js')
@@ -343,7 +381,9 @@ app.whenReady().then(async () => {
     .catch((err) => console.error('任务队列启动失败:', err));
 
   // 工作区文件树监视：每工作区递归 fs.watch，随 workspaces.json 增删起停
-  void import('./services/workspace-watcher.js')
+  void import('./services/workspace-json-service.js')
+    .then((m) => m.removeLegacyPersonalWorkspace())
+    .then(() => import('./services/workspace-watcher.js'))
     .then((m) => m.syncWorkspaceWatchers())
     .catch((err) => console.error('启动 workspace-watcher 失败:', err));
 
@@ -421,13 +461,6 @@ app.on('before-quit', async () => {
     await closeBrowserGateway();
   } catch (error) {
     console.error('关闭浏览器扩展网关失败:', error);
-  }
-  // 关闭内嵌浏览器宿主（销毁全部 WebContentsView）
-  try {
-    const { getEmbeddedBrowserManager } = await import('./services/browser/embedded/embedded-browser-manager.js');
-    getEmbeddedBrowserManager().dispose();
-  } catch (error) {
-    console.error('关闭内嵌浏览器宿主失败:', error);
   }
   // 关闭所有 pi 会话
   try {

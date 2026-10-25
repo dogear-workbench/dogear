@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test';
+import { afterAll, beforeEach, expect, test } from 'bun:test';
 import {
   installDelegationMocks,
   attachSessionByConv,
@@ -8,11 +8,36 @@ import {
   sendCalls,
   setMockSettings,
   updateModelSelectionCalls,
+  pushDirectCalls,
+  sessions,
+  sleep,
 } from './delegation-test-mocks.js';
 
 await installDelegationMocks();
 
+// mockSettings 是进程级共享单例：用例里注入过 ai.unattended=true，跑完必须清掉，
+// 否则后跑的文件（如 human-intervention-unattended）合跑时捕获到污染的设置底座
+afterAll(() => {
+  setMockSettings({
+    profiles: {},
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null },
+    failover: { enabled: false, chain: [] },
+  });
+});
+
 const failoverMod = await import('./model-failover.js');
+const retryMod = await import('./unattended-retry.js');
+
+/** 等指定会话的注入计数从 before 增长（failover 与重试的续跑提示同文本，不能按内容等） */
+async function waitSendCount(sessionId: string, before: number, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (sendCalls.filter((c) => c.sessionId === sessionId).length > before) return;
+    if (Date.now() > deadline) throw new Error(`等待注入超时: ${sessionId}（before=${before}）`);
+    await sleep(10);
+  }
+}
 const { conversationRuntimeService } = await import('../services/conversation-runtime-service.js');
 
 const QUOTA_FAILED = { subtype: 'failed', error: { kind: 'model', message: '429 rate limit exceeded' } } as const;
@@ -183,4 +208,112 @@ test('整链耗尽返回 false；complete(success) 后 tried 清空，用户切�
   conv.modelSelection = { profileId: 'prov-a', tier: 'ta' };
   expect(await failoverMod.maybeFailoverMainSession(secondSessionId, QUOTA_FAILED)).toBeTrue();
   expect(updateModelSelectionCalls[updateModelSelectionCalls.length - 1].modelSelection.profileId).toBe('prov-b');
+});
+
+test('无人值守链耗尽：退避后重置 tried 注入续跑，failover 重新接管', async () => {
+  retryMod.setUnattendedRetryBackoffForTest([30, 30, 30]);
+  setMockSettings({
+    profiles: mockProfiles(),
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 'ta' },
+      { profileId: 'prov-b', tier: 'tb' },
+      { profileId: 'prov-c', tier: 'tc' },
+    ] },
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null, unattended: true },
+  });
+  const { conversationId, sessionId } = await setupMainConversation('prov-a', 'ta');
+  expect(await failoverMod.maybeFailoverMainSession(sessionId, QUOTA_FAILED)).toBeTrue();
+  const sid2 = attachSessionByConv.get(conversationId)!;
+  expect(await failoverMod.maybeFailoverMainSession(sid2, QUOTA_FAILED)).toBeTrue();
+  const sid3 = attachSessionByConv.get(conversationId)!;
+  expect(await failoverMod.maybeFailoverMainSession(sid3, QUOTA_FAILED)).toBeFalse();
+
+  expect(await retryMod.maybeRetryUnattendedFailover(sid3, QUOTA_FAILED)).toBeTrue();
+  await waitSendCount(sid3, sendCalls.filter((c) => c.sessionId === sid3).length);
+  const lastSend = sendCalls.filter((c) => c.sessionId === sid3).at(-1)!;
+  expect(lastSend.text).toContain('C 家');
+
+  // 重试后再失败：tried 已重置，failover 重新接管（环形链回到 prov-a）
+  expect(await failoverMod.maybeFailoverMainSession(sid3, QUOTA_FAILED)).toBeTrue();
+  expect(updateModelSelectionCalls.at(-1)!.modelSelection.profileId).toBe('prov-a');
+  await sleep(120);
+});
+
+test('无人值守重试预算耗尽：放弃并推飞书，不再接管', async () => {
+  retryMod.setUnattendedRetryBackoffForTest([20, 20, 20]);
+  setMockSettings({
+    profiles: mockProfiles(),
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 'ta' },
+      { profileId: 'prov-b', tier: 'tb' },
+    ] },
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null, unattended: true },
+  });
+  const { conversationId, sessionId } = await setupMainConversation('prov-a', 'ta');
+  pushDirectCalls.length = 0;
+
+  // 忠实模拟 broadcaster 顺序（failover 优先、重试兜底）：3 轮「耗尽→重试→切链」后第 4 次耗尽放弃
+  let cur = sessionId;
+  for (let i = 0; i < 12; i++) {
+    if (await failoverMod.maybeFailoverMainSession(cur, QUOTA_FAILED)) {
+      cur = attachSessionByConv.get(conversationId)!;
+      continue;
+    }
+    if (!(await retryMod.maybeRetryUnattendedFailover(cur, QUOTA_FAILED))) {
+      expect(i).toBe(7);
+      break;
+    }
+    await waitSendCount(cur, sendCalls.filter((c) => c.sessionId === cur).length);
+  }
+  expect(pushDirectCalls).toHaveLength(1);
+  expect(pushDirectCalls[0].title).toBe('主会话');
+  expect(pushDirectCalls[0].summary).toContain('3 次');
+  await sleep(80);
+});
+
+test('无人值守关闭 / 非 main / 链未耗尽 / 会话已销毁：不进入重试', async () => {
+  retryMod.setUnattendedRetryBackoffForTest([20, 20, 20]);
+  setMockSettings({
+    profiles: mockProfiles(),
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 'ta' },
+      { profileId: 'prov-b', tier: 'tb' },
+    ] },
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null, unattended: true },
+  });
+
+  // 链未耗尽（从未切换，tried 为空）：fresh failure 不归重试域
+  const fresh = await setupMainConversation('prov-a', 'ta');
+  expect(await retryMod.maybeRetryUnattendedFailover(fresh.sessionId, QUOTA_FAILED)).toBeFalse();
+
+  // 链耗尽但开关关闭：不接管
+  expect(await failoverMod.maybeFailoverMainSession(fresh.sessionId, QUOTA_FAILED)).toBeTrue();
+  const sid2 = attachSessionByConv.get(fresh.conversationId)!;
+  expect(await failoverMod.maybeFailoverMainSession(sid2, QUOTA_FAILED)).toBeFalse();
+  setMockSettings({
+    profiles: mockProfiles(),
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 'ta' },
+      { profileId: 'prov-b', tier: 'tb' },
+    ] },
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null, unattended: false },
+  });
+  expect(await retryMod.maybeRetryUnattendedFailover(sid2, QUOTA_FAILED)).toBeFalse();
+
+  // 会话已销毁（acquireHold 拿不到）：不接管
+  setMockSettings({
+    profiles: mockProfiles(),
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 'ta' },
+      { profileId: 'prov-b', tier: 'tb' },
+    ] },
+    subAgent: { profiles: [] },
+    ai: { defaultModelSelection: null, unattended: true },
+  });
+  sessions.delete(sid2);
+  expect(await retryMod.maybeRetryUnattendedFailover(sid2, QUOTA_FAILED)).toBeFalse();
 });

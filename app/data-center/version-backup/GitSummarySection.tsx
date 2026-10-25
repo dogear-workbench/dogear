@@ -6,6 +6,7 @@ import { Card, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
+import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
 import { formatBytes, formatTime, type WorkspaceGitSummary } from './backup-meta';
 
@@ -17,6 +18,7 @@ export function GitSummarySection({ workspaces }: Props) {
   const [summaries, setSummaries] = useState<Record<string, WorkspaceGitSummary>>({});
   const [gitAvailable, setGitAvailable] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initLoadingId, setInitLoadingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -49,6 +51,28 @@ export function GitSummarySection({ workspaces }: Props) {
     load();
   }, [load]);
 
+  const initRepo = async (w: Workspace) => {
+    const ok = await showConfirm(
+      '初始化 git 仓库',
+      '将 git init 并提交当前全部文件；已排除出自动快照的目录与超大文件不会纳入（与快照规则一致）。完成后重启会话，agent 将获得 git 历史查询与提交能力。',
+    );
+    if (!ok) return;
+    setInitLoadingId(w.id);
+    try {
+      const r = await client.initWorkspaceGitRepo({ workspaceId: w.id });
+      if ('error' in r) {
+        toast.error('初始化失败', { description: r.error });
+        return;
+      }
+      toast.success(`已初始化 git 仓库：提交 ${r.committedFiles} 个文件，${r.ignoredCount} 项按快照规则排除`);
+      await load();
+    } catch (e) {
+      toast.error('初始化失败', { description: String(e) });
+    } finally {
+      setInitLoadingId(null);
+    }
+  };
+
   const renderUserRepoRow = (w: Workspace) => {
     const s = summaries[w.id];
     return (
@@ -61,7 +85,19 @@ export function GitSummarySection({ workspaces }: Props) {
         ) : !s ? (
           <span className="text-xs text-muted-foreground">加载中…</span>
         ) : !s.userRepo.isRepo ? (
-          <span className="text-xs text-muted-foreground">非 git 仓库</span>
+          <>
+            <span className="text-xs text-muted-foreground">非 git 仓库</span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 gap-1 px-2 text-xs"
+              disabled={initLoadingId !== null}
+              onClick={() => initRepo(w)}
+            >
+              {initLoadingId === w.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : null}
+              初始化
+            </Button>
+          </>
         ) : (
           <>
             <Badge variant="outline" className="font-normal">

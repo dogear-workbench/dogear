@@ -35,6 +35,9 @@ function ToolGroupPanel({
           className={cn('w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform', !open && '-rotate-90')}
         />
         <span className="text-xs font-medium truncate">{group.label}</span>
+        {group.deferred && (
+          <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground shrink-0">按需</span>
+        )}
         <span className="text-xs text-muted-foreground ml-auto shrink-0">{group.tools.length} 工具</span>
       </button>
       {open && (
@@ -67,9 +70,14 @@ export function AbilityPackSidebar({
   return (
     <div className="flex-[4] min-w-0 space-y-5 overflow-y-auto border-l p-4">
       <section className="space-y-2">
-        <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-          {PACK_TYPE_LABELS[pack.type]}
-        </span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+            {PACK_TYPE_LABELS[pack.type]}
+          </span>
+          {(pack.deferredToolGroups?.length ?? 0) > 0 && (
+            <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">按需</span>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground leading-relaxed">{pack.description}</p>
       </section>
 

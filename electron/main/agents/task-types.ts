@@ -8,6 +8,9 @@ import type { ModelSelection } from '../services/settings-types.js';
 /** 注入 user 消息的类型标记：调用方显式传入，随 user 内容事件广播给前端 */
 export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover' | 'dispatch';
 
+/** 注入输入的 pi-durable 落盘 kind（entry.data = InjectionTag；durable 要求 input entry kind 不带 pi. 前缀） */
+export const INJECTED_ENTRY_KIND = 'dogear.injected';
+
 /**
  * 任务状态枚举
  */
@@ -23,11 +26,7 @@ export enum TaskStatus {
  * 任务类型枚举
  */
 export enum TaskType {
-  SUMMARIZE = 'summarize',          // 文本摘要
-  READING_ASSIST = 'reading_assist', // 阅读辅助
-  PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
-  CUSTOM_AGENT = 'custom_agent', // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
-  STATE_EXTRACT = 'state_extract' // 话题状态卡增量抽取（逐会话 runOnce 产出结构化增量）
+  PARSE_ARTICLE = 'parse_article'  // 文章解析（质量检查 + AI 重新解析）
 }
 
 /**
@@ -43,37 +42,6 @@ export interface AgentTask {
   result?: any;                     // 任务结果
   error?: string;                   // 错误信息
   retryCount?: number;              // 重试次数 (内部使用)
-}
-
-/**
- * AI 对话任务负载
- */
-export interface ChatTaskPayload {
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-  }>;
-  context?: {
-    selectedText?: string;
-  };
-}
-
-/**
- * 文本摘要任务负载
- */
-export interface SummarizeTaskPayload {
-  text: string;
-  maxLength?: number;
-  language?: string;
-}
-
-/**
- * 阅读辅助任务负载
- */
-export interface ReadingAssistPayload {
-  text: string;
-  action: 'explain' | 'translate' | 'expand';
-  language?: string;
 }
 
 /**
@@ -155,8 +123,10 @@ export interface ExtendedSessionMessage {
  */
 export interface ParseArticlePayload {
   articleId: string;
-  articleDir: string;        // 绝对路径：<workspace>/.dogear/articles/<id>
-  workspacePath: string;     // 工作区路径（saveArticle 需要）
+  /** 文章 md 绝对路径（{ws}/dogear/articles/...，raw.html 同名伴随） */
+  articlePath: string;
+  workspaceId: string;       // 工作区 ID（事件广播/解析历史归属）
+  workspacePath: string;     // 工作区磁盘路径（存储定位与事件广播 payload 沿用）
   url: string;
   skillsDir: string;         // 解析器运行时目录：<configDir>/article-parser（旧环境回退 <configDir>/skills/article-parser）
 
@@ -170,32 +140,6 @@ export interface ParseArticlePayload {
 
   // V1 compat (kept temporarily)
   fixedParseSuccess?: boolean;
-}
-
-/**
- * 定时计划自定义 agent 任务负载（scheduler task-runner 派发）
- * 运行时上下文（configDir）由 Worker 实例字段提供，不放 payload
- */
-export interface CustomAgentTaskPayload {
-  taskName: string;             // 任务显示名（ScheduledTask.name）
-  prompt: string;               // 用户编写的任务指令
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.ai.defaultModelSelection）
-  workspaceId: string;          // 工作区 ID（读工作区工具包开关用）
-  workspacePath: string;        // 工作区绝对路径（文件工具边界根）
-  toolPacksOverride?: string[]; // 任务级工具包覆盖（undefined = 跟随工作区 enabledToolPacks）
-  skillsOverride?: string[];    // 任务级 skill 挂载（undefined = 不挂载；空数组经 sanitize 归一为 undefined）
-}
-
-/**
- * 话题状态卡增量抽取任务负载（Step 3 开启会话时触发）
- * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
- */
-export interface StateExtractPayload {
-  workspaceId: string;   // 工作区 ID（读状态卡 / 读会话 / 落盘都用）
-  groupId: string;       // 组 ID
-  /** getStaleConversations 输出的滞后会话；mtime 同时是 sourcesSeen 推进目标 */
-  conversations: Array<{ conversationId: string; sessionId: string; mtime: number }>;
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.stateModelSelection）
 }
 
 /**
@@ -232,4 +176,4 @@ export type WorkerToMainMessage =
   | { type: 'pong' }
   | { type: 'error'; error: string }
   // Phase 3/4: 文章解析状态变化
-  | { type: 'articleParseStatusChanged'; articleId: string; workspacePath: string; parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };
+  | { type: 'articleParseStatusChanged'; articleId: string; workspaceId: string; parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };

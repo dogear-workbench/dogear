@@ -1,9 +1,8 @@
 /**
- * 工作区 git 版本管理工具组（dogear-git，workspace-git 能力包）
- *
- * 双层语义：只读五件套 + GitCommit/GitRevert 操作用户 Git 仓库（正式历史），
- * GitSnapshotList/Restore 走自动快照仓库（安全网）；远端操作（push/pull）不提供。
- * GitRevert 的逐次确认在 permission-rules 挂 ask，工具包注册不覆盖。
+ * 工作区 git 系工具组，按「是否依赖用户 git 仓库」拆两组：
+ * dogear-git（workspace-git 包）= 只读五件套 + GitCommit/GitRevert，操作用户 Git 仓库（正式历史）；
+ * dogear-snapshot（workspace-snapshot 包）= GitSnapshotList/Restore，走自动快照仓库（安全网），无 git 仓库也可用。
+ * 远端操作（push/pull）不提供；GitRevert 的逐次确认在 permission-rules 挂 ask，工具包注册不覆盖。
  */
 import { z } from 'zod';
 import {
@@ -30,7 +29,7 @@ export interface GitToolsOpts {
 
 const MAX_TEXT_OUTPUT = 30_000;
 
-const REL_PATH_DESC = '工作区内相对路径（如 src/index.ts、docs/设计.md），越出工作区会报错';
+const REL_PATH_DESC = '工作区内相对路径（如 src/index.ts、dogear/设计.md），越出工作区会报错';
 const REF_DESC = 'git 引用：commit hash（可短 hash）、分支名、tag、HEAD、HEAD~1 等';
 
 function errorResult(text: string): ToolResult {
@@ -190,6 +189,14 @@ export function createGitToolDefs(opts: GitToolsOpts): ToolDef[] {
         }),
     ),
 
+  ];
+}
+
+export function createSnapshotToolDefs(opts: GitToolsOpts): ToolDef[] {
+  const { workspaceId, workspacePath } = opts;
+  const relPathSchema = z.string().min(1).optional().describe(REL_PATH_DESC);
+
+  return [
     defineTool(
       'dogear__GitSnapshotList',
       '查看自动快照历史',
@@ -208,7 +215,7 @@ export function createGitToolDefs(opts: GitToolsOpts): ToolDef[] {
     defineTool(
       'dogear__GitSnapshotRestore',
       '从自动快照恢复文件',
-      `把文件恢复到某条自动快照的版本（ref 用 GitSnapshotList 返回的 hash）。恢复前会自动打一条 pre-restore 快照，本操作永远可逆；恢复只改工作区文件，确认无误后用 dogear__GitCommit 落库。改坏文件需要回滚时用，比 GitRevert 覆盖面广（含未提交过仓库的文件）。`,
+      `把文件恢复到某条自动快照的版本（ref 用 GitSnapshotList 返回的 hash）。恢复前会自动打一条 pre-restore 快照，本操作永远可逆；恢复只改工作区文件，确认无误后可自行提交落库（若工作区是 git 仓库）。改坏文件需要回滚时用，git 回退覆盖不了的文件（未提交过仓库的）也能恢复。`,
       z.object({
         ref: z.string().min(1).describe('自动快照 hash（dogear__GitSnapshotList 返回）'),
         relPath: relPathSchema,
@@ -227,5 +234,12 @@ registerToolGroup({
   server: 'dogear-git',
   label: 'git 版本管理',
   create: createGitToolDefs,
+  placeholder: [{ workspaceId: '', workspacePath: '' }],
+});
+
+registerToolGroup({
+  server: 'dogear-snapshot',
+  label: '快照安全网',
+  create: createSnapshotToolDefs,
   placeholder: [{ workspaceId: '', workspacePath: '' }],
 });

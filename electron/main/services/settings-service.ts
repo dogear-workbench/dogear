@@ -12,14 +12,12 @@ import {
   DEFAULT_SETTINGS,
   deepMerge,
   createDefaultBasicToolPermissions,
-  createDefaultSubAgentProfile,
-  createBrowserParseSubAgentProfile,
-  BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
+  createBuiltinSubAgentProfiles,
+  BUILTIN_SUB_AGENT_PROFILE_IDS,
   normalizeFailoverChain,
   normalizeBackupSettings,
   normalizeSnapshotSettings,
   BASIC_TOOL_NAMES,
-  normalizeWebAiSites,
   normalizePaymentBlockedHosts,
   normalizeTaskBrowser,
   normalizeDisabledSyncItems,
@@ -31,6 +29,9 @@ import {
   type BasicToolPermissions,
   type BasicToolPermission,
   type ModelPricing,
+  type SubAgentProfile,
+  type EffortLevel,
+  EFFORT_LEVELS,
 } from './settings-types.js';
 
 const { app, nativeTheme } = electron;
@@ -86,21 +87,24 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /**
- * 把任意 piModels 原始值归一化为 { id, label?, contextWindow?, pricing? } 对象数组：
- * string 元素转 { id }；对象元素仅保留非空 string 的 id、非空 string 的 label、正整数的 contextWindow
- * 与三字段均为有限非负数的 pricing（整体保留或整体丢弃）；
+ * 把任意 piModels 原始值归一化为 { id, label?, contextWindow?, maxTokens?, pricing?, supportsVision?, effort? } 对象数组：
+ * string 元素转 { id }；对象元素仅保留非空 string 的 id、非空 string 的 label、正整数的 contextWindow、正整数 maxTokens、
+ * 三字段均为有限非负数的 pricing（整体保留或整体丢弃）、布尔 true 的 supportsVision（显式 false 丢弃，等价未标记）
+ * 与合法 EffortLevel 字面量的 effort；
  * 按 id 去重保首现顺序；非法元素丢弃；非数组输入返回空数组。
  */
-export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }> {
+export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing; supportsVision?: boolean; effort?: EffortLevel | null }> {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const result: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }> = [];
+  const result: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing; supportsVision?: boolean; effort?: EffortLevel | null }> = [];
   for (const item of raw) {
     let id: string;
     let label: string | undefined;
     let contextWindow: number | undefined;
     let maxTokens: number | undefined;
     let pricing: ModelPricing | undefined;
+    let supportsVision: boolean | undefined;
+    let effort: EffortLevel | undefined;
     if (typeof item === 'string') {
       id = item;
     } else if (item && typeof item === 'object') {
@@ -121,24 +125,30 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
           pricing = { input: p.input as number, output: p.output as number, cacheRead: p.cacheRead as number };
         }
       }
+      if (obj.supportsVision === true) supportsVision = true;
+      if (typeof obj.effort === 'string' && (EFFORT_LEVELS as readonly string[]).includes(obj.effort)) {
+        effort = obj.effort as EffortLevel;
+      }
     } else {
       continue;
     }
     if (id === '') continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    const entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing } = { id };
+    const entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing; supportsVision?: boolean; effort?: EffortLevel | null } = { id };
     if (label !== undefined) entry.label = label;
     if (contextWindow !== undefined) entry.contextWindow = contextWindow;
     if (maxTokens !== undefined) entry.maxTokens = maxTokens;
     if (pricing !== undefined) entry.pricing = pricing;
+    if (supportsVision !== undefined) entry.supportsVision = supportsVision;
+    if (effort !== undefined) entry.effort = effort;
     result.push(entry);
   }
   return result;
 }
 
 /**
- * 遍历 profiles，把 piModels 归一化为 { id, label?, contextWindow?, pricing? } 对象数组。
+ * 遍历 profiles，把 piModels 归一化为 { id, label?, contextWindow?, maxTokens?, pricing?, supportsVision?, effort? } 对象数组。
  * 返回 true 表示发生了变化（需要落盘），false 表示无事可做。
  */
 export function migratePiProfiles(settings: AppSettings): boolean {
@@ -173,6 +183,112 @@ function normalizeBasicToolPermissions(raw: unknown): BasicToolPermissions {
   return result;
 }
 
+/** 收编映射：目标内置 slug 缺席时，同名自建条目（首个命中）改挂内置 slug，配置字段全保留；文案随后由内置接管逻辑刷成模板版 */
+const SUB_AGENT_ADOPT_TARGETS: ReadonlyArray<{ slug: string; name: string }> = [
+  { slug: 'explore', name: '探索' },
+  { slug: 'stock', name: '股票' },
+];
+
+function normalizeSubAgentProfiles(subAgent: Record<string, unknown>): boolean {
+  let changed = false;
+  if (!Array.isArray(subAgent.profiles)) {
+    subAgent.profiles = createBuiltinSubAgentProfiles();
+    return true;
+  }
+  // deepMerge 在 subAgent 对象存在但缺 profiles 键时会泄漏 DEFAULT_SETTINGS 的数组引用，补齐 push 前先隔离，防污染全局常量
+  if (subAgent.profiles === DEFAULT_SETTINGS.subAgent.profiles) {
+    subAgent.profiles = structuredClone(subAgent.profiles);
+  }
+  const profiles = subAgent.profiles as unknown[];
+
+  for (const { slug, name } of SUB_AGENT_ADOPT_TARGETS) {
+    if (profiles.some((p) => p !== null && typeof p === 'object' && (p as { id?: unknown }).id === slug)) continue;
+    const hit = profiles.find(
+      (p) =>
+        p !== null &&
+        typeof p === 'object' &&
+        (p as { name?: unknown }).name === name &&
+        !BUILTIN_SUB_AGENT_PROFILE_IDS.includes((p as { id?: unknown }).id as string),
+    );
+    if (hit) {
+      (hit as { id: string }).id = slug;
+      changed = true;
+    }
+  }
+
+  const builtinTemplates = new Map<string, SubAgentProfile>(
+    createBuiltinSubAgentProfiles().map((t) => [t.id, t]),
+  );
+
+  for (const profile of profiles) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile)) continue;
+    const p = profile as Record<string, unknown>;
+    if (!Array.isArray(p.enabledBasicTools)) {
+      p.enabledBasicTools = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'];
+      changed = true;
+    }
+    if (!p.enabledAbilities || typeof p.enabledAbilities !== 'object' || Array.isArray(p.enabledAbilities)) {
+      p.enabledAbilities = {};
+      changed = true;
+    }
+    if (p.enabledAbilities && typeof p.enabledAbilities === 'object' && !Array.isArray(p.enabledAbilities)) {
+      const ab = p.enabledAbilities as Record<string, unknown>;
+      // 内嵌浏览器下线迁移：browser 子开关键一律清除（注册表侧已无此包，残留下线 key 静默忽略兑底）
+      if ('browser' in ab) {
+        delete ab.browser;
+        changed = true;
+      }
+      if ('extension' in ab && typeof ab.extension !== 'boolean') {
+        delete ab.extension;
+        changed = true;
+      }
+      if ('web' in ab && typeof ab.web !== 'boolean') {
+        delete ab.web;
+        changed = true;
+      }
+      // 方法论 skill 随包下线：skills 细选去 browser-exploration，清空则删键
+      if (Array.isArray(ab.skills)) {
+        const filtered = (ab.skills as unknown[]).filter((s) => s !== 'browser-exploration');
+        if (filtered.length !== ab.skills.length) {
+          if (filtered.length === 0) delete ab.skills;
+          else ab.skills = filtered;
+          changed = true;
+        }
+      }
+    }
+
+    // 内置条目：文案（name/description）以代码模板为单一真源无条件接管；能力域只补缺失键，显式 false 是用户/产品收敛结果不覆盖；
+    // enabled/modelSelection/timeoutMinutes 等配置字段用户自治不动
+    const builtin = builtinTemplates.get(p.id as string);
+    if (builtin) {
+      if (p.name !== builtin.name) {
+        p.name = builtin.name;
+        changed = true;
+      }
+      if (p.description !== builtin.description) {
+        p.description = builtin.description;
+        changed = true;
+      }
+      const ab = p.enabledAbilities as Record<string, unknown>;
+      for (const [key, value] of Object.entries(builtin.enabledAbilities)) {
+        if (!(key in ab)) {
+          ab[key] = value;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  for (const template of builtinTemplates.values()) {
+    if (!profiles.some((p) => p !== null && typeof p === 'object' && (p as { id?: unknown }).id === template.id)) {
+      profiles.push(template);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 export function normalizeSettings(settings: AppSettings): boolean {
   let changed = false;
   const obj = settings as unknown as Record<string, unknown>;
@@ -185,6 +301,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
     const newMode = normalizePermissionMode(ai.permissionMode);
     if (ai.permissionMode !== newMode) {
       ai.permissionMode = newMode;
+      changed = true;
+    }
+    const newUnattended = ai.unattended === true;
+    if (ai.unattended !== newUnattended) {
+      ai.unattended = newUnattended;
+      changed = true;
+    }
+    if ('stateModelSelection' in ai) {
+      delete ai.stateModelSelection;
       changed = true;
     }
   }
@@ -231,80 +356,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
 
   const subAgent = settings.subAgent as unknown as Record<string, unknown> | undefined;
   if (subAgent && typeof subAgent === 'object' && !Array.isArray(subAgent)) {
-    if (Array.isArray(subAgent.profiles)) {
-      for (const profile of subAgent.profiles) {
-        if (!profile || typeof profile !== 'object' || Array.isArray(profile)) continue;
-        const p = profile as Record<string, unknown>;
-        if (!Array.isArray(p.enabledBasicTools)) {
-          p.enabledBasicTools = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'];
-          changed = true;
-        }
-        if (!p.enabledAbilities || typeof p.enabledAbilities !== 'object' || Array.isArray(p.enabledAbilities)) {
-          p.enabledAbilities = {};
-          changed = true;
-        }
-        if (p.enabledAbilities && typeof p.enabledAbilities === 'object' && !Array.isArray(p.enabledAbilities)) {
-          const ab = p.enabledAbilities as Record<string, unknown>;
-          if ('browser' in ab && typeof ab.browser !== 'boolean') {
-            delete ab.browser;
-            changed = true;
-          }
-          if ('extension' in ab && typeof ab.extension !== 'boolean') {
-            delete ab.extension;
-            changed = true;
-          }
-          if ('web' in ab && typeof ab.web !== 'boolean') {
-            delete ab.web;
-            changed = true;
-          }
-          // 拆包迁移：存量 browser 生效的 Profile 把 browser-exploration 补进 skills 细选（方法论包与通道解耦后走通用细选）；
-          // 只在 skills 键整体缺失时写入，清理过数组视为显式意愿不回填
-          if (ab.browser === true && !('skills' in ab)) {
-            ab.skills = ['browser-exploration'];
-            changed = true;
-          }
-          // 内置 Profile 升级新增能力键时，旧数据只补缺失键；显式 false 是用户关闭，不覆盖
-          if (p.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID) {
-            const builtinAb = createBrowserParseSubAgentProfile().enabledAbilities as Record<string, unknown>;
-            for (const key of Object.keys(builtinAb)) {
-              if (!(key in ab)) {
-                ab[key] = builtinAb[key];
-                changed = true;
-              }
-            }
-          }
-          if (p.id === 'default') {
-            const builtinAb = createDefaultSubAgentProfile().enabledAbilities as Record<string, unknown>;
-            for (const key of Object.keys(builtinAb)) {
-              if (!(key in ab)) {
-                ab[key] = builtinAb[key];
-                changed = true;
-              }
-            }
-          }
-        }
-      }
-      if (subAgent.profiles.length === 0) {
-        subAgent.profiles = [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()];
-        changed = true;
-      }
-      const existingProfiles = subAgent.profiles as unknown[];
-      if (!existingProfiles.some((p) => p !== null && typeof p === 'object' && (p as { id?: unknown }).id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID)) {
-        existingProfiles.push(createBrowserParseSubAgentProfile());
-        changed = true;
-      }
-    } else {
-      subAgent.profiles = [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()];
-      changed = true;
-    }
+    if (normalizeSubAgentProfiles(subAgent)) changed = true;
   } else {
-    obj.subAgent = { profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()] };
+    obj.subAgent = { profiles: createBuiltinSubAgentProfiles() };
     changed = true;
   }
 
-  const normalizedSites = normalizeWebAiSites(obj.webAiSites);
-  if (JSON.stringify(normalizedSites) !== JSON.stringify(obj.webAiSites)) {
-    obj.webAiSites = normalizedSites;
+  // 网页 AI 下架残留：字段已删，存量 settings.json 首次 load 清掉后落盘
+  if ('webAiSites' in obj) {
+    delete obj.webAiSites;
     changed = true;
   }
 

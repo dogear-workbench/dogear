@@ -6,7 +6,7 @@ export interface GatewayTabEntry {
 }
 
 export interface GatewayTabFields {
-  /** 操作焦点 tab；NO_FOCUS_TAB_ID 表示 Dogear 分组已空、无可用 tab */
+  /** 操作焦点 tab；NO_FOCUS_TAB_ID 表示无可用标签页（agent 窗口为空） */
   tabId: number;
   title: string;
   url: string;

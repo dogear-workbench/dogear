@@ -34,6 +34,7 @@ export const settingsRouter = {
       try {
         const prev = await loadSettings();
         await saveSettings(input.settings);
+        getPiSessionManager().invalidateAliveWindowCache();
         const diff = diffSettings(prev, input.settings);
         if (hasSnapshotChange(diff)) {
           getPiSessionManager().applySettingsSnapshotDiff(diff, input.settings);

@@ -1,6 +1,7 @@
 import { Client, Domain, EventDispatcher, LoggerLevel, WSClient } from '@larksuiteoapi/node-sdk';
 import { broadcastToWindows } from '../renderer-broadcast.js';
 import { feishuConfigService, type FeishuConnectionState } from './feishu-config-service.js';
+import { feishuCardController, type CardActionTriggerData } from './feishu-card-controller.js';
 
 // 类型镜像自 types/feishu.ts（主进程 rootDir 限制，不能跨目录 import）
 
@@ -9,11 +10,17 @@ export interface FeishuIncomingMessage {
   chatId: string;
   senderOpenId: string;
   text: string;
+  chatType?: 'p2p' | 'group';
+  threadId?: string;
+  rootId?: string;
+  parentId?: string;
 }
 
 export interface FeishuActionResult {
   ok: boolean;
   error?: string;
+  code?: number;
+  messageId?: string;
 }
 
 interface ImReceiveEvent {
@@ -28,18 +35,29 @@ interface ImReceiveEvent {
     chat_type: string;
     message_type: string;
     content: string;
+    thread_id?: string;
+    root_id?: string;
+    parent_id?: string;
   };
 }
 
-interface ReplyApiResult {
+interface ApiEnvelope<T> {
   code?: number;
   msg?: string;
+  data?: T;
 }
 
 type FeishuStateListener = (state: FeishuConnectionState, errorMessage?: string) => void;
 type FeishuMessageHandler = (msg: FeishuIncomingMessage) => void | Promise<void>;
 
 const CONNECT_TIMEOUT_MS = 15_000;
+const MAX_TEXT_LEN = 4000;
+
+function splitTextSegments(text: string): string[] {
+  if (text.length <= MAX_TEXT_LEN) return [text];
+  return Array.from({ length: Math.ceil(text.length / MAX_TEXT_LEN) }, (_, i) =>
+    text.slice(i * MAX_TEXT_LEN, (i + 1) * MAX_TEXT_LEN));
+}
 
 function broadcastFeishuState(state: FeishuConnectionState, errorMessage?: string): void {
   broadcastToWindows((h) => h.feishuConnectionStatus.send({ state, errorMessage }));
@@ -81,6 +99,11 @@ class FeishuClientService {
       'im.message.receive_v1': (data: ImReceiveEvent) => {
         if (generation !== this.connectGeneration) return;
         this.handleReceive(data);
+      },
+      // card.action.trigger 依赖 patchedDependencies 里对 WSClient 的 card 帧放行补丁
+      'card.action.trigger': (data: CardActionTriggerData) => {
+        if (generation !== this.connectGeneration) return null;
+        return feishuCardController.handleAction(data);
       },
     });
 
@@ -141,11 +164,149 @@ class FeishuClientService {
   }
 
   async replyText(messageId: string, text: string): Promise<FeishuActionResult> {
-    return this.reply(messageId, 'text', JSON.stringify({ text }));
+    let last: FeishuActionResult = { ok: true };
+    for (const segment of splitTextSegments(text)) {
+      const res = await this.reply(messageId, 'text', JSON.stringify({ text: segment }));
+      if (!res.ok) return res;
+      last = res;
+    }
+    return last;
   }
 
   async replyCard(messageId: string, card: object): Promise<FeishuActionResult> {
     return this.reply(messageId, 'interactive', JSON.stringify(card));
+  }
+
+  async replyCardRef(messageId: string, cardId: string): Promise<FeishuActionResult> {
+    return this.reply(messageId, 'interactive', JSON.stringify({ type: 'card', data: { card_id: cardId } }));
+  }
+
+  getClient(): Client | null {
+    return this.client;
+  }
+
+  async sendDirectText(openId: string, text: string): Promise<FeishuActionResult> {
+    let last: FeishuActionResult = { ok: true };
+    for (const segment of splitTextSegments(text)) {
+      const res = await this.sendDirectTextOnce(openId, segment);
+      if (!res.ok) return res;
+      last = res;
+    }
+    return last;
+  }
+
+  private async sendDirectTextOnce(openId: string, text: string): Promise<FeishuActionResult> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.message.create({
+        data: { receive_id: openId, msg_type: 'text', content: JSON.stringify({ text }) },
+        params: { receive_id_type: 'open_id' },
+      })) as ApiEnvelope<unknown>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `发送私聊消息失败：${res.msg || `code=${res.code}`}` };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `发送私聊消息失败：${String(err)}` };
+    }
+  }
+
+  async createChat(name: string, userOpenId: string): Promise<FeishuActionResult & { chatId?: string }> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.chat.create({
+        data: { name, group_message_type: 'thread', user_id_list: [userOpenId] },
+        params: { user_id_type: 'open_id' },
+      })) as ApiEnvelope<{ chat_id?: string }>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `创建话题群失败：${res.msg || `code=${res.code}`}` };
+      }
+      if (!res.data?.chat_id) {
+        return { ok: false, error: '创建话题群失败：响应缺少 chat_id' };
+      }
+      return { ok: true, chatId: res.data.chat_id };
+    } catch (err) {
+      return { ok: false, error: `创建话题群失败：${String(err)}` };
+    }
+  }
+
+  // 发送引用 cardkit 实体的群卡片消息（话题群中首条此类消息即新话题的根消息）
+  async createGroupCardMessage(
+    chatId: string,
+    cardId: string,
+  ): Promise<FeishuActionResult & { messageId?: string; threadId?: string }> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.message.create({
+        data: {
+          receive_id: chatId,
+          msg_type: 'interactive',
+          content: JSON.stringify({ type: 'card', data: { card_id: cardId } }),
+        },
+        params: { receive_id_type: 'chat_id' },
+      })) as ApiEnvelope<{ message_id?: string; thread_id?: string }>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `发送群卡片消息失败：${res.msg || `code=${res.code}`}` };
+      }
+      return { ok: true, messageId: res.data?.message_id, threadId: res.data?.thread_id };
+    } catch (err) {
+      return { ok: false, error: `发送群卡片消息失败：${String(err)}` };
+    }
+  }
+
+  async pinMessage(messageId: string): Promise<FeishuActionResult> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.pin.create({
+        data: { message_id: messageId },
+      })) as ApiEnvelope<unknown>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `Pin 消息失败：${res.msg || `code=${res.code}`}` };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `Pin 消息失败：${String(err)}` };
+    }
+  }
+
+  async unpinMessage(messageId: string): Promise<FeishuActionResult> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.pin.delete({
+        path: { message_id: messageId },
+      })) as ApiEnvelope<unknown>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `取消 Pin 失败：${res.msg || `code=${res.code}`}` };
+      }
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `取消 Pin 失败：${String(err)}` };
+    }
+  }
+
+  async createGroupMessage(
+    chatId: string,
+    text: string,
+  ): Promise<FeishuActionResult & { messageId?: string; threadId?: string }> {
+    const client = this.client;
+    if (!client) return { ok: false, error: '飞书未连接' };
+    try {
+      const res = (await client.im.message.create({
+        data: { receive_id: chatId, msg_type: 'text', content: JSON.stringify({ text }) },
+        params: { receive_id_type: 'chat_id' },
+      })) as ApiEnvelope<{ message_id?: string; thread_id?: string }>;
+      if (res.code !== 0) {
+        return { ok: false, code: res.code, error: `发送群消息失败：${res.msg || `code=${res.code}`}` };
+      }
+      return { ok: true, messageId: res.data?.message_id, threadId: res.data?.thread_id };
+    } catch (err) {
+      return { ok: false, error: `发送群消息失败：${String(err)}` };
+    }
   }
 
   private async reply(messageId: string, msgType: string, content: string): Promise<FeishuActionResult> {
@@ -155,11 +316,11 @@ class FeishuClientService {
       const res = (await client.im.message.reply({
         data: { content, msg_type: msgType },
         path: { message_id: messageId },
-      })) as ReplyApiResult;
+      })) as ApiEnvelope<{ message_id?: string }>;
       if (res.code !== 0) {
-        return { ok: false, error: `飞书消息发送失败：${res.msg || `code=${res.code}`}` };
+        return { ok: false, code: res.code, error: `飞书消息发送失败：${res.msg || `code=${res.code}`}` };
       }
-      return { ok: true };
+      return { ok: true, messageId: res.data?.message_id };
     } catch (err) {
       return { ok: false, error: `飞书消息发送失败：${String(err)}` };
     }
@@ -182,7 +343,10 @@ class FeishuClientService {
   private handleReceive(data: ImReceiveEvent): void {
     try {
       const message = data.message;
-      if (!message || message.chat_type !== 'p2p' || message.message_type !== 'text') return;
+      if (!message || message.message_type !== 'text') return;
+      const isP2p = message.chat_type === 'p2p';
+      const isThread = message.chat_type === 'group' && !!message.thread_id;
+      if (!isP2p && !isThread) return;
       const senderOpenId = data.sender?.sender_id?.open_id;
       if (!senderOpenId) return;
       let text = '';
@@ -196,6 +360,10 @@ class FeishuClientService {
         chatId: message.chat_id,
         senderOpenId,
         text,
+        chatType: isP2p ? 'p2p' : 'group',
+        threadId: message.thread_id,
+        rootId: message.root_id,
+        parentId: message.parent_id,
       };
       void Promise.resolve(this.onMessage?.(parsed)).catch((err) => {
         console.error('[feishu] 消息处理失败:', err);

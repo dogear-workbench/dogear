@@ -42,6 +42,14 @@ export interface SearchNotesInput {
   tag?: string;
 }
 
+export interface NoteSearchResult extends NoteMeta {
+  /** 命中片段：首词首个命中处前后各 20 字；词只命中标题/标签时无 */
+  snippet?: string;
+}
+
+const SEARCH_SNIPPET_RADIUS = 20;
+const SEARCH_MAX_RESULTS = 20;
+
 const LINK_RE = /^(article|stock|plan):.+/;
 
 // ─── 读 ───
@@ -162,30 +170,67 @@ export async function listTrashNotes(workspaceId: string): Promise<NoteMeta[]> {
   return sortByUpdated(items);
 }
 
+export async function getTrashedNote(workspaceId: string, noteId: string): Promise<Note | null> {
+  const trashPath = await locateTrashedFile(workspaceId, noteId);
+  if (!trashPath) return null;
+  return readNoteFile(trashPath);
+}
+
 // ─── 搜索 / 待办聚合 ───
 
-export async function searchNotes(workspaceId: string, input: SearchNotesInput): Promise<NoteMeta[]> {
+export async function searchNotes(workspaceId: string, input: SearchNotesInput): Promise<NoteSearchResult[]> {
   const items = await listNotes(workspaceId);
   const tag = input.tag?.trim();
-  const query = input.query?.trim().toLowerCase();
+  const words = (input.query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   const tagMatched = tag ? items.filter((it) => it.tags.includes(tag)) : items;
-  if (!query) return tagMatched;
-  const matched: NoteMeta[] = [];
+  if (words.length === 0) return tagMatched;
+  const hits: Array<{ meta: NoteSearchResult; level: number }> = [];
   for (const item of tagMatched) {
-    if (item.title.toLowerCase().includes(query)) {
-      matched.push(item);
-      continue;
+    const filePath = await locateNoteFile(workspaceId, item.id);
+    const note = filePath ? await readNoteFile(filePath) : null;
+    const content = note?.content ?? '';
+    const title = item.title.toLowerCase();
+    const tags = item.tags.map((t) => t.toLowerCase());
+    const contentLower = content.toLowerCase();
+    let level = 0;
+    let matchedAll = true;
+    for (const word of words) {
+      let wordLevel = 0;
+      if (title.includes(word)) wordLevel = 3;
+      else if (tags.some((t) => t.includes(word))) wordLevel = 2;
+      else if (contentLower.includes(word)) wordLevel = 1;
+      if (wordLevel === 0) {
+        matchedAll = false;
+        break;
+      }
+      level = Math.max(level, wordLevel);
     }
-    const note = await getNote(workspaceId, item.id);
-    if (note && note.content.toLowerCase().includes(query)) matched.push(item);
+    if (!matchedAll) continue;
+    hits.push({ meta: { ...item, snippet: buildSnippet(content, words[0]) }, level });
   }
-  return matched;
+  hits.sort((a, b) => b.level - a.level || (a.meta.updated < b.meta.updated ? 1 : -1));
+  return hits.slice(0, SEARCH_MAX_RESULTS).map((h) => h.meta);
 }
 
 // ─── 内部工具 ───
 
 function sortByUpdated(items: NoteMeta[]): NoteMeta[] {
   return [...items].sort((a, b) => (a.updated < b.updated ? 1 : -1));
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildSnippet(content: string, word: string): string | undefined {
+  const m = new RegExp(escapeRegExp(word), 'i').exec(content);
+  if (!m) return undefined;
+  const start = Math.max(0, m.index - SEARCH_SNIPPET_RADIUS);
+  const end = Math.min(content.length, m.index + m[0].length + SEARCH_SNIPPET_RADIUS);
+  // 片段单行展示，换行与连续空白压成一个空格
+  const body = content.slice(start, end).replace(/\s+/g, ' ').trim();
+  if (!body) return undefined;
+  return `${start > 0 ? '…' : ''}${body}${end < content.length ? '…' : ''}`;
 }
 
 function normalizeTags(tags: string[] | undefined): string[] {
@@ -208,7 +253,7 @@ function normalizeLinks(links: string[] | undefined): string[] {
   const result: string[] = [];
   for (const link of links) {
     if (typeof link !== 'string' || !LINK_RE.test(link)) {
-      throw new Error(`非法引用「${link}」，必须是 article:<id> / stock:<code> / plan:<path>`);
+      throw new Error(`非法引用「${link}」，必须是 article:<路径> / stock:<代码> / plan:<路径>`);
     }
     if (seen.has(link)) continue;
     seen.add(link);

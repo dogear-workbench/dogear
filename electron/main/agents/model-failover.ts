@@ -35,6 +35,11 @@ export function clearFailoverTried(conversationId: string): void {
   failoverTried.delete(conversationId);
 }
 
+/** tried 只读视图：无人值守重试判定链耗尽用（Map 归本模块私有） */
+export function getFailoverTriedView(conversationId: string): ReadonlySet<string> {
+  return failoverTried.get(conversationId) ?? new Set<string>();
+}
+
 export async function clearFailoverTriedBySession(sessionId: string): Promise<void> {
   const { getPiSessionManager } = await import('./pi-session/pi-session-manager.js');
   const conversationId = getPiSessionManager().getConversationIdBySession(sessionId);
@@ -142,3 +147,4 @@ export async function maybeFailoverMainSession(sessionId: string, result: PiSess
     return false;
   }
 }
+

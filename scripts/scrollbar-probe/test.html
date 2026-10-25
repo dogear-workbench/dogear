@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body { display: flex; gap: 8px; padding: 40px; }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, #B8AE99 35%, transparent);
+    border-radius: 5px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #9A9080; }
+
+  #sidebar {
+    width: 220px; height: 100%;
+    overflow-y: auto;
+    background: #f5f2ea;
+  }
+  #sidebar .item { height: 60px; border-bottom: 1px solid #ddd; padding: 8px; }
+
+  #chat-wrap { position: relative; flex: 1; overflow: hidden; }
+  #chat {
+    height: 100%; padding-right: 48px;
+    overflow-y: auto;
+    background: #faf8f2;
+  }
+  #chat .flow { position: relative; padding: 0 24px; }
+  #chat .msg { height: 120px; border-bottom: 1px solid #e8e4d8; padding: 12px; }
+  #chat .msg.dark { background: #efece2; }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <div class="item">item 1</div><div class="item">item 2</div><div class="item">item 3</div>
+    <div class="item">item 4</div><div class="item">item 5</div><div class="item">item 6</div>
+    <div class="item">item 7</div><div class="item">item 8</div><div class="item">item 9</div>
+    <div class="item">item 10</div><div class="item">item 11</div><div class="item">item 12</div>
+  </div>
+  <div id="chat-wrap">
+    <div id="chat">
+      <div class="flow">
+        <div class="msg dark">msg 1</div><div class="msg">msg 2</div><div class="msg dark">msg 3</div>
+        <div class="msg">msg 4</div><div class="msg dark">msg 5</div><div class="msg">msg 6</div>
+        <div class="msg dark">msg 7</div><div class="msg">msg 8</div><div class="msg dark">msg 9</div>
+        <div class="msg">msg 10</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

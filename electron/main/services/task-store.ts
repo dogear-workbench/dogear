@@ -1,6 +1,8 @@
 /**
- * 任务存储原语层：Task CRUD + 状态机 + .dogear/tasks.json 读写（零 Electron 依赖）
+ * 任务存储原语层：Task CRUD + 状态机 + workspaces/{wsid}/tasks.json 读写（零 Electron 依赖）
  *
+ * - 存储定位用 workspaceId（configDir/workspaces/{wsid}/tasks.json，经 workspace-data-root 解析）；
+ *   plan 文档在用户工作区，planPath 相对解析仍需 workspacePath（createTask/getTaskDetail 显式传入）
  * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划）或 backlog/done（手动处置打回任务）；interrupted = 执行中意外中断（重启/卡死），交用户手动处置；rejected = 执行前确定性拒绝，两者均可被申报回写（→ review）
  * - planPath 存工作区相对路径（posix 分隔符，跨设备可移植）；写侧 toStoredPlanPath 归一化，读侧 resolvePlanPath 还原绝对路径
  * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 链式做 version 1→2（backlog → plan）、2→3（planPath 相对化，工作区外路径保持绝对）存量迁移
@@ -9,6 +11,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
+import { getWorkspaceDataDir } from './workspace-data-root.js';
 import type { ExecProfile } from './task-execution-prompt.js';
 
 export type { ExecProfile };
@@ -101,8 +104,8 @@ function emptyTasksFile(): TasksFile {
   return { version: TASKS_FILE_VERSION, tasks: [] };
 }
 
-function getTasksFilePath(workspacePath: string): string {
-  return path.join(workspacePath, '.dogear', TASKS_FILE);
+function getTasksFilePath(workspaceId: string): string {
+  return path.join(getWorkspaceDataDir(workspaceId), TASKS_FILE);
 }
 
 function generateTaskId(): string {
@@ -112,19 +115,20 @@ function generateTaskId(): string {
   return out;
 }
 
-async function readTasksFile(workspacePath: string): Promise<TasksFile> {
-  return safeJsonRead(getTasksFilePath(workspacePath), emptyTasksFile());
+async function readTasksFile(workspaceId: string): Promise<TasksFile> {
+  return safeJsonRead(getTasksFilePath(workspaceId), emptyTasksFile());
 }
 
 const migrations = new Map<string, Promise<void>>();
 
-async function ensureMigrated(workspacePath: string): Promise<void> {
-  const pending = migrations.get(workspacePath);
+async function ensureMigrated(workspaceId: string): Promise<void> {
+  // 缓存 key 用文件完整路径而非 wsid：迁移状态本质是“这个文件”的属性，也避免测试/多环境换 configDir 后缓存误命中
+  const filePath = getTasksFilePath(workspaceId);
+  const pending = migrations.get(filePath);
   if (pending) return pending;
   const run = (async () => {
-    const filePath = getTasksFilePath(workspacePath);
     await withFileLock(filePath, async () => {
-      const file = await readTasksFile(workspacePath);
+      const file = await readTasksFile(workspaceId);
       if (file.version >= TASKS_FILE_VERSION) return;
       if (file.version < 2) {
         const now = new Date().toISOString();
@@ -136,19 +140,17 @@ async function ensureMigrated(workspacePath: string): Promise<void> {
         file.version = 2;
       }
       if (file.version < 3) {
-        for (const task of file.tasks) {
-          if (!task.planPath || !path.isAbsolute(task.planPath)) continue;
-          task.planPath = toStoredPlanPath(workspacePath, task.planPath);
-        }
+        // 存储层只有 workspaceId 拿不到工作区根，存量绝对 planPath 不再读时补相对化
+        // （读侧 resolvePlanPath 对绝对路径原样支持，本机语义不变）；新建路径由 createTask 写侧归一化
         file.version = 3;
       }
       await writeTasksFileLocked(filePath, file);
     });
   })().catch((err) => {
-    migrations.delete(workspacePath);
+    migrations.delete(filePath);
     throw err;
   });
-  migrations.set(workspacePath, run);
+  migrations.set(filePath, run);
   return run;
 }
 
@@ -169,11 +171,11 @@ async function writeTasksFileLocked(filePath: string, file: TasksFile): Promise<
   await fs.rename(tmpPath, filePath);
 }
 
-async function mutateTasks<T>(workspacePath: string, fn: (tasks: Task[]) => T): Promise<T> {
-  await ensureMigrated(workspacePath);
-  const filePath = getTasksFilePath(workspacePath);
+async function mutateTasks<T>(workspaceId: string, fn: (tasks: Task[]) => T): Promise<T> {
+  await ensureMigrated(workspaceId);
+  const filePath = getTasksFilePath(workspaceId);
   return withFileLock(filePath, async () => {
-    const file = await readTasksFile(workspacePath);
+    const file = await readTasksFile(workspaceId);
     const result = fn(file.tasks);
     await writeTasksFileLocked(filePath, file);
     return result;
@@ -186,12 +188,16 @@ function requireTitle(title: string): string {
   return trimmed;
 }
 
-export async function createTask(workspacePath: string, input: CreateTaskInput): Promise<Task> {
+export async function createTask(
+  workspaceId: string,
+  workspacePath: string,
+  input: CreateTaskInput,
+): Promise<Task> {
   const title = requireTitle(input.title);
   if (!input.planPath) throw new Error('planPath 必传：任务须挂载已落盘的 plan 文档');
   if (!input.skipPlanCheck) await fs.access(resolvePlanPath(workspacePath, input.planPath));
   const now = new Date().toISOString();
-  return mutateTasks(workspacePath, (tasks) => {
+  return mutateTasks(workspaceId, (tasks) => {
     const existing = tasks.find((t) => t.status === 'plan' && !t.deletedAt && t.title === title);
     if (existing) throw new Error(`任务《${title}》已存在（ID: ${existing.id}），勿重复挂载`);
     const task: Task = {
@@ -209,39 +215,43 @@ export async function createTask(workspacePath: string, input: CreateTaskInput):
   });
 }
 
-export async function listTasks(workspacePath: string): Promise<Task[]> {
-  await ensureMigrated(workspacePath);
-  const file = await readTasksFile(workspacePath);
+export async function listTasks(workspaceId: string): Promise<Task[]> {
+  await ensureMigrated(workspaceId);
+  const file = await readTasksFile(workspaceId);
   return file.tasks
     .filter((t) => !t.deletedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 /** 回收站：已删除任务，最近删除在前 */
-export async function listDeletedTasks(workspacePath: string): Promise<Task[]> {
-  await ensureMigrated(workspacePath);
-  const file = await readTasksFile(workspacePath);
+export async function listDeletedTasks(workspaceId: string): Promise<Task[]> {
+  await ensureMigrated(workspaceId);
+  const file = await readTasksFile(workspaceId);
   return file.tasks
     .filter((t) => t.deletedAt)
     .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
 }
 
-export async function listTasksGrouped(workspacePath: string): Promise<TaskGroups> {
-  const tasks = await listTasks(workspacePath);
+export async function listTasksGrouped(workspaceId: string): Promise<TaskGroups> {
+  const tasks = await listTasks(workspaceId);
   const groups: TaskGroups = { plan: [], backlog: [], queued: [], running: [], review: [], done: [], rejected: [], interrupted: [] };
   for (const task of tasks) groups[task.status].push(task);
   return groups;
 }
 
-export async function getTask(workspacePath: string, taskId: string): Promise<Task | null> {
-  await ensureMigrated(workspacePath);
-  const file = await readTasksFile(workspacePath);
+export async function getTask(workspaceId: string, taskId: string): Promise<Task | null> {
+  await ensureMigrated(workspaceId);
+  const file = await readTasksFile(workspaceId);
   const task = file.tasks.find((t) => t.id === taskId);
   return task ? { ...task } : null;
 }
 
-export async function getTaskDetail(workspacePath: string, taskId: string): Promise<TaskDetail | null> {
-  const task = await getTask(workspacePath, taskId);
+export async function getTaskDetail(
+  workspaceId: string,
+  workspacePath: string,
+  taskId: string,
+): Promise<TaskDetail | null> {
+  const task = await getTask(workspaceId, taskId);
   if (!task) return null;
   if (!task.planPath) return { ...task, planContent: null };
   const planPath = resolvePlanPath(workspacePath, task.planPath);
@@ -259,13 +269,13 @@ interface TransitionPatch {
 }
 
 async function transition(
-  workspacePath: string,
+  workspaceId: string,
   taskId: string,
   from: TaskStatus[],
   to: TaskStatus,
   patch?: TransitionPatch,
 ): Promise<Task> {
-  return mutateTasks(workspacePath, (tasks) => {
+  return mutateTasks(workspaceId, (tasks) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`任务 ${taskId} 不存在`);
     if (!from.includes(task.status)) {
@@ -279,90 +289,90 @@ async function transition(
   });
 }
 
-export async function reviewTask(workspacePath: string, taskId: string, action: ReviewAction): Promise<Task> {
-  return transition(workspacePath, taskId, ['review'], action === 'approve' ? 'done' : 'rejected');
+export async function reviewTask(workspaceId: string, taskId: string, action: ReviewAction): Promise<Task> {
+  return transition(workspaceId, taskId, ['review'], action === 'approve' ? 'done' : 'rejected');
 }
 
-export async function markTaskRunning(workspacePath: string, taskId: string, execSessionId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['queued'], 'running', { execSessionId });
+export async function markTaskRunning(workspaceId: string, taskId: string, execSessionId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['queued'], 'running', { execSessionId });
 }
 
-export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['running'], 'review', {
-    result: result || '（执行会话未输出结果摘要，请打开执行会话查看过程）',
-  });
+export async function interruptTask(workspaceId: string, taskId: string, reason: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['running'], 'interrupted', { result: reason });
 }
 
-export async function interruptTask(workspacePath: string, taskId: string, reason: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['running'], 'interrupted', { result: reason });
-}
-
-export async function reportTaskResult(workspacePath: string, execSessionId: string, result: string): Promise<Task | null> {
-  return mutateTasks(workspacePath, (tasks) => {
+export async function reportTaskResult(workspaceId: string, execSessionId: string): Promise<Task | null> {
+  return mutateTasks(workspaceId, (tasks) => {
     const task = tasks.find(
       (t) => !t.deletedAt && t.execSessionId === execSessionId && ['running', 'interrupted', 'rejected'].includes(t.status),
     );
     if (!task) return null;
     task.status = 'review';
     task.updatedAt = new Date().toISOString();
-    task.result = result || '（执行会话未输出结果摘要，请打开执行会话查看过程）';
     return { ...task };
   });
 }
 
-/** 留痕原语：把执行结果摘要附加到 result（任务已不在 running 时的丢弃路径，不改状态） */
-export async function appendResultNote(workspacePath: string, taskId: string, note: string): Promise<Task | null> {
-  return mutateTasks(workspacePath, (tasks) => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task) return null;
-    const stamp = `[执行结果留痕 ${new Date().toISOString()}] ${note || '（执行会话未输出结果摘要，请打开执行会话查看过程）'}`;
-    task.result = task.result ? `${task.result}\n\n${stamp}` : stamp;
-    task.updatedAt = new Date().toISOString();
-    return { ...task };
-  });
-}
-
-export async function rejectTask(workspacePath: string, taskId: string, reason: string): Promise<Task> {
-  const task = await getTask(workspacePath, taskId);
+export async function rejectTask(workspaceId: string, taskId: string, reason: string): Promise<Task> {
+  const task = await getTask(workspaceId, taskId);
   if (!task) throw new Error(`任务 ${taskId} 不存在`);
-  return transition(workspacePath, taskId, ['queued', 'running'], 'rejected', { result: reason });
+  return transition(workspaceId, taskId, ['queued', 'running'], 'rejected', { result: reason });
 }
 
-export async function executeTask(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'backlog', 'interrupted'], 'queued');
+export async function executeTask(workspaceId: string, taskId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['plan', 'backlog', 'interrupted'], 'queued');
 }
 
-export async function completeTaskManually(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'backlog', 'rejected', 'interrupted'], 'done', { result: '手动标记完成' });
+export async function completeTaskManually(workspaceId: string, taskId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['plan', 'backlog', 'rejected', 'interrupted'], 'done');
 }
 
-export async function moveTaskToBacklog(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'rejected'], 'backlog');
+export async function moveTaskToBacklog(workspaceId: string, taskId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['plan', 'rejected'], 'backlog');
 }
 
-export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['done', 'rejected', 'interrupted'], 'plan');
+export async function moveTaskToPlan(workspaceId: string, taskId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['done', 'rejected', 'interrupted'], 'plan');
 }
 
-export async function updateTaskExecProfile(workspacePath: string, taskId: string, execProfile: ExecProfile): Promise<Task> {
-  return mutateTasks(workspacePath, (tasks) => {
+export interface UpdateTaskPatch {
+  title?: string;
+  planPath?: string;
+  execProfile?: ExecProfile;
+}
+
+export async function updateTask(
+  workspaceId: string,
+  workspacePath: string,
+  taskId: string,
+  patch: UpdateTaskPatch,
+): Promise<Task> {
+  const title = patch.title !== undefined ? requireTitle(patch.title) : undefined;
+  if (patch.planPath !== undefined) await fs.access(resolvePlanPath(workspacePath, patch.planPath));
+  return mutateTasks(workspaceId, (tasks) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`任务 ${taskId} 不存在`);
     if (task.status !== 'plan' && task.status !== 'backlog') {
-      throw new Error(`仅计划/积压任务可切换执行类型（queued 后执行会话已按原类型创建），当前状态为 ${task.status}`);
+      throw new Error(`仅计划/积压任务可编辑（queued 后执行会话已按原配置创建），当前状态为 ${task.status}`);
     }
-    task.execProfile = execProfile;
+    if (title !== undefined) {
+      const existing = tasks.find((t) => !t.deletedAt && t.status === 'plan' && t.title === title && t.id !== taskId);
+      if (existing) throw new Error(`任务《${title}》已存在（ID: ${existing.id}），改名冲突`);
+      task.title = title;
+    }
+    if (patch.planPath !== undefined) task.planPath = toStoredPlanPath(workspacePath, patch.planPath);
+    if (patch.execProfile !== undefined) task.execProfile = patch.execProfile;
     task.updatedAt = new Date().toISOString();
     return { ...task };
   });
 }
 
-export async function cancelTask(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['queued', 'running'], 'backlog');
+export async function cancelTask(workspaceId: string, taskId: string): Promise<Task> {
+  return transition(workspaceId, taskId, ['queued', 'running'], 'backlog');
 }
 
-export async function softDeleteTask(workspacePath: string, taskId: string): Promise<Task> {
-  return mutateTasks(workspacePath, (tasks) => {
+export async function softDeleteTask(workspaceId: string, taskId: string): Promise<Task> {
+  return mutateTasks(workspaceId, (tasks) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`任务 ${taskId} 不存在`);
     if (!task.deletedAt) task.deletedAt = new Date().toISOString();
@@ -370,8 +380,8 @@ export async function softDeleteTask(workspacePath: string, taskId: string): Pro
   });
 }
 
-export async function restoreTask(workspacePath: string, taskId: string): Promise<Task> {
-  return mutateTasks(workspacePath, (tasks) => {
+export async function restoreTask(workspaceId: string, taskId: string): Promise<Task> {
+  return mutateTasks(workspaceId, (tasks) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`任务 ${taskId} 不存在`);
     if (!task.deletedAt) throw new Error(`任务 ${taskId} 不在回收站`);
@@ -381,8 +391,8 @@ export async function restoreTask(workspacePath: string, taskId: string): Promis
   });
 }
 
-export async function purgeTask(workspacePath: string, taskId: string): Promise<boolean> {
-  return mutateTasks(workspacePath, (tasks) => {
+export async function purgeTask(workspaceId: string, taskId: string): Promise<boolean> {
+  return mutateTasks(workspaceId, (tasks) => {
     const idx = tasks.findIndex((t) => t.id === taskId);
     if (idx < 0) return false;
     tasks.splice(idx, 1);
@@ -392,9 +402,9 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
 
 /** 应用启动恢复：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），中断原因写入 result */
 export async function recoverInterruptedTasks(
-  workspacePath: string,
+  workspaceId: string,
 ): Promise<{ recovered: number; recoveredTasks: Task[] }> {
-  return mutateTasks(workspacePath, (tasks) => {
+  return mutateTasks(workspaceId, (tasks) => {
     const recoveredTasks: Task[] = [];
     for (const task of tasks) {
       if (task.status !== 'running' || task.deletedAt) continue;

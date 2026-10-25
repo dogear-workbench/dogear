@@ -2,11 +2,11 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
-import { useSessionStore } from '@/stores/session-store';
+import { useSessionStore, DRAFT_VIEW_ID } from '@/stores/session-store';
 import type { Conversation } from '@/components/ConversationList';
 import type { ChildStateSnapshot } from '@/types/delegation';
 import type { Group } from '@/types/group';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
+import { SORT_FREEZE_K, conversationRankInGroup } from '@/lib/conversation-sort';
 
 /**
  * 跨 profile 切换模型后待续发的载荷：useSendMessage 在 needsRestart 分支塞入，
@@ -20,7 +20,7 @@ export interface PendingSendPayload {
 }
 
 /**
- * newConversation 预 attach 的结果：让 useAgentSession 跳过重复 attach，直接复用。
+ * 草稿落盘（draft-store.createAndSend）预 attach 的结果：让 useAgentSession 跳过重复 attach，直接复用。
  * 消费后清空。conversationId 用于校验是否匹配当前对话。
  */
 export interface PreAttachedSession {
@@ -59,6 +59,25 @@ function emptySlice(): WorkspaceConversationSlice {
   };
 }
 
+/**
+ * 会话列表可见性过滤：定时任务运行会话（schedulerTaskId）与无人值守执行会话（executor）
+ * 及其 agent 派出子会话（判定口径同 buildConversationTree）不进主列表/搜索，
+ * 任务面板左栏有结构化入口；store 真源保持全量，功能性查找（恢复/引用/通知跳转）仍用 conversations
+ */
+export function visibleConversationsOf(conversations: Conversation[]): Conversation[] {
+  const hiddenSessionIds = new Set<string>();
+  for (const c of conversations) {
+    if ((c.schedulerTaskId != null || c.executor === true) && c.sessionId) {
+      hiddenSessionIds.add(c.sessionId);
+    }
+  }
+  return conversations.filter((c) => {
+    if (c.schedulerTaskId != null || c.executor === true) return false;
+    const meta = c.contractMetadata;
+    return !(meta?.createdBy === 'agent' && meta.parentSessionId && hiddenSessionIds.has(meta.parentSessionId));
+  });
+}
+
 interface ConversationState {
   // --- 按工作区分片的状态（唯一真源） ---
   byWorkspace: Record<string, WorkspaceConversationSlice>;
@@ -70,15 +89,12 @@ interface ConversationState {
   selectedConversation: Conversation | null;
   loadingConversations: boolean;
 
-  // --- personal 临时会话（独立于工作区分片，所有工作区视图下常显） ---
-  personalConversations: Conversation[];
-
   // --- 全局状态（跨工作区共享） ---
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
   /** 跨 profile 切换模型后待续发的载荷（useAgentSession 重启完成后自动消费） */
   pendingSendAfterRestart: PendingSendPayload | null;
-  /** newConversation 预 attach 的结果，useAgentSession 消费后清空 */
+  /** 草稿落盘预 attach 的结果，useAgentSession 消费后清空（写入方 draft-store） */
   preAttachedSession: PreAttachedSession | null;
   /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
   runningConversationIds: Set<string>;
@@ -86,6 +102,8 @@ interface ConversationState {
   pendingActionConversationIds: Set<string>;
   /** 当前已暂停（turn 完成后暂停，发消息即恢复）的对话 ID 集合 */
   pausedConversationIds: Set<string>;
+  /** 压缩失败持续中的对话 ID 集合（恢复/会话关闭即移除） */
+  compactionFailureConversationIds: Set<string>;
   /** 存活会话 ID 集合（主进程 PiSessionManager 内存态派生；全量广播直接替换） */
   aliveConversationIds: Set<string>;
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
@@ -95,39 +113,32 @@ interface ConversationState {
   failoverNoticesByConversation: Record<string, FailoverNotice[]>;
   /** failover 横幅自动过期时长（ms），测试可调 */
   failoverNoticeTtlMs: number;
+  /** 组内会话提顶 bump 时间（内存态，不持久化，重启回退 updatedAt 一次性重排） */
+  lastBumpById: Record<string, number>;
 
   // --- Actions ---
   /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
   activateWorkspace: (workspaceId: string | null) => void;
   /** 加载当前工作区对话列表和树数据（写入对应分片） */
   loadConversations: () => Promise<void>;
-  /** 加载 personal 临时会话列表（独立存储，不随工作区切换） */
-  loadPersonalConversations: () => Promise<void>;
-  /** 新建临时会话：personal 单会话组两连调 + 预 attach + 开 tab 聚焦 */
-  newPersonalConversation: () => Promise<void>;
-  /** 把临时会话移入真实工作区；成功后切目标工作区、tab 原位改归属并聚焦 */
-  movePersonalConversationToWorkspace: (
-    conversationId: string,
-    targetWorkspaceId: string,
-    targetGroupId?: string,
-    newGroupTitle?: string,
-  ) => Promise<boolean>;
   /** 选择对话 */
   selectConversation: (conversation: Conversation) => Promise<void>;
   /** 按 id 聚焦对话（Tab 切换/关闭后同步左侧列表高亮），不重复打开 Tab；id 为 null 时清空选中 */
   focusConversationById: (conversationId: string | null) => Promise<void>;
   /** 跳转 dogear://conversation/<id>?ws=<workspaceId> 回执链接（先切后高亮）；非合法链接静默忽略 */
   focusConversationFromLink: (href: string) => Promise<void>;
-  /** 新建对话 */
-  newConversation: () => Promise<void>;
+  /** 跨工作区定位会话（通知/介入/顶栏搜索共用跳转动线）：切目标工作区后选中开 tab */
+  locateConversation: (workspaceId: string, conversationId: string) => Promise<void>;
   /** 删除对话 */
-  deleteConversation: (conversationId: string, workspaceId?: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
   /** 话题归档、恢复或删除后的前端同步 */
   handleTopicStateChange: (groupId: string, closeTabs: boolean, conversationIds?: string[]) => Promise<void>;
   /** 分叉对话（创建独立新对话） */
   forkConversation: (params: { parentConversationId: string; forkMessageSdkUuid: string }) => Promise<void>;
   /** 更新对话标题 */
-  updateConversationTitle: (conversationId: string, title: string, workspaceId?: string) => Promise<void>;
+  updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
+  /** 会话挂起：pin=钉住「稍后继续」/ clear=收起（掐灭绿线）；落盘后本地补丁 pinnedAt，列表广播回环兜底刷新 */
+  setConversationHold: (conversationId: string, action: 'pin' | 'clear') => Promise<void>;
   /** 更新对话的模型选择（null = 不指定） */
   setConversationModelSelection: (conversationId: string, selection: import('@/types/settings').ModelSelection | null) => Promise<void>;
   /** 触发会话重启 */
@@ -142,6 +153,8 @@ interface ConversationState {
   setPendingActionState: (conversationId: string, isPending: boolean) => void;
   /** 设置对话的暂停状态 */
   setPausedState: (conversationId: string, isPaused: boolean) => void;
+  /** 设置对话的压缩失败持续态（恢复/会话关闭传 false） */
+  setCompactionFailureState: (conversationId: string, failed: boolean) => void;
   /** 整体替换存活会话集合 */
   setAliveConversations: (conversationIds: string[]) => void;
   /** 会话成为全局焦点：清除 unread（内存 + 落盘，服务层值未变化时 no-op） */
@@ -154,6 +167,8 @@ interface ConversationState {
   pushFailoverNotice: (conversationId: string, notice: FailoverNotice) => void;
   /** 清除会话的 failover 切换提示（关闭按钮 / 自动过期） */
   dismissFailoverNotice: (conversationId: string, at: number) => void;
+  /** 会话有新动静时调用：位次在冻结区外（≥ SORT_FREEZE_K）才记 bump 时间提顶，区内会话不动 */
+  bumpConversation: (conversationId: string) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -207,7 +222,7 @@ function patchSlice(
 function unreadPatchForSlice(
   slice: WorkspaceConversationSlice,
   conversationId: string,
-  unread: boolean,
+  unread: boolean | 'error',
 ): Partial<WorkspaceConversationSlice> {
   return {
     conversations: slice.conversations.map((c) => (c.id === conversationId ? { ...c, unread } : c)),
@@ -217,11 +232,11 @@ function unreadPatchForSlice(
   };
 }
 
-/** 会话 unread 翻转：补丁到所有已加载视图（工作区分片 + personal），未涉及任何视图时返回空补丁 */
+/** 会话 unread 翻转：补丁到所有已加载工作区分片，未涉及任何分片时返回空补丁 */
 function patchConversationUnread(
   state: ConversationState,
   conversationId: string,
-  unread: boolean,
+  unread: boolean | 'error',
 ): Partial<ConversationState> {
   let update: Partial<ConversationState> = {};
   for (const [wsId, slice] of Object.entries(state.byWorkspace)) {
@@ -232,11 +247,6 @@ function patchConversationUnread(
       byWorkspace: { ...(update.byWorkspace ?? state.byWorkspace), [wsId]: { ...slice, ...patch } },
     };
     if (state.activeWorkspaceId === wsId) update = { ...update, ...patch };
-  }
-  if (state.personalConversations.some((c) => c.id === conversationId)) {
-    update.personalConversations = state.personalConversations.map((c) =>
-      c.id === conversationId ? { ...c, unread } : c,
-    );
   }
   return update;
 }
@@ -250,8 +260,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   selectedConversation: null,
   loadingConversations: false,
 
-  personalConversations: [],
-
   // 全局状态
   sessionRestartTrigger: 0,
   pendingSendAfterRestart: null,
@@ -259,10 +267,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   pausedConversationIds: new Set<string>(),
+  compactionFailureConversationIds: new Set<string>(),
   aliveConversationIds: new Set<string>(),
   childrenByParent: {},
   childSnapshotsById: {},
   failoverNoticesByConversation: {},
+  lastBumpById: {},
 
   activateWorkspace: (workspaceId) => {
     if (!workspaceId) {
@@ -299,6 +309,17 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const conversations = convResult.conversations || [];
       const groups = (groupsResult.groups || []) as Group[];
 
+      const prevConversations = get().byWorkspace[wsId]?.conversations;
+      if (prevConversations) {
+        const prevUpdatedAt = new Map(prevConversations.map((c) => [c.id, c.updatedAt]));
+        for (const conv of conversations) {
+          const prev = prevUpdatedAt.get(conv.id);
+          if (prev !== undefined && new Date(conv.updatedAt).getTime() > new Date(prev).getTime()) {
+            get().bumpConversation(conv.id);
+          }
+        }
+      }
+
       set((state) => patchSlice(state, wsId, { conversations }));
 
       // 同步 group-store（避免组件分别拉取造成时序错位）
@@ -313,92 +334,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     // 后台拉子会话快照（bridge 内存态，非阻塞）
     void get().refreshAllChildren();
-  },
-
-  loadPersonalConversations: async () => {
-    try {
-      const result = await client.getByWorkspaceId({ workspaceId: PERSONAL_WORKSPACE_ID });
-      set({ personalConversations: result.conversations ?? [] });
-    } catch (error) {
-      console.error('加载临时会话列表失败:', error);
-    }
-  },
-
-  newPersonalConversation: async () => {
-    try {
-      const groupResult = await client.createGroup({ workspaceId: PERSONAL_WORKSPACE_ID, title: '' });
-      if (groupResult.error || !groupResult.group) {
-        toast.error('创建临时会话失败', { description: groupResult.error || '未知错误' });
-        return;
-      }
-      const result = await client.create({ workspaceId: PERSONAL_WORKSPACE_ID, groupId: groupResult.group.id });
-      if (result.error || !result.conversationId) {
-        toast.error('创建临时会话失败', { description: result.error || '未知错误' });
-        return;
-      }
-      const convResult = await client.getById({ conversationId: result.conversationId, workspaceId: PERSONAL_WORKSPACE_ID });
-      if (!convResult.conversation) return;
-      const conv = convResult.conversation;
-
-      // 预 attach 消除 isSessionReady 窗口期，失败不阻断（useAgentSession effect 会重试正常 attach）
-      try {
-        const attachResult = await client.attachConversationRuntime({
-          conversationId: conv.id,
-          workspaceId: PERSONAL_WORKSPACE_ID,
-        });
-        if (!attachResult.error && attachResult.sessionId) {
-          get().setPreAttachedSession({
-            conversationId: conv.id,
-            attachmentId: attachResult.attachmentId!,
-            sessionId: attachResult.sessionId,
-            permissionMode: (attachResult.permissionMode || 'default') as import('@/types/electron-api').PermissionMode,
-            snapshot: (attachResult.snapshot ?? []) as import('@/types/electron-api').ExtendedSessionMessage[],
-            turnEntryIds: attachResult.turnEntryIds ?? [],
-            pendingPermissionRequests: attachResult.pendingPermissionRequests ?? [],
-            sessionState: attachResult.sessionState ?? { running: false, pendingAction: false, paused: false },
-          });
-        }
-      } catch {
-        // 预 attach 失败不阻断流程
-      }
-
-      // 不写当前工作区分片/组状态（personal 平铺无组概念）；列表刷新走 conversationListChanged 广播回环
-      void get().loadPersonalConversations();
-      useSessionStore.getState().openTab(conv.id, conv.title || '新对话', PERSONAL_WORKSPACE_ID);
-    } catch (error) {
-      console.error('创建临时会话失败:', error);
-      toast.error('创建临时会话失败', { description: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  movePersonalConversationToWorkspace: async (conversationId, targetWorkspaceId, targetGroupId, newGroupTitle) => {
-    try {
-      const result = await client.moveConversationToWorkspace({
-        conversationId,
-        targetWorkspaceId,
-        targetGroupId,
-        newGroupTitle,
-      });
-      if (!result.ok) {
-        toast.error('移入工作区失败', { description: result.error });
-        return false;
-      }
-
-      // 先切后高亮：先切目标工作区（激活分片并拉列表），tab 原位改写归属后聚焦；
-      // session 已被主进程关闭且 JSONL 换了目录，tab.workspaceId 变化驱动 useAgentSession 重 attach 到新路径
-      const [{ workspaces }, { useWorkspaceStore }] = await Promise.all([
-        client.getAll(),
-        import('./workspace-store'),
-      ]);
-      const target = (workspaces ?? []).find((w) => w.id === targetWorkspaceId);
-      if (target) await useWorkspaceStore.getState().setWorkspace(target);
-      useSessionStore.getState().updateTabWorkspace(conversationId, targetWorkspaceId);
-      await get().focusConversationById(conversationId);
-      return true;
-    } catch (error) {
-      toast.error('移入工作区失败', { description: error instanceof Error ? error.message : String(error) });
-      return false;
-    }
   },
 
   focusConversationFromLink: async (href) => {
@@ -439,6 +374,24 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       await get().focusConversationById(conversationId);
     } catch (error) {
       toast.error('跳转会话失败', { description: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  locateConversation: async (workspaceId, conversationId) => {
+    try {
+      const allResult = await client.getAll();
+      const targetWorkspace = allResult.workspaces?.find((w) => w.id === workspaceId);
+      if (!targetWorkspace) return;
+      const currentWs = await getWorkspace();
+      if (currentWs?.id !== workspaceId) {
+        const { useWorkspaceStore } = await import('./workspace-store');
+        await useWorkspaceStore.getState().setWorkspace(targetWorkspace);
+      }
+      const convResult = await client.getById({ workspaceId, conversationId });
+      if (!convResult.conversation) return;
+      get().selectConversation(convResult.conversation);
+    } catch (err) {
+      console.error('[locateConversation] 定位对话失败:', err);
     }
   },
 
@@ -503,59 +456,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  newConversation: async () => {
+  deleteConversation: async (conversationId) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
-
-    try {
-      const { useGroupStore } = await import('./group-store');
-      const group = await useGroupStore.getState().createGroup();
-      if (!group) return;
-
-      const result = await client.create({ workspaceId: workspace.id, groupId: group.id });
-      if (result.error || !result.conversationId) {
-        toast.error('创建对话失败', { description: result.error || '未知错误' });
-        return;
-      }
-
-      // 预 attach：在 selectConversation 前初始化 session，消除 isSessionReady 窗口期。
-      // useAgentSession effect 触发时检测到 preAttachedSession 直接复用，不重复 attach。
-      try {
-        const attachResult = await client.attachConversationRuntime({
-          conversationId: result.conversationId,
-          workspaceId: workspace.id,
-        });
-        if (!attachResult.error && attachResult.sessionId) {
-          get().setPreAttachedSession({
-            conversationId: result.conversationId,
-            attachmentId: attachResult.attachmentId!,
-            sessionId: attachResult.sessionId,
-            permissionMode: (attachResult.permissionMode || 'default') as import('@/types/electron-api').PermissionMode,
-            snapshot: (attachResult.snapshot ?? []) as import('@/types/electron-api').ExtendedSessionMessage[],
-            turnEntryIds: attachResult.turnEntryIds ?? [],
-            pendingPermissionRequests: attachResult.pendingPermissionRequests ?? [],
-            sessionState: attachResult.sessionState ?? { running: false, pendingAction: false, paused: false },
-          });
-        }
-      } catch {
-        // 预 attach 失败不阻断流程，useAgentSession effect 会重试正常 attach
-      }
-
-      // 先获取新对话详情并选中（让 UI 立即响应；列表刷新由 conversationListChanged 事件回环）
-      const newConversation = await client.getById({ conversationId: result.conversationId, workspaceId: workspace.id });
-      if (newConversation.conversation) {
-        get().selectConversation(newConversation.conversation);
-      }
-    } catch (error) {
-      console.error('创建对话失败:', error);
-      toast.error('创建对话失败', { description: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  deleteConversation: async (conversationId, workspaceIdOverride) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    const wsId = workspaceIdOverride ?? workspace.id;
+    const wsId = workspace.id;
 
     const confirmed = await showConfirm('删除对话', '将永久删除该对话及其所有历史记录。此操作不可恢复。');
     if (!confirmed) return;
@@ -568,13 +472,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
 
       useSessionStore.getState().closeTab(conversationId);
-      if (wsId === workspace.id) {
-        const curSlice = get().byWorkspace[wsId];
-        if (curSlice?.selectedConversation?.id === conversationId) {
-          set((state) => patchSlice(state, wsId, { selectedConversation: null }));
-        }
-      } else {
-        void get().loadPersonalConversations();
+      const curSlice = get().byWorkspace[wsId];
+      if (curSlice?.selectedConversation?.id === conversationId) {
+        set((state) => patchSlice(state, wsId, { selectedConversation: null }));
       }
     } catch (error) {
       console.error('删除对话失败:', error);
@@ -651,19 +551,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  updateConversationTitle: async (conversationId, title, workspaceIdOverride) => {
+  updateConversationTitle: async (conversationId, title) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
-    const wsId = workspaceIdOverride ?? workspace.id;
+    const wsId = workspace.id;
 
     try {
       await client.updateTitle({ workspaceId: wsId, conversationId, title });
 
       // 同步更新 Tab 标题
       useSessionStore.getState().updateTitle(conversationId, title);
-
-      // personal 侧分片不存在，列表刷新走广播回环
-      if (wsId !== workspace.id) return;
 
       // 更新分片状态
       set((state) => {
@@ -681,6 +578,35 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     } catch (error) {
       console.error('更新对话标题失败:', error);
+    }
+  },
+
+  setConversationHold: async (conversationId, action) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    const wsId = workspace.id;
+    try {
+      const result = await client.setConversationHold({ workspaceId: wsId, conversationId, action });
+      if (result.error) {
+        toast.error('更新会话挂起状态失败', { description: result.error });
+        return;
+      }
+      const pinnedAt = action === 'pin' ? Date.now() : undefined;
+      set((state) => {
+        const slice = state.byWorkspace[wsId] ?? emptySlice();
+        const newConvs = slice.conversations.map((c) =>
+          c.id === conversationId ? { ...c, pinnedAt } : c
+        );
+        const newSelected = slice.selectedConversation?.id === conversationId
+          ? { ...slice.selectedConversation, pinnedAt }
+          : slice.selectedConversation;
+        return patchSlice(state, wsId, {
+          conversations: newConvs,
+          selectedConversation: newSelected,
+        });
+      });
+    } catch (error) {
+      console.error('更新会话挂起状态失败:', error);
     }
   },
 
@@ -748,6 +674,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (isPaused) newSet.add(conversationId);
       else newSet.delete(conversationId);
       return { pausedConversationIds: newSet };
+    });
+  },
+
+  setCompactionFailureState: (conversationId: string, failed: boolean) => {
+    set((state) => {
+      const newSet = new Set(state.compactionFailureConversationIds);
+      if (failed) newSet.add(conversationId);
+      else newSet.delete(conversationId);
+      return { compactionFailureConversationIds: newSet };
     });
   },
 
@@ -819,24 +754,37 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  bumpConversation: (conversationId) => {
+    set((state) => {
+      const containers = Object.values(state.byWorkspace).map((s) => s.conversations);
+      for (const conversations of containers) {
+        if (!conversations.some((c) => c.id === conversationId)) continue;
+        if (conversationRankInGroup(conversations, conversationId, state.lastBumpById) < SORT_FREEZE_K) return state;
+        return { lastBumpById: { ...state.lastBumpById, [conversationId]: Date.now() } };
+      }
+      return state;
+    });
+  },
+
   reset: () => set({
     byWorkspace: {},
     activeWorkspaceId: null,
     conversations: [],
     selectedConversation: null,
     loadingConversations: false,
-    personalConversations: [],
     sessionRestartTrigger: 0,
     pendingSendAfterRestart: null,
     preAttachedSession: null,
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
     pausedConversationIds: new Set<string>(),
+    compactionFailureConversationIds: new Set<string>(),
     aliveConversationIds: new Set<string>(),
     childrenByParent: {},
     childSnapshotsById: {},
     failoverNoticesByConversation: {},
     failoverNoticeTtlMs: 60_000,
+    lastBumpById: {},
   }),
 }));
 
@@ -850,20 +798,28 @@ if (typeof window !== 'undefined') {
       useConversationStore.getState().setPausedState(data.conversationId, data.paused);
     });
 
-    // 会话已终止：running/pendingAction 都清零，不再等待对应的 sessionStateChanged:false
+    // 会话已终止：running/pendingAction/paused/压缩失败态都清零，不再等待对应的 sessionStateChanged:false
     rendererEvents.sessionClosed.listen((data) => {
       useConversationStore.getState().setRunningState(data.conversationId, false);
       useConversationStore.getState().setPendingActionState(data.conversationId, false);
       useConversationStore.getState().setPausedState(data.conversationId, false);
+      useConversationStore.getState().setCompactionFailureState(data.conversationId, false);
     });
 
-    // 未读翻转唯一驱动（主进程单点判定置位 + 渲染层清除落盘回环，均经此广播）：内存补丁幂等；仅置位时置顶重排，清除不重排
+    // 压缩失败持续态翻转（置位/恢复均由主进程唯一权威判定），驱动会话告警横幅显隐
+    rendererEvents.compactionFailureChanged.listen((data) => {
+      useConversationStore.getState().setCompactionFailureState(data.conversationId, data.failed);
+    });
+
+    // 未读翻转唯一驱动（主进程单点判定置位 + 渲染层清除落盘回环，均经此广播）：内存补丁幂等；仅置位时提顶 bump，清除不动
     rendererEvents.conversationUnreadChanged.listen((data) => {
       useConversationStore.setState((state) => patchConversationUnread(state, data.conversationId, data.unread));
-      if (data.unread) useSessionStore.getState().reorderTabs();
+      if (data.unread) {
+        useConversationStore.getState().bumpConversation(data.conversationId);
+      }
     });
 
-    // 全局焦点变化即「已看/活跃」信号：焦点会话有 unread 则清除（落盘在服务层值未变化时 no-op）；同时刷新 tab 活跃时间并重排
+    // 全局焦点变化即「已看/活跃」信号：焦点会话有 unread 则清除（落盘在服务层值未变化时 no-op）；同时刷新 tab 活跃时间
     rendererEvents.focusedConversationChanged.listen((data) => {
       useConversationStore.getState().clearUnread(data.conversationId);
       useSessionStore.getState().touchTabActivity(data.conversationId);
@@ -874,12 +830,9 @@ if (typeof window !== 'undefined') {
       useConversationStore.getState().setAliveConversations(data.conversationIds);
     });
 
-    // 对话列表变更（bot 创建/删除对话后通知）；personal 侧写点广播带 workspaceId=personal，路由到独立列表
-    rendererEvents.conversationListChanged.listen((data) => {
+    // 对话列表变更（bot 创建/删除对话后通知）
+    rendererEvents.conversationListChanged.listen(() => {
       useConversationStore.getState().loadConversations();
-      if (data?.workspaceId === PERSONAL_WORKSPACE_ID) {
-        void useConversationStore.getState().loadPersonalConversations();
-      }
     });
 
     // 子会话状态变化（delegation-bridge → applyChildSnapshot）
@@ -906,10 +859,10 @@ if (typeof window !== 'undefined') {
     const tabId = state.activeTabId;
     void (async () => {
       const { useWorkspaceStore } = await import('./workspace-store');
-      const tab = tabId ? useSessionStore.getState().getTab(tabId) : undefined;
-      // 全局焦点上报：真实会话 tab 才上报（哨兵/空 tab 不上报，保持最近焦点语义），fire-and-forget 失败静默
+      const tab = useSessionStore.getState().getTab(tabId);
+      // 全局焦点上报：真实会话 tab 才上报（哨兵/草稿视图不上报，保持最近焦点语义），fire-and-forget 失败静默
       if (tab) {
-        void client.setFocusedConversation({ conversationId: tabId!, workspaceId: tab.workspaceId }).catch(() => {});
+        void client.setFocusedConversation({ conversationId: tabId, workspaceId: tab.workspaceId }).catch(() => {});
       }
       const currentWsId = useWorkspaceStore.getState().workspace?.id;
       if (tab?.workspaceId && tab.workspaceId !== currentWsId) {
@@ -922,11 +875,11 @@ if (typeof window !== 'undefined') {
           console.error('[焦点联动] 切换工作区失败:', err);
         }
       }
-      useConversationStore.getState().focusConversationById(tabId);
+      useConversationStore.getState().focusConversationById(tabId === DRAFT_VIEW_ID ? null : tabId);
     })();
   });
 
-  // 初始化拉取：存活集合、personal 临时会话列表
+  // 初始化拉取：存活集合
   import('@/lib/client').then(({ client }) => {
     // 存活集合初值：窗口冷启动/刷新时主进程不会重播事件，主动拉一次全量
     client.getAliveConversations(undefined).then((data) => {
@@ -937,8 +890,5 @@ if (typeof window !== 'undefined') {
     client.getFocusedConversation().then(({ focused }) => {
       if (focused) useConversationStore.getState().clearUnread(focused.conversationId);
     }).catch(() => { /* 主进程焦点态尚未就绪时跳过 */ });
-
-    // personal 临时会话列表：启动拉一次，后续由 conversationListChanged 广播驱动
-    useConversationStore.getState().loadPersonalConversations();
   });
 }

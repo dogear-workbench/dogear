@@ -3,12 +3,11 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { client } from '@/lib/client';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSyncStore } from '@/stores/sync-store';
+import { DataCenterSearchProvider } from './DataCenterSearchProvider';
+import { useDataCenterFocusStore } from './memory-focus';
 import { UsagePanel } from './usage-panel';
-import { SchedulerPanel } from './scheduler/SchedulerPanel';
 import { MemorySection } from './memory-section';
-import { HistoryPanel } from './history-panel';
 import { VersionBackupPanel } from './version-backup/VersionBackupPanel';
-import { BrowserDataPanel } from './browser-data-panel';
 import { SyncPanel } from './sync-panel';
 import type { Workspace } from '@/types/electron-api';
 
@@ -27,6 +26,14 @@ export default function DataCenterPage() {
     }
   }, [syncPanelFocusAt]);
 
+  // 顶栏记忆搜索命中：切到记忆面板；定位（选工作区/选中主题）由 MemorySection 消费同一请求
+  useEffect(() => {
+    const unsub = useDataCenterFocusStore.subscribe((s) => {
+      if (s.memoryTopicReq) setTab('memory');
+    });
+    return unsub;
+  }, []);
+
   useEffect(() => {
     client.getAll()
       .then((r) => setWorkspaces(r.workspaces ?? []))
@@ -39,30 +46,18 @@ export default function DataCenterPage() {
 
   return (
     <div className="h-full flex flex-col">
+      <DataCenterSearchProvider />
       <Tabs value={tab} onValueChange={setTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList variant="underline" className="justify-start px-6 flex-shrink-0">
           <TabsTrigger variant="underline" value="usage">用量</TabsTrigger>
-          <TabsTrigger variant="underline" value="scheduler">定时计划</TabsTrigger>
-          <TabsTrigger variant="underline" value="history">执行历史</TabsTrigger>
-          <TabsTrigger variant="underline" value="memory">记忆</TabsTrigger>
+          <TabsTrigger variant="underline" value="memory">记忆与资产</TabsTrigger>
           <TabsTrigger variant="underline" value="version-backup">版本与备份</TabsTrigger>
-          <TabsTrigger variant="underline" value="browser-data">浏览器数据</TabsTrigger>
           <TabsTrigger variant="underline" value="sync">设备同步</TabsTrigger>
         </TabsList>
 
         <TabsContent value="usage" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">
             <UsagePanel workspaces={workspaces} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="scheduler" forceMount className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <SchedulerPanel workspaces={workspaces} />
-        </TabsContent>
-
-        <TabsContent value="history" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <div className="h-full overflow-y-auto">
-            <HistoryPanel />
           </div>
         </TabsContent>
 
@@ -75,12 +70,6 @@ export default function DataCenterPage() {
         <TabsContent value="version-backup" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">
             <VersionBackupPanel workspaces={workspaces} />
-          </div>
-        </TabsContent>
-
-        <TabsContent value="browser-data" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <div className="h-full overflow-y-auto">
-            <BrowserDataPanel />
           </div>
         </TabsContent>
 

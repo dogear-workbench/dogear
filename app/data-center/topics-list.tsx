@@ -1,6 +1,5 @@
 import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import type { TopicIndexEntry } from './memory-types';
 
@@ -20,7 +19,7 @@ export function TopicsList({ topics, selectedSlug, hasDraft, onCreate, onSelect 
         新建主题
       </Button>
 
-      <ScrollArea className="h-[500px]">
+      <div className="h-[500px] overflow-y-auto">
         <div className="space-y-1 pr-2">
           {topics.length === 0 && !hasDraft && (
             <p className="text-xs text-muted-foreground text-center py-8">
@@ -54,7 +53,7 @@ export function TopicsList({ topics, selectedSlug, hasDraft, onCreate, onSelect 
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * 会话系统提示词的「系统级 append 段」模板。
  *
- * 根据 main / sub 角色和组上下文，在会话启动时动态拼接行为约束。
+ * 根据 main / sub 角色在会话启动时动态拼接行为约束。
  */
 
 import type { SystemPromptSegment } from '../types.js';
@@ -9,30 +9,59 @@ import type { SubAgentProfile } from '../services/settings-types.js';
 import { createDefaultSubAgentProfile } from '../services/settings-types.js';
 
 export type SystemPromptSegmentKey =
-  | 'group-context'
   | 'memory-guidance'
   | 'notes-discipline'
   | 'git-history-guidance'
+  | 'snapshot-safety-guidance'
   | 'shunt-guidance'
   | 'sub-agent-contract'
   | 'main-agent-delegation'
   | 'web-research-guidance'
-  | 'app-data-guidance';
+  | 'extension-browser-discipline'
+  | 'app-data-guidance'
+  | 'unattended-mode'
+  | 'low-freq-tool-guide';
 
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
   '\n## 记忆系统\n' +
   '- 记忆是给未来 agent 用的「怎么做」知识，标准严苛：只有踩过的坑（非显而易见的根因与解法）、稳定的使用模式、影响未来实施判断的硬决策才够格\n' +
-  '- 不进记忆：一次性实施/修复流水账（docs/plans 和代码承载）、脑暴/思路/方案（用 dogear__CreateNote 存笔记卡片给用户）、尚未收敛的探索\n' +
-  '- 讨论用户可能已有偏好的话题时，先 dogear__RecallMemory 查一下有没有相关记忆';
+  '- 不进记忆：一次性实施/修复流水账（dogear/plans 和代码承载）、脑暴/思路/方案（用 dogear__CreateNote 存笔记卡片给用户）、尚未收敛的探索\n' +
+  '- 开始实施/调研类任务前，先 dogear__RecallMemory 查相关坑与决策；讨论用户可能已有偏好的话题时同样先查\n' +
+  '- 用户明确纠偏工作方式（"以后要/不要这样做"）且可长期适用时，用 dogear__SavePreference 沉淀进常驻偏好层（仅稳定习惯，一次性要求不收；写入前先 dogear__ListPreferences 查重）';
 
 /** 主会话笔记存卡纪律（仅 role='main' 且有工作区时注入）。 */
 export const NOTES_DISCIPLINE_APPEND =
   '\n## 笔记存卡纪律\n' +
   '- 笔记是用户的工作台与生命周期池：脑暴思路、未定型方案、待办、未决讨论、调研报告、用户明确要求记录的内容、琐事备忘进这里；状态流转用标签标记（如 待办 / 待议 / 已转入计划），多条待办可合一张卡（正文用 - [ ] 勾选项）；完全体可实施工作一律走任务（dogear__CreateTask，planPath 必传），不要为任务存笔记卡\n' +
-  '- 与用户聊完方案后的动线：落盘设计文档（docs/plans/...）→ 过「是否分步骤」判断 → dogear__CreateTask 挂到计划栏（planPath 必传，任务是完全体）→ 在回复中告知用户；方案未定型、待讨论的内容记笔记卡片（打状态标签），拍板落盘 plan 后才挂任务\n' +
+  '- 与用户聊完方案后的动线：落盘设计文档（dogear/plans/...）→ 过「是否分步骤」判断 → dogear__CreateTask 挂到计划栏（planPath 必传，任务是完全体）→ 在回复中告知用户；方案未定型、待讨论的内容记笔记卡片（打状态标签），拍板落盘 plan 后才挂任务\n' +
   '- 是否分步骤判断：满足任一（改动跨 ≥3 文件且步骤有依赖 / 需跨会话续做 / 架构层变更）→ 先用 staged-impl 写实施计划（plan.md + stepN-*.md），CreateTask 的 planPath 指向 plan.md；都不满足 → 回复里明说「不分步骤，理由」——「不分」也是决策，不能默默跳过\n' +
-  '- 执行动线：用户明确说做 → dogear__ExecuteTask（计划/待办均可入队）；执行结果摘要由系统自动写回任务详情，无需 dogear__AppendNote';
+  '- 执行动线：用户明确说做 → dogear__ExecuteTask（计划/待办均可入队）；完成后任务进待审核，执行过程就在执行会话里，无需再写结果摘要';
+
+/**
+ * 主会话低频能力导览：任务管理/Skill 管理/定时任务行按包生效拼装。
+ * 行文案写「是什么+能干什么+搜索词」——这是 deferred 工具的发现性兜底（工具面不可见时模型靠 tool_search 自主加载），不复述挂载机制。
+ */
+export function buildLowFreqToolGuide(packs: { tasks: boolean; skillAdmin: boolean; scheduler: boolean }): string {
+  const rows: string[] = [];
+  if (packs.tasks) {
+    rows.push(
+      '- 任务管理 dogear__CreateTask / dogear__ListTasks / dogear__ExecuteTask：把定稿方案挂上计划栏、查看与推进执行；需要时用 tool_search 搜「task」加载',
+    );
+  }
+  if (packs.skillAdmin) {
+    rows.push(
+      '- Skill 管理 dogear__SaveSkill / dogear__ListCustomSkills / dogear__GetSkill：保存、查看、清除用户沉淀的自定义 skill；需要时用 tool_search 搜「skill」加载',
+    );
+  }
+  if (packs.scheduler) {
+    rows.push(
+      '- 定时任务 dogear__ListScheduledTasks / dogear__CreateScheduledTask / dogear__RunScheduledTaskNow：把重复性工作（每日简报、定期巡检、事件后续）交给系统按触发规则自动运行，可手动触发并查运行历史；需要时用 tool_search 搜「定时任务」或「scheduled」加载',
+    );
+  }
+  if (rows.length === 0) return '';
+  return '\n## 低频能力导览\n' + rows.join('\n');
+}
 
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
 export const MAIN_AGENT_DELEGATION_APPEND =
@@ -95,9 +124,16 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
 /** git 历史意识（workspace-git 包生效即注入，主/子会话）。 */
 export const GIT_HISTORY_GUIDANCE_APPEND =
   '\n## git 历史意识\n' +
-  '- 出方案或改代码前，先查工作区 git 历史再动手：dogear__GitLog（按 relPath/keyword 搜提交）看功能演变与既有实现，dogear__GitShow 看某次提交细节，dogear__GitBlame 看代码归属，dogear__GitStatus/GitDiff 看当前未提交改动——避免重复造轮子或推翻既有设计\n' +
-  '- 双层语义：用户 Git 仓库（GitStatus/GitDiff/GitLog/GitShow/GitBlame/GitCommit/GitRevert）是正式历史，产出定稿后用 dogear__GitCommit 落一笔（message 写清做了什么）；自动快照（GitSnapshotList/GitSnapshotRestore）是系统安全网，Write/Edit 与文件操作后自动保存（含被 .gitignore 的文件），改坏了用 SnapshotRestore 恢复，恢复前自动再打快照、永远可逆\n' +
-  '- 边界：无 push/pull 等远端操作；GitRevert 是破坏性操作会先征得用户确认；工作区非 git 仓库或系统未装 git 时工具返回错误，属正常降级';
+  '- 出方案或动手前先查 git 历史看做过什么、怎么演变：dogear__GitLog（按 relPath/keyword 搜提交）、dogear__GitShow 看某次提交细节、dogear__GitBlame 看归属、dogear__GitStatus/GitDiff 看当前未提交改动——git 历史是既有事实的佐证，避免重复造轮子或推翻既有设计\n' +
+  '- 产出定稿后用 dogear__GitCommit 落一笔（message 写清做了什么与为什么）\n' +
+  '- 边界：无 push/pull 等远端操作；GitRevert 是破坏性操作会先征得用户确认';
+
+/** 快照安全网（workspace-snapshot 包生效即注入，主/子会话）。 */
+export const SNAPSHOT_SAFETY_GUIDANCE_APPEND =
+  '\n## 快照安全网\n' +
+  '- 自动快照是编辑安全网：Write/Edit 与 UI 文件操作后系统自动打快照（含被 .gitignore 的私人文件），放心改\n' +
+  '- 改坏了用 dogear__GitSnapshotList 查、dogear__GitSnapshotRestore 恢复；恢复前自动打 pre-restore 快照，永远可逆\n' +
+  '- 快照有保留窗口会过期（默认近 7 天全留、30 天外丢弃），正式历史请用 git 提交（工作区有仓库时）';
 
 /** 主会话岔题分流引导（shunt 包：仅 role='main' 且有工作区且有组时注入；执行会话不注入）。 */
 export const SHUNT_GUIDANCE_APPEND =
@@ -114,13 +150,30 @@ export const WEB_RESEARCH_GUIDANCE_MAIN_APPEND =
   '\n## 联网调研分工\n' +
   '- 快档直查：检索与静态文章直接用 bigmodel__webSearch / bigmodel__webReader（API 直出），不派会话\n' +
   '- 深度浏览（翻页拼接、JS 渲染、页面交互、登录态）派「浏览器解析」子会话（profile: browser-parse），扩展通道全局独占、并行调研请串行派遣\n' +
+  '- 网页文章入库与摘要（含用户「发送到 Dogear」移交的链接）：先 dogear__SaveArticle 服务端管线，静态解析失败或需登录态/JS 渲染时派「浏览器解析」子会话；入库后返回的是文件路径，读取全文用 Read 读该路径，检索用 Grep/Glob\n' +
   '- 纯本地代码/文档调研派普通子会话，不占扩展独占通道';
 
 /** 子会话联网调研分工（同触发条件，仅 role='sub' 注入）；子会话不能派单，不出现派遣指引。 */
 export const WEB_RESEARCH_GUIDANCE_SUB_APPEND =
   '\n## 联网调研分工\n' +
   '- 快档优先：检索与静态文章用 bigmodel__webSearch / bigmodel__webReader（API 直出）\n' +
-  '- 需 JS 渲染、页面交互或登录态时用本会话浏览器工具（内嵌 dogear__browser__* / 扩展 dogear__extension__*，按会话实际挂载的通道选用）';
+  '- 需 JS 渲染、页面交互或登录态时用本会话扩展通道工具（dogear__extension__*，用户真实浏览器）';
+
+/** 扩展通道常驻纪律（browser-extension 包生效的子会话注入；主会话不注入——主会话只有派遣视角，不做页面操作）。 */
+export const EXTENSION_BROWSER_DISCIPLINE_APPEND =
+  '\n## 扩展通道纪律\n' +
+  '- 登录墙/验证墙：等待卡弹出后交给用户处理，不轮询不重试；用户跳过则换来源，并在交付中如实说明该站未获取\n' +
+  '- tab 生命周期：单会话最多 16 个标签页，超限先 close_tab 释放；交付前关闭纯过程页，需留观的成果页让用户右键「发送到 Dogear」移交（移交过的页豁免收尾清理）\n' +
+  '- 风控预算：调用变慢、被拒是站点保护，不绕过不硬闯；同一页面连续 3 次失败即停，换路径或换源\n' +
+  '- 站点档案：工具返回带档案指针时先调 dogear__extension__site_knowledge 读已知地图；探索出的新发现用 dogear__extension__site_finding 沉淀，交付前写入\n' +
+  '- 交付：明确告诉用户去哪个标签页看什么';
+
+/** 无人值守模式（系统行为，不归能力包；装配条件 = settings.ai.unattended）：行为契约告知 */
+export const UNATTENDED_MODE_APPEND =
+  '\n## 无人值守模式\n' +
+  '- 用户不在电脑前，不会响应任何确认请求：权限确认已由系统自动放行，浏览器人工介入（登录墙/验证墙等）会被自动跳过\n' +
+  '- 遇到需要人工介入的步骤不要原地等待或反复重试，直接自主决策换路：换数据源、降级方案或跳过该步骤\n' +
+  '- 收尾报告写清三件事：实际做了什么、跳过了什么（及原因）、还有什么需要用户回来后确认';
 
 /** 应用数据目录认知（系统行为，固定注入每个会话）：定位 + 禁写区 */
 export function buildAppDataGuidance(configDir: string, workspaceId: string): string {
@@ -131,33 +184,11 @@ export function buildAppDataGuidance(configDir: string, workspaceId: string): st
   );
 }
 
-/** 组上下文段（buildGroupContextPrompt 的输出示例） */
-const GROUP_CONTEXT_EXAMPLE =
-  '## 当前会话组上下文\n' +
-  '\n' +
-  '**组**：<组标题 或 未命名组（创建于 …）>\n' +
-  '\n' +
-  '### 话题状态\n' +
-  '【话题背景】（确立于 <时间>，<来源>）\n' +
-  '<当前生效话题一句话>\n' +
-  '【最近未提炼会话】\n' +
-  '- <时间>「<会话标题>」\n' +
-  '【指引】本会话属于上方话题。若用户消息缺少上下文、所指对象不明、或需接续历史脉络/查看进行中事项时，调 dogear__ReadGroupBackground 获取最新状态（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）；深挖某会话可 dogear__ReadReferenceSession。\n' +
-  '（话题背景 / 最近未提炼会话两段按实际内容可选；组内无前人状态——无话题且除自己外无未提炼会话——时不注入【指引】，仅保留「本组还没有提炼过的话题状态，不要虚构。」一句）'
-
 /**
  * 收集当前所有「系统级 append 段」的模板与触发说明，供设置页展示。
  */
 export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemPromptSegmentKey })[] {
   return [
-    {
-      key: 'group-context',
-      label: '会话组上下文（模板说明）',
-      category: 'group',
-      template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组且「会话组」包开时注入。内容 = 组头（组标题）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含按需调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
-      isDynamic: true,
-    },
     {
       key: 'memory-guidance',
       label: '记忆系统使用规范',
@@ -171,15 +202,31 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台与生命周期池（脑暴思路/未定型方案/待办/调研底稿，状态流转用标签标记）；完全体可实施工作一律走任务——聊完方案落设计文档、过「是否分步骤」判断后 CreateTask 挂计划栏（planPath 必传），执行用 ExecuteTask，结果系统自动写回。任务执行会话跳过本段。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台与生命周期池（脑暴思路/未定型方案/待办/调研底稿，状态流转用标签标记）；完全体可实施工作一律走任务——聊完方案落设计文档、过「是否分步骤」判断后 CreateTask 挂计划栏（planPath 必传），执行用 ExecuteTask，完成后申报进待审核。任务执行会话跳过本段。',
       isDynamic: false,
+    },
+    {
+      key: 'low-freq-tool-guide',
+      label: '低频能力导览',
+      category: 'tool-guide',
+      template: buildLowFreqToolGuide({ tasks: true, skillAdmin: true, scheduler: true }),
+      triggerDescription: 'notes / skill-admin / scheduler 包任一生效的主会话注入（任务执行会话不注入），行按包生效拼装：任务管理（notes 包）、Skill 管理（skill-admin 包）、定时任务（scheduler 包）各一行，写明是什么、能干什么、tool_search 搜索词。这是低频工具不随请求下发时的发现性兜底目录。',
+      isDynamic: true,
     },
     {
       key: 'git-history-guidance',
       label: 'git 历史意识',
       category: 'tool-guide',
       template: GIT_HISTORY_GUIDANCE_APPEND,
-      triggerDescription: '「git 版本管理」包开 + 会话绑定工作区时注入（主/子会话均含，任务执行会话同样生效）。出方案/改代码前先用 GitLog/GitShow/GitBlame 查既有实现与演变；声明用户 Git 仓库（正式历史）与自动快照（安全网）双层语义与「无远端操作」边界。',
+      triggerDescription: '「git 历史与提交」包开 + 会话绑定工作区且路径下有 .git 时注入（主/子会话均含，任务执行会话同样生效）。出方案/动手前先用 GitLog/GitShow/GitBlame 查既有实现与演变，产出定稿用 GitCommit 落库；声明「无远端操作」与 GitRevert 需确认的边界。',
+      isDynamic: false,
+    },
+    {
+      key: 'snapshot-safety-guidance',
+      label: '快照安全网',
+      category: 'tool-guide',
+      template: SNAPSHOT_SAFETY_GUIDANCE_APPEND,
+      triggerDescription: '「快照安全网」包开 + 绑定工作区时注入（主/子会话均含，任务执行会话同样生效）。声明自动快照安全网语义：Write/Edit 与 UI 文件操作后自动打快照（含 .gitignore 私人文件），改坏了用 GitSnapshotList/GitSnapshotRestore 查询恢复、永远可逆；快照有保留窗口会过期，正式历史走 git 提交。',
       isDynamic: false,
     },
     {
@@ -211,7 +258,23 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '联网调研分工',
       category: 'tool-guide',
       template: WEB_RESEARCH_GUIDANCE_MAIN_APPEND,
-      triggerDescription: 'web-mcp / browser / browser-extension 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + 按会话实际挂载选用浏览器通道工具），不出现派单指引。',
+      triggerDescription: 'web-mcp / browser-extension 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + 扩展通道工具指向），不出现派单指引。',
+      isDynamic: false,
+    },
+    {
+      key: 'extension-browser-discipline',
+      label: '扩展通道纪律',
+      category: 'tool-guide',
+      template: EXTENSION_BROWSER_DISCIPLINE_APPEND,
+      triggerDescription: '「浏览器扩展」包生效且挂载扩展工具的子会话注入（主会话不注入，主会话只有派遣视角）。五条：登录墙语义（弹卡等用户，不轮询）、tab 生命周期（16 上限，交付前过程页关闭成果页移交）、风控预算（被拒是保护，同页 3 败即停）、站点档案（site_knowledge 先读 / site_finding 沉淀）、交付指明标签页。',
+      isDynamic: false,
+    },
+    {
+      key: 'unattended-mode',
+      label: '无人值守模式',
+      category: 'reference',
+      template: UNATTENDED_MODE_APPEND,
+      triggerDescription: '系统行为，无人值守开关（settings.ai.unattended）开启时注入每个会话（主/子/执行会话均含，不归能力包）。告知用户不在电脑前：权限确认已自动放行、人工介入会被跳过，遇到需人工的步骤自主换路（换源/降级/跳过），收尾报告写清做了什么/跳过了什么/待确认项。开关切换不重注入运行中会话，仅新会话生效。',
       isDynamic: false,
     },
     {

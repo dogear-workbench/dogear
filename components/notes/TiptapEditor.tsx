@@ -13,6 +13,7 @@ import { TableToolbar } from '@/components/notes/tiptap/TableToolbar';
 import { NotePathLink, getDecoratedPathAt, getLinkHrefAt } from '@/components/notes/tiptap/note-path-link';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { client } from '@/lib/client';
+import { openExternalUrl } from '@/lib/open-external';
 import { toast } from 'sonner';
 
 interface TiptapEditorProps {
@@ -35,7 +36,7 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady, workspaceId, 
   const handlePathClick = (rawPath: string) => {
     const path = rawPath.trim();
     if (/^https?:\/\//i.test(path)) {
-      window.open(path, '_blank', 'noopener,noreferrer');
+      openExternalUrl(path);
       return;
     }
     if (path.toLowerCase().endsWith('.md')) {

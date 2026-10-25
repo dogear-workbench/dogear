@@ -7,7 +7,7 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 /** 引用写法指引：links 结构化字段 UI 已下线，统一在正文写完整相对路径（编辑器内自动渲染可点） */
 const PATH_REF_TIP =
-  '引用 plan/文章/文件时，在正文写完整相对路径（如 docs/plans/2026-09/xx/plan.md），笔记内自动渲染为可点击。';
+  '引用 plan/文章/文件时，在正文写完整相对路径（如 dogear/plans/2026-09/xx/plan.md），笔记内自动渲染为可点击。';
 
 function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true as const };

@@ -113,6 +113,8 @@ export interface AgentChatProps {
   workspaceId?: string | null;
   /** 是否处于可见 tab；隐藏 tab 使用低频流刷新 */
   visible?: boolean;
+  /** 宿主面板视图可见，视同 tab 激活（拉起 runtime 并保留 attachment） */
+  panelActive?: boolean;
 }
 
 /**

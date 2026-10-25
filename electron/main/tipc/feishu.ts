@@ -1,8 +1,9 @@
 import electron from 'electron';
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
 import { feishuConfigService } from '../services/feishu/feishu-config-service.js';
-import { feishuClientService } from '../services/feishu/feishu-client-service.js';
+import { feishuClientService, type FeishuIncomingMessage } from '../services/feishu/feishu-client-service.js';
 import { feishuBotController } from '../services/feishu/feishu-bot-controller.js';
+import { feishuNotifyOutlet } from '../services/feishu/feishu-notify-outlet.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { RendererHandlers } from './renderer-handlers.js';
@@ -18,7 +19,7 @@ let _sessionCompleteHandler: ((sessionId: string, result: any) => Promise<void>)
 
 const _pendingAgentTexts: Map<string, string> = new Map();
 
-function handleIncomingMessage(msg: { messageId: string; chatId: string; senderOpenId: string; text: string }): void {
+function handleIncomingMessage(msg: FeishuIncomingMessage): void {
   void feishuBotController.handleIncomingMessage(msg);
 }
 
@@ -29,11 +30,11 @@ function attachAgentSessionListeners(): void {
   _pendingAgentTexts.clear();
 
   _sessionMessageHandler = (sessionId: string, message: ExtendedSessionMessage) => {
-    const botState = feishuBotController.getState();
-    if (sessionId !== botState.activeSessionId) return;
+    if (!feishuBotController.isBotManagedSession(sessionId)) return;
 
     if (message.type === 'text' && message.content) {
       _pendingAgentTexts.set(sessionId, (_pendingAgentTexts.get(sessionId) ?? '') + message.content);
+      feishuBotController.appendAgentChunk(sessionId, message.content);
     }
 
     if (message.type === 'permission_request' && message.permissionToolName) {
@@ -42,16 +43,13 @@ function attachAgentSessionListeners(): void {
   };
 
   _sessionCompleteHandler = async (sessionId: string, _result: any) => {
-    const botState = feishuBotController.getState();
-    if (sessionId !== botState.activeSessionId) return;
+    if (!feishuBotController.isBotManagedSession(sessionId)) return;
 
     const text = (_pendingAgentTexts.get(sessionId) ?? '').trim();
     _pendingAgentTexts.delete(sessionId);
 
-    if (text) {
-      await feishuBotController.handleAgentReply(text);
-    }
-    await feishuBotController.handleAgentComplete();
+    await feishuBotController.handleAgentReply(sessionId, text);
+    await feishuBotController.handleAgentComplete(sessionId);
   };
 
   sessionManager.on('sessionMessage', _sessionMessageHandler);
@@ -69,6 +67,7 @@ function detachAgentSessionListeners(): void {
     _sessionCompleteHandler = null;
   }
   _pendingAgentTexts.clear();
+  void feishuBotController.abortAllStreams().catch(() => {});
 }
 
 export const feishuRouter = {
@@ -81,6 +80,9 @@ export const feishuRouter = {
           appId: config?.appId,
           botName: config?.botName,
           connectedAt: config?.connectedAt,
+          userOpenId: config?.userOpenId,
+          topicChatId: config?.topicChatId,
+          notifyPush: config?.notifyPush !== false,
         },
       };
     } catch (error) {
@@ -145,6 +147,7 @@ export const feishuRouter = {
       }
       await feishuBotController.init();
       attachAgentSessionListeners();
+      await feishuNotifyOutlet.register();
       try {
         const autoInitData = await feishuBotController.getAutoInitData();
         const handlers = getRendererHandlers<RendererHandlers>(context.sender);
@@ -162,6 +165,7 @@ export const feishuRouter = {
 
   'feishu:disconnect': t.procedure.action(async () => {
     try {
+      feishuNotifyOutlet.unregister();
       detachAgentSessionListeners();
       await feishuClientService.disconnect();
       return { data: { stopped: true } };
@@ -191,11 +195,38 @@ export const feishuRouter = {
       return await feishuBotController.getAutoInitData();
     }),
 
-  'feishu:botUseConversation': t.procedure
-    .input<{ index: number }>()
+  'feishu:setNotifyPush': t.procedure
+    .input<{ enabled: boolean }>()
     .action(async ({ input }) => {
-      return await feishuBotController.useConversationByIndex(input.index);
+      try {
+        const cfg = await feishuConfigService.loadConfig();
+        if (!cfg) return { error: '飞书凭证未配置' };
+        await feishuConfigService.saveConfig({ ...cfg, notifyPush: input.enabled });
+        return { data: { success: true } };
+      } catch (error) {
+        return { error: String(error) };
+      }
     }),
+
+  'feishu:createTopicChat': t.procedure.action(async () => {
+    try {
+      const result = await feishuBotController.createTopicChat();
+      if (!result.ok) return { error: result.error || '创建失败' };
+      return { data: { chatId: result.chatId } };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }),
+
+  'feishu:resetTopicChat': t.procedure.action(async () => {
+    try {
+      const result = await feishuBotController.resetTopicChat();
+      if (!result.ok) return { error: result.error || '重置失败' };
+      return { data: { success: true } };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }),
 
   'feishu:openPlatform': t.procedure
     .input<{ url: string }>()
@@ -225,4 +256,5 @@ export async function autoConnectFeishu(): Promise<void> {
   console.log('[feishu] 自动连接成功');
   await feishuBotController.init();
   attachAgentSessionListeners();
+  await feishuNotifyOutlet.register();
 }

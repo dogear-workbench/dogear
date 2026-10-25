@@ -61,7 +61,7 @@ export async function loginWallGate(input: LoginWallGateInput): Promise<ToolResu
   }
   const status = getExtensionStatus();
   const extTabId = input.tabId ?? (status.status === 'connected' ? status.tabId : null);
-  const request = raiseHumanIntervention({
+  const request = await raiseHumanIntervention({
     tabId: `ext-${extTabId ?? 'unknown'}`,
     reason,
     message:
@@ -73,13 +73,16 @@ export async function loginWallGate(input: LoginWallGateInput): Promise<ToolResu
     conversationId: input.conversationId,
     actions: reason === 'login_required' ? LOGIN_ACTIONS : VERIFY_ACTIONS,
   });
-  if (typeof extTabId === 'number' && extTabId !== NO_FOCUS_TAB_ID) {
+  if (request.outcome !== 'unattended' && typeof extTabId === 'number' && extTabId !== NO_FOCUS_TAB_ID) {
     // 挂自动检测：登录跳转完成 pageState 恢复 ready 时扩展回推 → auto 解除唤醒等待
     await runCommand('watch_intervention', { tabId: extTabId }, () => undefined, undefined, { tabId: extTabId });
   }
   const { outcome, request: resolved } = await waitForInterventionResult(request.id, LOGIN_WALL_TIMEOUT_MS);
   const actionKey = resolved?.actionKey;
   logger.warn(`登录墙等待结束: outcome=${outcome} actionKey=${actionKey ?? '-'} url=${url}`);
+  if (outcome === 'unattended') {
+    return isErrorResult(`用户不在（无人值守），已跳过此${noun}人工步骤；请改用其他路径（换源/降级/跳过并在收尾报告注明）`);
+  }
   if (outcome === 'approved' || outcome === 'auto' || outcome === 'manual' || outcome === 'missing') {
     return rerunObserve(input.resumeNote);
   }

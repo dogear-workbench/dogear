@@ -125,6 +125,7 @@ export interface WorkspaceFileNode {
   path: string;
   type: 'file' | 'directory' | 'article';
   ext?: string;
+  gitStatus?: 'tracked' | 'untracked';
   children?: WorkspaceFileNode[];
   /** 文章专属字段（type='article' 时存在） */
   articleMeta?: {
@@ -153,13 +154,13 @@ export interface CleanedTranscript {
 export interface Group {
   id: string;
   title?: string;
-  /** title 为自动占坑名（首条消息截断）：AI 提炼 initialTitle / 用户改名可覆盖转正 */
-  autoTitle?: boolean;
   createdAt: number;
   updatedAt: number;
   /** 后台活动时钟（子会话创建/交付、会话完成等）：只喂养 auto-archive 保鲜，不参与列表排序 */
   lastBackgroundActivityAt?: number;
   archivedAt?: number;
+  /** 承载话题（任务/定时等后台会话）：活跃态但不在话题列表显示，不参与归档（自动归档豁免，归档列表不返回） */
+  hidden?: boolean;
 }
 
 export interface NativeFileEntry {
@@ -210,15 +211,6 @@ export interface ChildStateSnapshot {
   /** 最近一次流事件时间戳（滑动 idle 计时打点，检测 hang 用） */
   lastActivityAt?: number;
 }
-
-// ─── 工作区常量（镜像自 types/workspace.ts）───
-
-/**
- * personal 是保留字 workspaceId：内置隐藏工作区，承载随手问临时会话。
- * 不得注册进 workspaces.json，不得出现在工作区切换器、workspace-watcher、手动文件夹树。
- * 任何 workspaceId 消费方遇到它必须走特殊分支或显式放行。
- */
-export const PERSONAL_WORKSPACE_ID = 'personal';
 
 // ─── 系统提示词展示段（session-append-templates 产出，tipc/ability 聚合消费）───
 

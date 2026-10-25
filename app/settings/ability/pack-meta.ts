@@ -14,4 +14,5 @@ export const CATEGORY_FALLBACK: readonly AbilityCategoryMeta[] = [
   { key: 'system', label: '系统功能', description: '' },
   { key: 'context-memory', label: '上下文与记忆', description: '' },
   { key: 'extension', label: '扩展能力', description: '' },
+  { key: 'custom-skills', label: '自定义 Skill' },
 ];

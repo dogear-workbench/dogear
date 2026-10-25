@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ExternalLink, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { ExternalLink, Loader2, CheckCircle2, XCircle, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -34,20 +34,8 @@ const GUIDE_STEPS: GuideStep[] = [
     detail: <span>在应用详情页左侧「添加应用能力」中，添加「机器人」能力。</span>,
   },
   {
-    title: '权限管理——开通权限',
-    detail: (
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <code className="text-[11px] bg-muted px-1.5 py-0.5 rounded font-mono">im:message.p2p_msg:readonly</code>
-          <span className="text-muted-foreground">读取用户发给机器人的单聊消息</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <code className="text-[11px] bg-muted px-1.5 py-0.5 rounded font-mono">im:message:send_as_bot</code>
-          <span className="text-muted-foreground">以应用的身份发消息</span>
-        </div>
-        <p className="text-muted-foreground">勾选后需发布新版本生效。</p>
-      </div>
-    ),
+    title: '权限管理——批量导入权限',
+    detail: <PermissionImport showDescriptions />,
   },
   {
     title: '事件与回调——订阅消息事件',
@@ -55,10 +43,14 @@ const GUIDE_STEPS: GuideStep[] = [
       <div className="space-y-1">
         <span>选择「使用长连接接收事件」，订阅事件：</span>
         <div>
-          <code className="text-[11px] bg-muted px-1.5 py-0.5 rounded font-mono">im.message.receive_v1</code>
+          <code className="bg-muted px-1.5 py-0.5 rounded font-mono">im.message.receive_v1</code>
         </div>
       </div>
     ),
+  },
+  {
+    title: '事件与回调——卡片回调走长连接',
+    detail: <span>在「卡片回调」中选择「使用长连接接收回调」——话题群管理卡的按钮交互依赖此项。</span>,
   },
   {
     title: '创建版本并发布',
@@ -70,15 +62,75 @@ const GUIDE_STEPS: GuideStep[] = [
   },
 ];
 
-async function openPlatform(): Promise<void> {
+async function openPlatform(url: string = PLATFORM_URL): Promise<void> {
   try {
-    const res = await client['feishu:openPlatform']({ url: PLATFORM_URL });
+    const res = await client['feishu:openPlatform']({ url });
     if ('error' in res && res.error) {
       toast.error('打开浏览器失败', { description: res.error });
     }
   } catch (error) {
     toast.error('打开浏览器失败', { description: String(error) });
   }
+}
+
+const PERMISSION_SCOPES = [
+  { scope: 'im:message.p2p_msg:readonly', desc: '读取私聊消息' },
+  { scope: 'im:message:send_as_bot', desc: '机器人发送消息' },
+  { scope: 'im:message.group_msg', desc: '接收话题群消息（缺此权限时静默收不到、不报错）' },
+  { scope: 'im:chat', desc: '创建话题工作群' },
+  { scope: 'cardkit:card:write', desc: '流式卡片与管理卡' },
+];
+
+const PERMISSION_JSON = `{
+  "scopes": {
+    "tenant": [
+      "cardkit:card:write",
+      "im:chat",
+      "im:message.group_msg",
+      "im:message.p2p_msg:readonly",
+      "im:message:send_as_bot"
+    ],
+    "user": []
+  }
+}`;
+
+export function PermissionImport({ showDescriptions = false }: { showDescriptions?: boolean }) {
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(PERMISSION_JSON);
+      toast.success('已复制');
+    } catch {
+      toast.error('复制失败，请手动选择文本复制');
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="relative">
+        <pre className="text-xs font-mono bg-muted rounded-md p-3 pr-10 overflow-x-auto">{PERMISSION_JSON}</pre>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="absolute top-1.5 right-1.5 text-muted-foreground"
+          title="复制"
+          onClick={() => void handleCopy()}
+        >
+          <Copy className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+      {showDescriptions && (
+        <div className="space-y-1">
+          {PERMISSION_SCOPES.map((p) => (
+            <div key={p.scope} className="flex items-baseline gap-2 text-xs">
+              <code className="font-mono shrink-0">{p.scope}</code>
+              <span className="text-muted-foreground">{p.desc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">到开放平台 权限管理 → 导入 粘贴这份配置，发布新版本后生效</p>
+    </div>
+  );
 }
 
 export function FeishuSetupGuide() {
@@ -114,6 +166,8 @@ export function FeishuSetupGuide() {
     const res = await saveAndConnect(appId, appSecret);
     if (!res.success) {
       setSaveError(res.error || '连接失败，请重试');
+    } else {
+      toast.success('已保存并连接');
     }
     setSaving(false);
   };

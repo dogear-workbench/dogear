@@ -1,15 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
-import { SLUG_RE, type TopicIndexEntry } from './memory-types';
+import { SLUG_RE, type MemoryScope, type TopicIndexEntry } from './memory-types';
 import { TopicsList } from './topics-list';
 import { TopicEditor, type EditState } from './topic-editor';
 
 interface Props {
   workspaceId: string;
+  scope: MemoryScope;
+  /** 顶栏记忆搜索命中定位请求（slug + at 防重复触发） */
+  focusReq: { slug: string; at: number } | null;
 }
 
-export function TopicsPanel({ workspaceId }: Props) {
+export function TopicsPanel({ workspaceId, scope, focusReq }: Props) {
   const confirm = useConfirmStore((s) => s.confirm);
   const [topics, setTopics] = useState<TopicIndexEntry[]>([]);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -18,12 +21,18 @@ export function TopicsPanel({ workspaceId }: Props) {
   const loadingRef = useRef(false);
 
   const loadList = useCallback(async () => {
-    const result = await client.listMemoryTopics({ workspaceId });
+    const result = await client.listMemoryTopics({ workspaceId, scope });
     const list = 'topics' in result ? result.topics : undefined;
     if (list) setTopics(list);
-  }, [workspaceId]);
+  }, [workspaceId, scope]);
 
   useEffect(() => { loadList(); }, [loadList]);
+
+  // 外部定位请求（顶栏记忆搜索命中）：走与列表点击相同的 selectTopic 链路（含草稿脏检查）
+  useEffect(() => {
+    if (!focusReq) return;
+    void selectTopic(focusReq.slug);
+  }, [focusReq]);
 
   const editDirty = !!(edit && savedSnapshot && (
     edit.slug !== savedSnapshot.slug ||
@@ -66,7 +75,7 @@ export function TopicsPanel({ workspaceId }: Props) {
 
     loadingRef.current = true;
     try {
-      const result = await client.getMemoryTopic({ workspaceId, slug });
+      const result = await client.getMemoryTopic({ workspaceId, slug, scope });
       const topic = 'topic' in result ? result.topic : undefined;
       if (topic) {
         const next: EditState = {
@@ -134,7 +143,7 @@ export function TopicsPanel({ workspaceId }: Props) {
     // slug 冲突预检（新建或改名场景）
     const slugChanged = edit.isNew || edit.slug !== edit.originalSlug;
     if (slugChanged) {
-      const existing = await client.getMemoryTopic({ workspaceId, slug: edit.slug });
+      const existing = await client.getMemoryTopic({ workspaceId, slug: edit.slug, scope });
       const existingTopic = 'topic' in existing ? existing.topic : undefined;
       if (existingTopic) {
         const r = await confirm({
@@ -153,6 +162,7 @@ export function TopicsPanel({ workspaceId }: Props) {
     try {
       const result = await client.upsertMemoryTopic({
         workspaceId,
+        scope,
         topic: {
           slug: edit.slug,
           title: edit.title,
@@ -164,7 +174,7 @@ export function TopicsPanel({ workspaceId }: Props) {
       const err = 'error' in result ? result.error : undefined;
       if (saved) {
         if (!edit.isNew && edit.slug !== edit.originalSlug) {
-          await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug });
+          await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug, scope });
         }
         const next: EditState = {
           isNew: false,
@@ -200,7 +210,7 @@ export function TopicsPanel({ workspaceId }: Props) {
       ],
     });
     if (r !== 'ok') return;
-    await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug });
+    await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug, scope });
     setEdit(null);
     setSavedSnapshot(null);
     await loadList();

@@ -24,7 +24,7 @@ description: 写实施计划和按步骤执行计划。在以下场景触发：�
 ## 文档拓扑
 
 ```
-docs/plans/YYYY-MM/YYYY-MM-DD/<feature-name>/
+dogear/plans/YYYY-MM/YYYY-MM-DD/<feature-name>/
   plan.md           # 总览 + 步骤索引
   step1-<short>.md  # 单个步骤的详细文档
   step2-<short>.md
@@ -94,7 +94,7 @@ status: pending | in_progress | done
 
 1. 跟用户对齐目标和架构思路（拿不准先问，不要带着 50% 把握就开始写文档）
 2. 拆分步骤：每个 step 是「能独立验证完成」的单元，不是「2-5 分钟微动作」
-3. 创建目录 `docs/plans/YYYY-MM/YYYY-MM-DD/<feat>/`
+3. 创建目录 `dogear/plans/YYYY-MM/YYYY-MM-DD/<feat>/`
 4. 写 `plan.md` 总览 + 每个 `stepN-<short>.md`（依赖上下文留空，等执行时填）
 
 ### 执行阶段（execute）

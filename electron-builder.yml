@@ -114,8 +114,9 @@ mac:
     - target: zip
       arch: arm64
   icon: build/icon.icns
-  # 不做 Developer ID 签名/公证（ad-hoc 签名，构建机可启动）
-  identity: null
+  # 自签证书签名（钥匙串 dogear-local-signer，非 ad-hoc）：本地网络权限按证书身份匹配，
+  # 跨构建稳定（ad-hoc 每次构建 cdhash 漂移会导致授权失效，2026-10-12 实验验证）
+  identity: dogear-local-signer
   category: public.app-category.productivity
   extraResources:
     # 托盘 template image（tray.ts darwin 分支从 resourcesPath 根加载）

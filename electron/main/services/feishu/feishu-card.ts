@@ -1,14 +1,16 @@
 export interface FeishuCardJson {
+  header?: { title: { tag: 'plain_text'; content: string } };
   config: { wide_screen_mode: boolean };
   elements: Array<{ tag: 'markdown'; content: string }>;
 }
 
 const CARD_TEXT_LIMIT = 4000;
 
-export function markdownToCard(text: string): FeishuCardJson[] {
+export function markdownToCard(text: string, headerTitle?: string): FeishuCardJson[] {
   const normalized = downgradeTables(text.trim());
   if (!normalized) return [];
   return splitChunks(normalized, CARD_TEXT_LIMIT).map((content) => ({
+    ...(headerTitle ? { header: { title: { tag: 'plain_text', content: headerTitle } } } : {}),
     config: { wide_screen_mode: true },
     elements: [{ tag: 'markdown', content }],
   }));

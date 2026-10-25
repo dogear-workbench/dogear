@@ -5,6 +5,14 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { toast } from 'sonner';
 import { Download, RefreshCw, CheckCircle2, Loader2, Save } from 'lucide-react';
+import { EnvDepsSection } from './EnvDepsSection';
+import type { SettingsSearchEntry } from './search-index';
+
+export const ABOUT_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '版本与检查更新', description: '当前版本信息与更新检查', keywords: ['版本'] },
+  { label: '更新服务地址', description: '检查更新和下载补丁的 HTTP 服务地址' },
+  { label: '环境依赖', description: 'Python 与计算依赖检查，一键安装', keywords: ['python', '环境'] },
+];
 
 interface UpdateInfo {
   version: string;
@@ -261,6 +269,9 @@ export function AboutTab() {
             </Button>
           </div>
         </div>
+
+        {/* 环境依赖 */}
+        <EnvDepsSection />
       </div>
     </div>
   );

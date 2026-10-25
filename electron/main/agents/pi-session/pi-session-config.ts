@@ -20,6 +20,8 @@ export interface PiSessionConfig {
   role: 'main' | 'sub';
   /** 任务系统无人值守执行会话；start() 据此裁剪 systemPrompt（组上下文只留组头 + 跳过笔记纪律） */
   executor?: boolean;
+  /** 定时任务运行会话；场景包开关裁决走 scheduler 键（协作任务执行会话走 executor 键） */
+  schedulerTask?: boolean;
   /** role='sub' 时必需：派出当前会话的会话 conversationId（对齐 SubDelegationOpts.parentConversationId）。
    * 由 conversation-runtime-service.ts 从 conversation.parentConversationId 透传；role='main' 时不使用 */
   parentConversationId?: string;

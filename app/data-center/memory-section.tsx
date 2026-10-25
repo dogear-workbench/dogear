@@ -1,31 +1,48 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FolderOpen, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
+import type { MemoryScope } from './memory-types';
+import { useDataCenterFocusStore, type MemoryTopicFocusReq } from './memory-focus';
 import { TopicsPanel } from './topics-panel';
+import { LearnedAssetsSection } from './learned-assets-section';
 
 interface Props {
   workspaces: Workspace[];
 }
 
+const GLOBAL_ID = 'global';
+
 export function MemorySection({ workspaces }: Props) {
   const confirm = useConfirmStore((s) => s.confirm);
   const [rebuilding, setRebuilding] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string>('all');
+  const memoryTopicReq = useDataCenterFocusStore((s) => s.memoryTopicReq);
+  const [topicFocus, setTopicFocus] = useState<MemoryTopicFocusReq | null>(null);
 
-  const workspace = workspaceId === 'all'
+  // 顶栏记忆搜索命中：切到请求的工作区范围并展开选中请求的主题，随后消费掉请求
+  useEffect(() => {
+    if (!memoryTopicReq) return;
+    setWorkspaceId(memoryTopicReq.workspaceId);
+    setTopicFocus(memoryTopicReq);
+    useDataCenterFocusStore.getState().consumeMemoryTopic();
+  }, [memoryTopicReq]);
+
+  const isGlobal = workspaceId === GLOBAL_ID;
+  const scope: MemoryScope = isGlobal ? 'global' : 'workspace';
+  const workspace = workspaceId === 'all' || isGlobal
     ? undefined
     : workspaces.find((w) => w.id === workspaceId);
-  const activeWorkspaceId = workspace?.id;
+  const activeWorkspaceId = isGlobal ? GLOBAL_ID : workspace?.id;
 
   const handleRebuildIndex = async () => {
     if (!activeWorkspaceId) return;
     setRebuilding(true);
     try {
-      const result = await client.rebuildMemoryIndex({ workspaceId: activeWorkspaceId });
+      const result = await client.rebuildMemoryIndex({ workspaceId: activeWorkspaceId, scope });
       const err = 'error' in result ? result.error : undefined;
       if (err) {
         await confirm({
@@ -69,6 +86,7 @@ export function MemorySection({ workspaces }: Props) {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">全部工作区</SelectItem>
+          <SelectItem value={GLOBAL_ID}>全局（跨工作区共享）</SelectItem>
           {workspaces.map((w) => (
             <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
           ))}
@@ -77,14 +95,14 @@ export function MemorySection({ workspaces }: Props) {
     </div>
   );
 
-  if (!workspace || !activeWorkspaceId) {
+  if (!activeWorkspaceId) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-6">
         {header}
         <div className="flex items-center justify-center text-muted-foreground py-16">
           <div className="text-center space-y-2">
             <FolderOpen className="w-10 h-10 mx-auto opacity-50" />
-            <p className="text-sm">记忆按工作区组织，请在上方选择具体工作区</p>
+            <p className="text-sm">记忆按工作区组织，请在上方选择具体工作区，或选「全局」查看跨工作区共享的记忆</p>
           </div>
         </div>
       </div>
@@ -97,8 +115,9 @@ export function MemorySection({ workspaces }: Props) {
       <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          为「{workspace.name}」维护主题记忆。主题记忆通过 Agent 的 dogear__RecallMemory
-          工具按关键词检索，跨会话沉淀稳定知识。
+          {isGlobal
+            ? '维护跨工作区共享的全局记忆（scope=global），所有工作区的 Agent 会话都能检索到这些主题。'
+            : `为「${workspace?.name}」维护主题记忆。主题记忆通过 Agent 的 dogear__RecallMemory 工具按关键词检索，跨会话沉淀稳定知识。`}
         </p>
         <Button variant="outline" size="sm" onClick={handleRebuildIndex} disabled={rebuilding}>
           <RefreshCw className={rebuilding ? 'w-4 h-4 mr-1 animate-spin' : 'w-4 h-4 mr-1'} />
@@ -106,7 +125,9 @@ export function MemorySection({ workspaces }: Props) {
         </Button>
       </div>
 
-      <TopicsPanel workspaceId={activeWorkspaceId} />
+      <TopicsPanel workspaceId={activeWorkspaceId} scope={scope} focusReq={topicFocus} />
+
+      <LearnedAssetsSection />
       </div>
     </div>
   );

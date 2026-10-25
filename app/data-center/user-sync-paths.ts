@@ -40,6 +40,48 @@ export function userSyncPathsListEqual(a: string[], b: string[]): boolean {
   return a.every((p) => sb.has(p));
 }
 
+/**
+ * git 归类索引：由主进程根响应返回的全集一次性构建，之后 O(1) 判定任意树条目归属（子级懒加载不再跑 git）。
+ * managedDirs/ignoredDirs 只存目录前缀（集合是文件级），目录条目靠前缀集判定
+ */
+export interface SyncGitIndex {
+  ignored: ReadonlySet<string>;
+  managedDirs: ReadonlySet<string>;
+  ignoredDirs: ReadonlySet<string>;
+}
+
+export function buildSyncGitIndex(managed: readonly string[], ignored: readonly string[]): SyncGitIndex {
+  const managedDirs = new Set<string>();
+  const ignoredDirs = new Set<string>();
+  const collectDirs = (dirs: Set<string>, paths: readonly string[]) => {
+    for (const p of paths) {
+      const segs = p.split('/');
+      segs.pop();
+      let cur = '';
+      for (const seg of segs) {
+        cur = cur === '' ? seg : `${cur}/${seg}`;
+        dirs.add(cur);
+      }
+    }
+  };
+  collectDirs(managedDirs, managed);
+  collectDirs(ignoredDirs, ignored);
+  return { ignored: new Set(ignored), managedDirs, ignoredDirs };
+}
+
+export type SyncGitEntryClass = 'ignored' | 'managed';
+
+/**
+ * 条目归类：精确命中 ignored → 外层；目录有 managed 后代 → 折叠组（优先于仅 ignored 后代）；
+ * 两集合外（并发新文件）→ 保守归折叠组
+ */
+export function classifyGitPath(relPath: string, index: SyncGitIndex): SyncGitEntryClass {
+  if (index.ignored.has(relPath)) return 'ignored';
+  if (index.managedDirs.has(relPath)) return 'managed';
+  if (index.ignoredDirs.has(relPath)) return 'ignored';
+  return 'managed';
+}
+
 /** 该工作区的勾选列表（缺省空数组） */
 export function userSyncPathsForWorkspaces(paths: Record<string, string[]> | undefined, wsid: string): string[] {
   return paths?.[wsid] ?? [];

@@ -4,7 +4,7 @@ import { mainLogger } from '../../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask } from '../types.js';
 import { updateTaskRunState } from '../plan-store.js';
 import { appendHistoryEntry } from '../run-history-store.js';
-import { reportDone, reportRunning } from '../../background-activity-service.js';
+import { reportDone, reportRunning, reportRunningConversation } from '../../background-activity-service.js';
 import { executeTask, type TaskExecResult, type TriggerContext } from './task-executor.js';
 
 export interface RunTaskOptions {
@@ -25,7 +25,7 @@ export interface TaskDoneEvent {
 
 interface RunningInfo {
   taskName: string;
-  agentTaskId?: string;
+  conversationId?: string;
   sourceTriggerId?: string;
   stopRequested: boolean;
   stopReason: StopReason;
@@ -59,13 +59,17 @@ class TaskRunner extends EventEmitter {
     mainLogger.info(
       `[scheduler] 请求停止任务: ${info.taskName} (${taskId}) 来源=${info.stopReason}`,
     );
-    const agentTaskId = info.agentTaskId;
-    if (!agentTaskId) return;
-    void import('../../../agents/agent-manager.js')
-      .then(({ getAgentManager }) => {
-        getAgentManager().cancelTask(agentTaskId);
+    const conversationId = info.conversationId;
+    if (!conversationId) return;
+    void import('../../../agents/pi-session/pi-session-manager.js')
+      .then(({ getPiSessionManager }) => {
+        const manager = getPiSessionManager();
+        const sessionId = manager.getSessionIdByConversation(conversationId);
+        const session = sessionId ? manager.getSession(sessionId) : undefined;
+        if (!session) return;
+        return session.interrupt();
       })
-      .catch((err) => mainLogger.warn('[scheduler] 取消自定义任务失败:', err));
+      .catch((err) => mainLogger.warn('[scheduler] 中断运行会话失败:', err));
   }
 
   private async appendInterruptedEntry(task: ScheduledTask, opts: RunTaskOptions): Promise<void> {
@@ -91,6 +95,7 @@ class TaskRunner extends EventEmitter {
     startedAt: number,
     res: TaskExecResult,
     opts: RunTaskOptions,
+    conversationId?: string,
   ): Promise<void> {
     const entry: RunHistoryEntry = {
       id: randomUUID(),
@@ -99,6 +104,7 @@ class TaskRunner extends EventEmitter {
       planName: task.name,
       source: 'scheduler',
       kind: 'task',
+      conversationId,
       status: res.status,
       triggerReason: opts.triggerReason,
       triggerDesc: opts.triggerDesc,
@@ -123,8 +129,9 @@ class TaskRunner extends EventEmitter {
       let res: TaskExecResult;
       try {
         res = await executeTask(task, {
-          onAgentTaskId: (id) => {
-            info.agentTaskId = id;
+          onConversationId: (id) => {
+            info.conversationId = id;
+            reportRunningConversation(task.id, id);
           },
           triggerContext: opts.triggerContext,
         });
@@ -136,7 +143,7 @@ class TaskRunner extends EventEmitter {
         res.summary = res.summary ? `${res.summary}${suffix}` : suffix;
       }
       try {
-        await this.appendTaskEntry(task, startedAt, res, opts);
+        await this.appendTaskEntry(task, startedAt, res, opts, info.conversationId);
       } catch (err) {
         mainLogger.warn('[scheduler] 写任务历史失败:', task.name, err);
       }

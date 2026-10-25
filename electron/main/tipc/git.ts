@@ -131,6 +131,19 @@ export const gitRouter = {
       }
     }),
 
+  // 数据中心「初始化」按钮：就地 git init + 按快照排除规则生成 .gitignore + 全量初始提交
+  initWorkspaceGitRepo: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }): Promise<gitService.InitUserRepoResult | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        return await gitService.initUserRepo(workspace.id, workspace.path);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
   // 文件树右键恢复：删精确匹配条目，返回更新后清单（删空返回空数组）
   removeSnapshotExcludedPath: t.procedure
     .input<{ workspaceId: string; relPath: string }>()

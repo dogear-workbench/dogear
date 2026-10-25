@@ -1,8 +1,9 @@
 import { extractTabSnapshot, extractArticleHtml } from './content-extract.js'
-import { handleTabCommand, getDogearTabs, isInDogearGroup, adoptPassiveTab } from './tab-commands.js'
+import { handleTabCommand, listAgentWindowTabs, pickFallbackFocus } from './tab-commands.js'
+import { getAgentWindowId } from './agent-window.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
 import { waitFn } from './wait-actions.js'
-import { snapshotGroupTabIds, detectNewGroupTab } from './click-watch.js'
+import { snapshotOperableTabIds, detectNewOperableTab } from './click-watch.js'
 import { observeFn } from './observe-actions.js'
 import { findFn } from './find-actions.js'
 import { resolvePageState } from './page-state.js'
@@ -49,7 +50,6 @@ async function getActiveTab() {
   return tab ?? null
 }
 
-const HANDOFF_EXCERPT_LIMIT = 4000
 const BADGE_RESET_MS = 3000
 let badgeTimer = null
 
@@ -61,19 +61,6 @@ function flashHandoffError() {
   }, BADGE_RESET_MS)
 }
 
-async function extractHandoffExcerpt(tabId) {
-  try {
-    const [injection] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: readTextFn,
-      args: [null]
-    })
-    return String(injection?.result?.text ?? '').slice(0, HANDOFF_EXCERPT_LIMIT)
-  } catch {
-    return ''
-  }
-}
-
 async function sendPageHandoff(tab, selectionText) {
   if (!port) {
     flashHandoffError()
@@ -82,14 +69,14 @@ async function sendPageHandoff(tab, selectionText) {
   if (!tab || tab.id == null || !tab.url || !/^https?:/.test(tab.url)) {
     return { ok: false, error: '当前页面不支持移交' }
   }
-  const textExcerpt = await extractHandoffExcerpt(tab.id)
+  TAB_COMMAND_CTX.setFocusedTab(tab)
+  sendTabSnapshot()
   const payload = {
     type: 'page_handoff',
     tabId: tab.id,
     url: tab.url,
     title: tab.title ?? '',
-    ...(selectionText ? { selectionText } : {}),
-    ...(textExcerpt ? { textExcerpt } : {})
+    ...(selectionText ? { selectionText } : {})
   }
   try {
     port.postMessage(payload)
@@ -149,9 +136,9 @@ async function sendTabSnapshot() {
   })
 }
 
-async function pushGroupTabSnapshots() {
+async function pushWindowTabSnapshots() {
   if (!port || state.tabId == null) return
-  const tabs = await getDogearTabs()
+  const tabs = await listAgentWindowTabs()
   for (const tab of tabs) {
     if (tab.id == null || tab.id === state.tabId) continue
     port.postMessage({
@@ -190,8 +177,9 @@ async function captureTabView(tabId) {
   if (!/^https?:/.test(tab.url ?? '')) {
     return { errorCode: 'permission_denied', error: `无法截取浏览器内部页（${tab.url ?? '未知地址'}），仅支持 http/https 页面` }
   }
-  if (!(await isInDogearGroup(tab))) {
-    return { errorCode: 'permission_denied', error: '仅能截取 Dogear 分组内的标签页（tabId 用 list_tabs 查询）' }
+  const agentWindowId = await getAgentWindowId()
+  if (tab.windowId !== agentWindowId && tabId !== state.tabId) {
+    return { errorCode: 'permission_denied', error: '仅能截取 agent 窗口内或当前焦点的标签页（tabId 用 list_tabs 查询）' }
   }
   const [prevActive] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
   const windowBefore = await chrome.windows.get(tab.windowId)
@@ -297,6 +285,26 @@ const TAB_COMMAND_CTX = {
   fail,
   postResult
 }
+
+async function recoverFocusAndPush() {
+  const focused = await pickFallbackFocus(null)
+  if (!focused) return
+  TAB_COMMAND_CTX.setFocusedTab(focused)
+  sendTabSnapshot()
+  pushWindowTabSnapshots()
+}
+
+chrome.tabs.onRemoved.addListener((closedTabId) => {
+  if (closedTabId !== state.tabId) return
+  pickFallbackFocus(closedTabId)
+    .then((fallback) => {
+      if (fallback) TAB_COMMAND_CTX.setFocusedTab(fallback)
+      else TAB_COMMAND_CTX.clearFocusedTab()
+      sendTabSnapshot()
+      pushWindowTabSnapshots()
+    })
+    .catch(() => {})
+})
 
 async function handleCommand(msg) {
   if (!port) return
@@ -406,7 +414,7 @@ async function handleCommand(msg) {
   const injectWorld = msg.kind === 'read_state' ? 'MAIN' : undefined
   const waitTimeoutMs = msg.kind === 'wait_for' && Number.isFinite(p.timeoutMs) ? Math.min(Math.max(p.timeoutMs, 1000), 30000) : null
   const injectTimeoutMs = waitTimeoutMs !== null ? waitTimeoutMs + 5000 : INJECT_TIMEOUT_MS
-  const clickBeforeIds = msg.kind === 'click' ? await snapshotGroupTabIds() : null
+  const clickBeforeIds = msg.kind === 'click' ? await snapshotOperableTabIds(state.tabId) : null
   let result = null
   let injectTimedOut = false
   try {
@@ -460,7 +468,7 @@ async function handleCommand(msg) {
     result.pageState = resolvePageState(result.url || tab.url || '', result.title || tab.title || '', '')
   }
   if (msg.kind === 'click') {
-    const newTab = await detectNewGroupTab(clickBeforeIds)
+    const newTab = await detectNewOperableTab(clickBeforeIds, { focusedTabId: state.tabId })
     if (newTab && newTab.id != null) {
       try {
         await chrome.tabs.update(newTab.id, { active: true })
@@ -498,7 +506,7 @@ async function connect() {
   port.postMessage({
     type: 'hello',
     extensionVersion: chrome.runtime.getManifest().version,
-    protocolVersion: 4,
+    protocolVersion: 5,
     tabId: NO_FOCUS_TAB_ID
   })
 }
@@ -513,11 +521,10 @@ initInterventionWatch((tabId) => {
   }
 })
 
-function onHostMessage(message) {
+async function onHostMessage(message) {
   if (message?.type === 'welcome') {
     setStatus({ status: 'connected', appVersion: message.appVersion ?? '', error: '' })
-    sendTabSnapshot()
-    pushGroupTabSnapshots()
+    await recoverFocusAndPush()
     return
   }
   if (message?.type === 'goodbye') {
@@ -542,13 +549,8 @@ function onHostDisconnect() {
   }
 }
 
-chrome.tabs.onCreated.addListener((tab) => {
+chrome.tabs.onCreated.addListener(() => {
   ensureConnected()
-  adoptPassiveTab(tab)
-    .then((adopted) => {
-      if (adopted) pushGroupTabSnapshots()
-    })
-    .catch(() => {})
 })
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -575,6 +577,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     setStatus({ status: 'idle', error: '' })
     sendResponse({ ok: true })
     return
+  }
+  if (message?.type === 'dogear_connect') {
+    markManualDisconnect(false)
+      .then(ensureConnected)
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }))
+    return true
   }
   if (message?.type === 'dogear_handoff') {
     getActiveTab()

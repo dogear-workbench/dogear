@@ -250,8 +250,7 @@ export function SyncWorkspaceCard({ peer }: { peer: PeerInfo }) {
         )}
 
         <p className="text-xs text-muted-foreground/80">
-          全局数据（设置、计划、记忆、通知等）恒定同步，不可关闭；仅工作区数据按上面的映射与开关选择性同步。
-          未映射的对端工作区目录不会落盘，映射必须显式建立。
+          工作区数据按上方映射选择性同步；未映射的对端工作区不落盘，映射需显式建立。
         </p>
       </CardContent>
     </Card>

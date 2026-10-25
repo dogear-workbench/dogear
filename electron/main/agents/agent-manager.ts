@@ -64,7 +64,6 @@ type SessionMessageCallback = (sessionId: string, message: string) => void;
 export interface AgentManagerConfig {
   maxWorkers?: number;          // 最大 Worker 数量 (默认 4)
   workerIdleTimeout?: number;   // Worker 空闲超时时间,毫秒 (默认 60000 = 1分钟)
-  taskRetryLimit?: number;      // 任务重试次数 (默认 2)
   enableAutoCleanup?: boolean;  // 是否启用自动清理 (默认 true)
 }
 
@@ -88,7 +87,6 @@ export class AgentManager extends EventEmitter {
     this.config = {
       maxWorkers: config.maxWorkers ?? 4,
       workerIdleTimeout: config.workerIdleTimeout ?? 60000,
-      taskRetryLimit: config.taskRetryLimit ?? 2,
       enableAutoCleanup: config.enableAutoCleanup ?? true
     };
 
@@ -159,32 +157,6 @@ export class AgentManager extends EventEmitter {
     this.assignTasks();
 
     return task.id;
-  }
-
-  /**
-   * 取消任务
-   */
-  cancelTask(taskId: string) {
-    this.logger.info('取消任务:', taskId.substring(0, 8));
-
-    // 从队列中移除
-    const queueIndex = this.taskQueue.findIndex(t => t.id === taskId);
-    if (queueIndex !== -1) {
-      this.taskQueue.splice(queueIndex, 1);
-      this.notifyCallbacks(taskId, TaskStatus.CANCELLED);
-      return;
-    }
-
-    // 如果任务正在执行,通知对应的 Worker
-    for (const wrapper of this.workers.values()) {
-      if (wrapper.currentTaskId === taskId) {
-        this.sendMessageToWorker(wrapper.workerId, {
-          type: 'cancel',
-          taskId
-        });
-        break;
-      }
-    }
   }
 
   /**
@@ -433,7 +405,7 @@ export class AgentManager extends EventEmitter {
         // Phase 3: 文章解析状态变化，发射事件供 tipc 层订阅后广播到前端
         this.emit('articleParseStatusChanged', {
           articleId: message.articleId,
-          workspacePath: message.workspacePath,
+          workspaceId: message.workspaceId,
           parseStatus: message.parseStatus,
         });
         break;
@@ -542,24 +514,14 @@ export class AgentManager extends EventEmitter {
       return;
     }
 
-    // 如果有正在执行的任务,根据策略决定是否重试
+    // 如果有正在执行的任务,标记为失败
     if (wrapper.currentTaskId) {
-      const task = this.findTaskInHistory(wrapper.currentTaskId);
-      if (task && (task.retryCount || 0) < this.config.taskRetryLimit) {
-        // 重试任务
-        this.logger.info('重试任务:', wrapper.currentTaskId);
-        task.retryCount = (task.retryCount || 0) + 1;
-        this.taskQueue.unshift(task);
-        this.assignTasks();
-      } else {
-        // 标记为失败
-        this.notifyCallbacks(
-          wrapper.currentTaskId,
-          TaskStatus.FAILED,
-          undefined,
-          'Worker 意外退出'
-        );
-      }
+      this.notifyCallbacks(
+        wrapper.currentTaskId,
+        TaskStatus.FAILED,
+        undefined,
+        'Worker 意外退出'
+      );
     }
 
     this.workers.delete(workerId);
@@ -603,14 +565,6 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
-   * 查找任务历史中的任务
-   */
-  private findTaskInHistory(taskId: string): AgentTask | null {
-    // TODO: 实现任务历史记录
-    return null;
-  }
-
-  /**
    * 启动自动清理定时器
    */
   private startCleanupTimer() {
@@ -642,58 +596,6 @@ export class AgentManager extends EventEmitter {
       this.logger.info('清理空闲 Worker:', workerId);
       this.terminateWorker(workerId);
     });
-  }
-
-  /**
-   * 获取管理器状态
-   */
-  getStatus() {
-    return {
-      workers: this.workers.size,
-      maxWorkers: this.config.maxWorkers,
-      queuedTasks: this.taskQueue.length,
-      activeTasks: Array.from(this.workers.values()).filter(w => w.currentTaskId !== null).length
-    };
-  }
-
-  /**
-   * 获取详细状态 (用于可视化监控)
-   * 包含所有 Worker 的详细信息和任务队列信息
-   */
-  getDetailedStatus() {
-    // 获取所有 Worker 的详细信息
-    const workersDetails = Array.from(this.workers.values()).map(wrapper => ({
-      workerId: wrapper.workerId,
-      isReady: wrapper.isReady,
-      currentTaskId: wrapper.currentTaskId,
-      lastActivity: wrapper.lastActivity,
-      createdAt: wrapper.createdAt,
-      idleTime: wrapper.currentTaskId === null ? Date.now() - wrapper.lastActivity : 0
-    }));
-
-    // 获取任务队列中的任务信息
-    const queuedTasksInfo = this.taskQueue.map(task => ({
-      id: task.id,
-      type: task.type,
-      status: task.status,
-      createdAt: task.createdAt
-    }));
-
-    return {
-      config: {
-        maxWorkers: this.config.maxWorkers,
-        workerIdleTimeout: this.config.workerIdleTimeout,
-        taskRetryLimit: this.config.taskRetryLimit
-      },
-      workers: workersDetails,
-      queuedTasks: queuedTasksInfo,
-      summary: {
-        totalWorkers: this.workers.size,
-        activeWorkers: workersDetails.filter(w => w.currentTaskId !== null).length,
-        idleWorkers: workersDetails.filter(w => w.currentTaskId === null && w.isReady).length,
-        queuedTasksCount: this.taskQueue.length
-      }
-    };
   }
 }
 

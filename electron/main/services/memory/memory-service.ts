@@ -20,16 +20,22 @@ import { readIndex, removeIndexEntry, updateIndexEntry } from './memory-indexer.
 
 // ─── 主题记忆 ───
 
-/** 合并列出工作区 + 全局主题（按 updated 降序，条目带 scope 标记） */
-export async function listTopics(workspaceId: string): Promise<ScopedTopicIndexEntry[]> {
+/** 列出主题（按 updated 降序，条目带 scope 标记）；scope 省略时合并工作区 + 全局 */
+export async function listTopics(
+  workspaceId: string,
+  scope?: MemoryScope
+): Promise<ScopedTopicIndexEntry[]> {
   const [wsIndex, globalIndex] = await Promise.all([
     readIndex(workspaceId),
     readIndex(workspaceId, 'global'),
   ]);
-  return [
+  const merged = [
     ...wsIndex.topics.map((e) => ({ ...e, scope: 'workspace' as const })),
     ...globalIndex.topics.map((e) => ({ ...e, scope: 'global' as const })),
-  ].sort((a, b) => (a.updated < b.updated ? 1 : -1));
+  ];
+  return (scope ? merged.filter((e) => e.scope === scope) : merged).sort(
+    (a, b) => (a.updated < b.updated ? 1 : -1)
+  );
 }
 
 export async function getTopic(

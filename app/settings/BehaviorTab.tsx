@@ -1,48 +1,110 @@
 /**
- * 设置页「基础设置」Tab
+ * 设置页「基础」Tab：左锚点导航 + 分组
  */
-import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Button } from '@/components/ui/button';
-import { Volume2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { client } from '@/lib/client';
-import type { AppSettings } from '@/types/settings';
+import type { AppSettings, EffortLevel, ModelSelection } from '@/types/settings';
+import type { SettingsSearchEntry } from './search-index';
 import { ModelSelector } from '@/components/ModelSelector';
-import { ExtensionActionPolicyNote, ExtensionStatusLine } from './ExtensionStatusLine';
-import { PaymentBlockedHostsSection } from './PaymentBlockedHostsSection';
-import { TaskBrowserSection } from './TaskBrowserSection';
-import { WebAiSitesSection } from './WebAiSitesSection';
+import { EffortSelector } from '@/components/EffortSelector';
 import { playDogearSound } from '@/lib/dogear-sound';
+import { FailoverSection } from './FailoverSection';
+import { Segmented, SettingRow, SettingsGroup } from './SettingsControls';
+import { useAnchorSpy } from './use-anchor-spy';
 
-const EFFORT_OPTIONS = [
-  { value: null, label: '默认' },
-  { value: 'off', label: '关闭' },
-  { value: 'low', label: '低' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
-  { value: 'max', label: '最高' },
+export const BEHAVIOR_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '默认模型', description: '新建对话使用的模型', keywords: ['model'] },
+  { label: '文章解析模型', description: '文章导入解析不过关时兜底，适合配便宜档' },
+  { label: '识图转派模型', description: '模型看不了图时，转给它识图' },
+  { label: '模型故障转移', description: '主模型限流/欠费时自动切到备用供应商', keywords: ['failover', '限流', '备用'] },
+  { label: '工具放行', description: '默认：白名单内自动放行，其余问你；自动执行：全部放行', keywords: ['权限', '工具'] },
+  { label: '无人值守', description: '人不在电脑前时自动处理确认与介入，事件推飞书', keywords: ['无人值守', '离开', '自动'] },
+  { label: '消息显示', description: '工具与思考过程默认收起还是展开' },
+  { label: '主题', description: '亮色 / 暗色 / 跟随系统', keywords: ['theme', '暗色', '亮色'] },
+  { label: '界面大小', description: '缩放文字与间距，对所有窗口生效' },
+  { label: '提示音', description: '会话完成、等确认时播放', keywords: ['音效', '声音'] },
+  { label: '仅后台时播放', description: '应用切到后台才播放提示音' },
+  { label: '音量', description: '提示音音量，可试听', keywords: ['volume'] },
+  { label: '需要确认时跳转焦点', description: '出现确认卡时自动切到对应窗口' },
+  { label: '活跃标记', description: '近期有活动的会话亮一个小点', keywords: ['活跃'] },
+  { label: '上滚时消息吸顶', description: '往上翻聊天时，你最近一条消息固定在顶部' },
+];
+
+const ANCHOR_GROUPS = [
+  { id: 'basic-model', label: '模型' },
+  { id: 'basic-chat', label: '对话' },
+  { id: 'basic-look', label: '外观' },
+  { id: 'basic-notify', label: '提示' },
+  { id: 'basic-list', label: '会话列表' },
 ] as const;
 
 const PERMISSION_MODE_OPTIONS = [
-  { value: 'default', label: '默认', description: '已注册工具包自动放行；基础工具按映射决定；其余需确认（推荐）' },
-  { value: 'autoExecute', label: '自动执行', description: '⚠️ 无条件放行所有工具调用，仅在受控环境中使用' },
+  { value: 'default', label: '默认' },
+  { value: 'autoExecute', label: '自动执行' },
+] as const;
+
+const MESSAGE_DISPLAY_OPTIONS = [
+  { value: 'compact', label: '简化' },
+  { value: 'detailed', label: '详细' },
+] as const;
+
+const THEME_OPTIONS = [
+  { value: 'light', label: '亮色' },
+  { value: 'dark', label: '暗色' },
+  { value: 'system', label: '跟随系统' },
 ] as const;
 
 const FONT_SIZE_OPTIONS = [
-  { value: 'small' as const, label: '小' },
-  { value: 'medium' as const, label: '中' },
-  { value: 'large' as const, label: '大' },
-];
+  { value: 'small', label: '小' },
+  { value: 'medium', label: '中' },
+  { value: 'large', label: '大' },
+] as const;
 
-const THEME_OPTIONS = [
-  { value: 'light' as const, label: '亮色', description: '柔雾浅灰底色，适合长时间阅读' },
-  { value: 'dark' as const, label: '暗色', description: '墨蓝底色，适合夜间与暗光环境' },
-  { value: 'system' as const, label: '跟随系统', description: '随操作系统深浅模式自动切换' },
-];
+const ALIVE_WINDOW_OPTIONS = [
+  { value: 'off', label: '不显示' },
+  { value: '30m', label: '30 分' },
+  { value: '1h', label: '1 小时' },
+  { value: '4h', label: '4 小时' },
+] as const;
 
-const inputCls = "h-9 w-full px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring";
+interface ModelPickProps {
+  local: AppSettings;
+  value: ModelSelection | null;
+  onModel: (v: ModelSelection | null) => void;
+  effort?: EffortLevel | null;
+  effortUnsetLabel?: string;
+  effortDisabled?: boolean;
+  onEffort?: (v: EffortLevel | null) => void;
+}
+
+function ModelPick({ local, value, onModel, effort, effortUnsetLabel, effortDisabled, onEffort }: ModelPickProps) {
+  return (
+    <div className="flex gap-2 w-[340px]">
+      <div className="flex-1 min-w-0">
+        <ModelSelector
+          settings={local}
+          value={value}
+          onChange={onModel}
+          allowUnset={true}
+          triggerVariant="block"
+        />
+      </div>
+      {onEffort && (
+        <div className="w-[104px] shrink-0">
+          <EffortSelector
+            variant="block"
+            value={effort ?? null}
+            unsetLabel={effortUnsetLabel}
+            disabled={effortDisabled}
+            onChange={onEffort}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface BehaviorTabProps {
   local: AppSettings;
@@ -50,51 +112,7 @@ interface BehaviorTabProps {
 }
 
 export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
-  const [isMac, setIsMac] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    client.getPlatform().then((p) => {
-      if (!cancelled) setIsMac(p === 'darwin');
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleRegisterNmHost = async () => {
-    try {
-      const res = await client.registerNmHost();
-      const failed = res.results.filter((r) => !r.ok);
-      if (failed.length > 0) {
-        toast.error('部分浏览器注册失败', {
-          description: failed.map((f) => `${f.browser}：${f.error}`).join('；'),
-        });
-        return;
-      }
-      toast.success(`已注册到 ${res.results.map((r) => r.browser).join('、')}`, {
-        description: '在浏览器扩展管理页重新加载 Dogear 扩展即可连接',
-      });
-    } catch (err) {
-      toast.error('注册失败', { description: err instanceof Error ? err.message : String(err) });
-    }
-  };
-
-  const handleUnregisterNmHost = async () => {
-    try {
-      const res = await client.unregisterNmHost();
-      const failed = res.filter((r) => !r.ok);
-      if (failed.length > 0) {
-        toast.error('部分浏览器注销失败', {
-          description: failed.map((f) => `${f.browser}：${f.error}`).join('；'),
-        });
-        return;
-      }
-      toast.success('已从所有浏览器注销');
-    } catch (err) {
-      toast.error('注销失败', { description: err instanceof Error ? err.message : String(err) });
-    }
-  };
+  const { rootRef, activeId, scrollTo } = useAnchorSpy(ANCHOR_GROUPS);
 
   const updateAI = (patch: Partial<AppSettings['ai']>) => {
     setLocal(prev => ({ ...prev, ai: { ...prev.ai, ...patch } }));
@@ -141,358 +159,180 @@ export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
     }));
   };
 
+  const soundOn = local.ui?.sound?.enabled ?? true;
+  const volume = local.ui?.sound?.volume ?? 0.25;
+
   return (
-    <div className="max-w-2xl mx-auto py-6 px-6">
-      <h2 className="text-lg font-semibold mb-1">基础设置</h2>
-      <p className="text-sm text-muted-foreground mb-6">配置 Agent 的思考模式、执行力度和权限策略</p>
-      <div className="space-y-6">
-        {/* Effort 级别 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">执行力度（effort）</label>
-          <p className="text-xs text-muted-foreground">
-            「默认」由模型自决思考深度；「关闭」不产生思考；其余级别控制思考投入程度。
-          </p>
-          <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
-            {EFFORT_OPTIONS.map(opt => (
-              <button key={String(opt.value)}
+    <div className="h-full flex flex-col">
+      <div className="px-6 pt-6 pb-4 shrink-0">
+        <h2 className="text-lg font-semibold mb-1">基础</h2>
+        <p className="text-sm text-muted-foreground">应用全局的默认配置</p>
+      </div>
+      <div className="flex-1 min-h-0 flex items-stretch">
+        <nav aria-label="基础设置分组" className="w-40 shrink-0 border-r border-border/40">
+          <div className="py-3 pr-3 flex flex-col gap-0.5">
+            {ANCHOR_GROUPS.map(g => (
+              <button
+                key={g.id}
+                type="button"
                 className={cn(
-                  'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-4 py-1.5 text-sm font-medium transition-all',
-                  (local.ai.effort ?? null) === opt.value
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
+                  'text-left text-sm px-3 py-1.5 rounded-r-md border-l-2 transition-colors',
+                  activeId === g.id
+                    ? 'border-primary bg-primary/10 text-foreground font-medium'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/50'
                 )}
-                onClick={() => updateAI({ effort: opt.value })}
+                onClick={() => scrollTo(g.id)}
               >
-                {opt.label}
+                {g.label}
               </button>
             ))}
           </div>
-        </div>
+        </nav>
 
-        {/* 默认模型 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">默认模型</label>
-          <p className="text-xs text-muted-foreground">
-            新建对话将使用此模型；选「不指定」时新对话需手动选择模型才能发送消息。
-            此处的修改仅影响之后新建的对话，不会改动已存在对话的模型设置。
-          </p>
-          <ModelSelector
-            settings={local}
-            value={local.ai.defaultModelSelection}
-            onChange={(v) => updateAI({ defaultModelSelection: v })}
-            allowUnset={true}
-            triggerVariant="block"
-          />
-        </div>
-
-        {/* 文章解析模型 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">文章解析模型</label>
-          <p className="text-xs text-muted-foreground">
-            文章导入固定解析不达标时的 AI 兑底任务使用此模型，适合配置便宜档；选「不指定」时回退到默认模型。
-          </p>
-          <ModelSelector
-            settings={local}
-            value={local.ai.parseModelSelection}
-            onChange={(v) => updateAI({ parseModelSelection: v })}
-            allowUnset={true}
-            triggerVariant="block"
-          />
-        </div>
-
-        {/* 话题状态提炼模型 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">话题状态提炼模型</label>
-          <p className="text-xs text-muted-foreground">
-            会话中同步提炼话题状态卡的后台任务使用此模型，运行频繁，适合配置便宜档；选「不指定」时回退到默认模型。
-          </p>
-          <ModelSelector
-            settings={local}
-            value={local.ai.stateModelSelection}
-            onChange={(v) => updateAI({ stateModelSelection: v })}
-            allowUnset={true}
-            triggerVariant="block"
-          />
-        </div>
-
-        {/* 识图转派模型 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">识图转派模型</label>
-          <p className="text-xs text-muted-foreground">
-            无视觉的主会话模型收到图片时，自动转派此模型识图后把描述注入会话；
-            选「不指定」时自动使用模型清单里第一个勾选「视觉」的模型。
-          </p>
-          <ModelSelector
-            settings={local}
-            value={local.ai.visionModelSelection ?? null}
-            onChange={(v) => updateAI({ visionModelSelection: v })}
-            allowUnset={true}
-            triggerVariant="block"
-          />
-        </div>
-
-        {/* 默认权限模式 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">默认权限模式</label>
-          <div className="space-y-2">
-            {PERMISSION_MODE_OPTIONS.map(opt => (
-              <label key={opt.value} className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                <input type="radio" name="permissionMode" className="mt-0.5"
-                  checked={local.ai.permissionMode === opt.value}
-                  onChange={() => updateAI({ permissionMode: opt.value })}
-                />
-                <div>
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-xs text-muted-foreground">{opt.description}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-        {/* 消息显示模式 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">消息显示模式</label>
-          <p className="text-xs text-muted-foreground">控制工具调用和思考过程的默认展开态</p>
-          <div className="space-y-2">
-            <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-              <input
-                type="radio"
-                name="messageDisplayMode"
-                className="mt-0.5"
-                checked={(local.ui?.messageDisplayMode ?? 'compact') === 'compact'}
-                onChange={() => updateUI({ messageDisplayMode: 'compact' })}
+        <div ref={rootRef} className="flex-1 min-w-0 overflow-y-auto">
+          <div className="max-w-[760px] pl-6 pr-6 pb-6">
+          <SettingsGroup id="basic-model" title="模型">
+            <SettingRow title="默认模型" desc="新建对话使用的模型">
+              <ModelPick
+                local={local}
+                value={local.ai.defaultModelSelection}
+                onModel={(v) => updateAI({ defaultModelSelection: v })}
               />
-              <div>
-                <div className="text-sm font-medium">简化（推荐）</div>
-                <div className="text-xs text-muted-foreground">工具调用和思考块默认折叠，只显示标题</div>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-              <input
-                type="radio"
-                name="messageDisplayMode"
-                className="mt-0.5"
-                checked={local.ui?.messageDisplayMode === 'detailed'}
-                onChange={() => updateUI({ messageDisplayMode: 'detailed' })}
+            </SettingRow>
+            <SettingRow title="文章解析模型" desc="文章导入解析不过关时兜底，适合配便宜档">
+              <ModelPick
+                local={local}
+                value={local.ai.parseModelSelection}
+                onModel={(v) => updateAI({ parseModelSelection: v })}
+                effort={local.ai.parseModelSelection?.effort ?? null}
+                effortUnsetLabel="跟随预设"
+                effortDisabled={!local.ai.parseModelSelection}
+                onEffort={(v) => {
+                  const sel = local.ai.parseModelSelection;
+                  if (sel) updateAI({ parseModelSelection: { ...sel, effort: v } });
+                }}
               />
-              <div>
-                <div className="text-sm font-medium">详细</div>
-                <div className="text-xs text-muted-foreground">工具调用和思考块默认展开，显示完整输入/输出</div>
-              </div>
-            </label>
-          </div>
-        </div>
+            </SettingRow>
+            <SettingRow title="识图转派模型" desc="模型看不了图时，转给它识图">
+              <ModelPick
+                local={local}
+                value={local.ai.visionModelSelection ?? null}
+                onModel={(v) => updateAI({ visionModelSelection: v })}
+                effort={local.ai.visionModelSelection?.effort ?? null}
+                effortUnsetLabel="跟随预设"
+                effortDisabled={!local.ai.visionModelSelection}
+                onEffort={(v) => {
+                  const sel = local.ai.visionModelSelection;
+                  if (sel) updateAI({ visionModelSelection: { ...sel, effort: v } });
+                }}
+              />
+            </SettingRow>
+            <FailoverSection local={local} setLocal={setLocal} />
+          </SettingsGroup>
 
-        {/* 界面大小 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">界面大小</label>
-          <p className="text-xs text-muted-foreground">
-            全局缩放文字、图标和间距（图表与终端字号不变），对所有窗口生效；默认为「中」。
-          </p>
-          <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
-            {FONT_SIZE_OPTIONS.map(opt => (
-              <button key={opt.value}
-                className={cn(
-                  'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-4 py-1.5 text-sm font-medium transition-all',
-                  (local.ui?.fontSize ?? 'medium') === opt.value
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground'
-                )}
-                onClick={() => updateUI({ fontSize: opt.value })}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+          <SettingsGroup id="basic-chat" title="对话">
+            <SettingRow title="工具放行" desc="默认：白名单内自动放行，其余问你；自动执行：全部放行，慎用">
+              <Segmented
+                value={local.ai.permissionMode}
+                options={PERMISSION_MODE_OPTIONS}
+                onChange={(v) => updateAI({ permissionMode: v })}
+              />
+            </SettingRow>
+            <SettingRow title="无人值守" desc="人不在电脑前时：确认自动放行、浏览器人工介入自动跳过、断联自动重试，事件推飞书">
+              <Switch
+                checked={local.ai.unattended}
+                onCheckedChange={(v) => updateAI({ unattended: v })}
+                aria-label="无人值守"
+              />
+            </SettingRow>
+            <SettingRow title="消息显示" desc="工具与思考过程默认收起还是展开">
+              <Segmented
+                value={local.ui?.messageDisplayMode ?? 'compact'}
+                options={MESSAGE_DISPLAY_OPTIONS}
+                onChange={(v) => updateUI({ messageDisplayMode: v })}
+              />
+            </SettingRow>
+          </SettingsGroup>
 
-        {/* Dogear 提示音 */}
-        <div className="space-y-3">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <label className="text-sm font-medium flex items-center gap-2">
-                <Volume2 className="w-4 h-4" />
-                Dogear 提示音
-              </label>
-              <p className="text-xs text-muted-foreground mt-1">
-                使用应用内合成音效，不调用 Windows 通知或系统提示音。主会话完成、任务完成/失败、等待授权时触发；仅应用后台时响（可关）。
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4"
-              checked={local.ui?.sound?.enabled ?? true}
-              onChange={(e) => updateSound({ enabled: e.target.checked })}
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pl-0">
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
+          <SettingsGroup id="basic-look" title="外观">
+            <SettingRow title="主题">
+              <Segmented
+                value={local.appearance?.theme ?? 'light'}
+                options={THEME_OPTIONS}
+                onChange={(v) => updateAppearance({ theme: v })}
+              />
+            </SettingRow>
+            <SettingRow title="界面大小" desc="缩放文字与间距，对所有窗口生效">
+              <Segmented
+                value={local.ui?.fontSize ?? 'medium'}
+                options={FONT_SIZE_OPTIONS}
+                onChange={(v) => updateUI({ fontSize: v })}
+              />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup id="basic-notify" title="提示">
+            <SettingRow title="提示音" desc="会话完成、等确认时播放">
+              <Switch
+                checked={soundOn}
+                onCheckedChange={(v) => updateSound({ enabled: v })}
+                aria-label="启用提示音"
+              />
+            </SettingRow>
+            <SettingRow title="仅后台时播放">
+              <Switch
                 checked={local.ui?.sound?.backgroundOnly ?? true}
-                onChange={(e) => updateSound({ backgroundOnly: e.target.checked })}
+                onCheckedChange={(v) => updateSound({ backgroundOnly: v })}
+                aria-label="仅后台时播放提示音"
               />
-              仅当 Dogear 不在前台时播放
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              音量
+            </SettingRow>
+            <SettingRow title="音量">
               <input
                 type="range"
-                min="0"
-                max="100"
-                step="5"
-                className="w-28"
-                value={Math.round((local.ui?.sound?.volume ?? 0.25) * 100)}
+                min={0}
+                max={100}
+                step={5}
+                className="w-28 accent-primary"
+                value={Math.round(volume * 100)}
                 onChange={(e) => updateSound({ volume: Number(e.target.value) / 100 })}
               />
-              <span className="w-9 text-xs text-muted-foreground">{Math.round((local.ui?.sound?.volume ?? 0.25) * 100)}%</span>
-            </label>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => playDogearSound('complete', { force: true, volume: local.ui?.sound?.volume })}
-              disabled={(local.ui?.sound?.enabled ?? true) === false}
-            >
-              试听
-            </Button>
-          </div>
-        </div>
-
-        {/* 人工介入焦点跳转 */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <label className="text-sm font-medium">需要确认时跳转焦点</label>
-            <p className="text-xs text-muted-foreground mt-1">
-              会话出现需要人工确认的卡片（如浏览器等待确认执行）时，自动激活所在窗口并滚动定位到卡片；关闭后仅提示音与系统通知。
-            </p>
-          </div>
-          <input
-            type="checkbox"
-            className="mt-1 h-4 w-4"
-            checked={local.ui?.interventionFocusJump ?? true}
-            onChange={(e) => updateInterventionFocusJump(e.target.checked)}
-          />
-        </div>
-
-        {/* 主题 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">主题</label>
-          <p className="text-xs text-muted-foreground">切换亮/暗配色，保存后立即应用到所有窗口；默认为「亮色」。</p>
-          <div className="space-y-2">
-            {THEME_OPTIONS.map(opt => (
-              <label key={opt.value} className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                <input type="radio" name="appearanceTheme" className="mt-0.5"
-                  checked={(local.appearance?.theme ?? 'light') === opt.value}
-                  onChange={() => updateAppearance({ theme: opt.value })}
-                />
-                <div>
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-xs text-muted-foreground">{opt.description}</div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* 浏览器 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">浏览器</label>
-          <p className="text-xs text-muted-foreground">
-            Agent 内嵌浏览器工具（读文章 / 网页搜索）共用的代理与搜索引擎配置。
-          </p>
-          <div className="space-y-4 rounded-lg border p-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">代理地址</label>
-              <p className="text-xs text-muted-foreground">
-                仅 Google / DuckDuckGo 搜索请求经此代理分流，读文章与 Bing 直连不受影响；
-                留空 = 禁用代理引擎，搜索仅使用 Bing。
-              </p>
-              <input
-                type="text"
-                className={inputCls}
-                value={local.browserProxyServer ?? ''}
-                onChange={(e) => setLocal(prev => ({ ...prev, browserProxyServer: e.target.value }))}
-                placeholder="127.0.0.1:7890"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">默认搜索引擎</label>
-              <p className="text-xs text-muted-foreground">
-                auto = 代理可用时用 Google，不可用时自动改用 Bing；搜索失败时按 Google → DuckDuckGo → Bing 自动降级。
-              </p>
-              <select
-                className="h-9 w-full px-3 text-sm border rounded bg-background"
-                value={local.browserSearchEngine}
-                onChange={(e) => setLocal(prev => ({
-                  ...prev,
-                  browserSearchEngine: e.target.value as AppSettings['browserSearchEngine'],
-                }))}
+              <span className="w-9 text-xs text-muted-foreground">{Math.round(volume * 100)}%</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!soundOn}
+                onClick={() => playDogearSound('complete', { force: true, volume })}
               >
-                <option value="auto">auto（智能选择）</option>
-                <option value="google">Google</option>
-                <option value="bing">Bing</option>
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">浏览器扩展</label>
-              <p className="text-xs text-muted-foreground">
-                连接后 Dogear 可读取扩展所在浏览器当前标签页的标题、网址与正文预览。
-              </p>
-              <ExtensionStatusLine />
-              <ExtensionActionPolicyNote />
-              {isMac && (
-                <div className="flex items-center gap-2 pt-1">
-                  <Button size="sm" variant="outline" onClick={handleRegisterNmHost}>
-                    注册到浏览器
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={handleUnregisterNmHost}>
-                    注销
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    写入 Chrome / Edge 的 NativeMessagingHosts 清单（换目录安装后请重新注册）
-                  </span>
-                </div>
-              )}
-            </div>
-            <TaskBrowserSection local={local} setLocal={setLocal} />
+                试听
+              </Button>
+            </SettingRow>
+            <SettingRow title="需要确认时跳转焦点" desc="出现确认卡时自动切到对应窗口">
+              <Switch
+                checked={local.ui?.interventionFocusJump ?? true}
+                onCheckedChange={updateInterventionFocusJump}
+                aria-label="需要确认时跳转焦点"
+              />
+            </SettingRow>
+          </SettingsGroup>
+
+          <SettingsGroup id="basic-list" title="会话列表">
+            <SettingRow title="活跃标记" desc="近期有活动的会话亮一个小点">
+              <Segmented
+                value={local.ui?.aliveWindow ?? '1h'}
+                options={ALIVE_WINDOW_OPTIONS}
+                onChange={(v) => updateUI({ aliveWindow: v })}
+              />
+            </SettingRow>
+            <SettingRow title="上滚时消息吸顶" desc="往上翻聊天时，你最近一条消息固定在顶部">
+              <Switch
+                checked={local.ui?.stickyUserMessage ?? true}
+                onCheckedChange={(v) => updateUI({ stickyUserMessage: v })}
+                aria-label="上滚时消息吸顶"
+              />
+            </SettingRow>
+          </SettingsGroup>
           </div>
-        </div>
-
-        <PaymentBlockedHostsSection local={local} setLocal={setLocal} />
-
-        <WebAiSitesSection local={local} setLocal={setLocal} />
-
-        {/* 联网搜索（GLM MCP） */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">联网搜索（GLM MCP）</label>
-          <p className="text-xs text-muted-foreground">
-            能力页「联网搜索」工具包（bigmodel__webSearch / bigmodel__webReader）的 API Key，
-            在智谱个人编程套餐 → 套餐概览页创建；消耗套餐专属 MCP 额度。
-          </p>
-          <div className="space-y-1.5 rounded-lg border p-4">
-            <label className="text-sm font-medium">GLM Coding Plan API Key</label>
-            <p className="text-xs text-muted-foreground">
-              留空时开启工具包也会因缺 Key 在调用时返回提示（不会崩溃）。
-            </p>
-            <input
-              type="password"
-              className={inputCls}
-              value={local.webMcpApiKey ?? ''}
-              onChange={(e) => setLocal(prev => ({ ...prev, webMcpApiKey: e.target.value }))}
-              placeholder="GLM Coding Plan API Key"
-              autoComplete="off"
-            />
-          </div>
-        </div>
-
-        {/* 通用级 agent.md：唯一编辑入口在能力页「全局规则」包详情 */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">通用级 Agent 指令</label>
-          <p className="text-xs text-muted-foreground">
-            位于 <code className="text-[0.9em] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
-            对所有工作区生效。在「能力」页选择「全局规则」包进行编辑。
-          </p>
         </div>
       </div>
     </div>

@@ -12,7 +12,6 @@ export type {
 export {
   detectPlatform,
   FetchError,
-  isBrowserRetryableFetchError,
   fetchRawHtml,
   tryPlatformScript,
 } from './article/fetch.js';
@@ -30,15 +29,20 @@ export {
   saveArticleFromScript,
   saveRawHtmlStub,
   listArticles,
-  getArticle,
+  getArticleWithRelPath,
+  getArticleFileByRelPath,
   updateArticleParseStatus,
-  deleteArticle,
+  deleteArticleEntry,
+  deleteArticleFileByRelPath,
+  renameArticleFileWithCompanion,
+  moveArticleFileWithCompanion,
 } from './article/crud.js';
 
+export { ARTICLES_DIR, getArticlesRoot, isArticlesRelPath } from './article/types.js';
+
 export {
-  listArticleTree,
-  createArticleFolder,
-  moveArticleItem,
-  renameArticleFolder,
-  deleteArticleFolder,
-} from './article/tree.js';
+  runParseArticlePipeline,
+  type ArticleParseSource,
+  type ArticleParseDetail,
+  type ArticleParsePipelineResult,
+} from './article/pipeline.js';

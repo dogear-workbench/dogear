@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import { showConfirm } from '@/stores/confirm-store';
 import { rendererEvents } from '@/lib/events';
 import type { ArticleMeta, Article, ArticleParseStatus } from '@/types/article';
 
@@ -10,24 +9,25 @@ interface ArticleState {
   selectedArticle: Article | null;
   loadingArticleDetail: boolean;
   parsingArticle: boolean;
+  retryingArticle: boolean;
   showArticleUrlInput: boolean;
   articleUrlInput: string;
 
   // --- Actions ---
-  /** 选择文章，加载完整内容 */
+  /** 选择文章（路径形态）：加载详情并打开阅读 tab（阅读视图按 dogear/articles 内路径识别文章模式） */
   selectArticle: (articleMeta: ArticleMeta) => Promise<void>;
-  /** 删除文章（通过路径） */
-  deleteArticle: (articlePath: string) => Promise<void>;
+  /** 仅加载文章详情（阅读视图从最近列表恢复/切换文章时用，不触发路由） */
+  loadArticleDetailByPath: (workspaceId: string, relPath: string) => Promise<void>;
+  /** 重试解析当前选中文章：走既有 parseArticle 管线，成功后打开新文章 */
+  retryParse: () => Promise<void>;
   /** 显示 URL 输入框 */
   showUrlInput: () => void;
   /** 隐藏 URL 输入框 */
   hideUrlInput: () => void;
   /** 设置 URL 输入值 */
   setArticleUrlInput: (value: string) => void;
-  /** 提交 URL 解析文章 */
-  submitArticleUrl: () => Promise<void>;
-  /** 登录墙手动重试：重新解析当前选中的 need_login 文章 */
-  retryAfterLogin: () => Promise<void>;
+  /** 提交 URL 解析文章；返回是否提交成功 */
+  submitArticleUrl: () => Promise<boolean>;
   /** 清除选中的文章 */
   clearSelectedArticle: () => void;
   /** 重置所有状态到初始值 */
@@ -40,35 +40,31 @@ const getWorkspaceId = async () => {
   return useWorkspaceStore.getState().workspace?.id;
 };
 
+/** 打开阅读 tab 的文件目标（路由逻辑收口在 markdown-preview-store；文章模式由阅读面板按路径识别） */
+function openInReadingTab(workspaceId: string, articlePath: string, title: string) {
+  void import('./markdown-preview-store').then(({ useMarkdownPreviewStore }) => {
+    useMarkdownPreviewStore.getState().open(workspaceId, articlePath, title);
+  });
+}
+
 export const useArticleStore = create<ArticleState>((set, get) => ({
   selectedArticle: null,
   loadingArticleDetail: false,
   parsingArticle: false,
+  retryingArticle: false,
   showArticleUrlInput: false,
   articleUrlInput: '',
 
-  selectArticle: async (articleMeta) => {
-    const workspaceId = await getWorkspaceId();
-    if (!workspaceId) {
-      console.warn('selectArticle: 无活跃工作区，忽略');
-      return;
-    }
-
+  loadArticleDetailByPath: async (workspaceId, relPath) => {
     try {
       set({ loadingArticleDetail: true });
-      const { useWorkspaceStore } = await import('./workspace-store');
-      useWorkspaceStore.getState().clearSelectedFile();
-
-      const result = await client.getArticleDetail({ workspaceId, articleId: articleMeta.id });
-      if (result.error) {
-        console.error('获取文章详情失败:', result.error);
+      const result = await client.getArticleByPath({ workspaceId, relPath });
+      if (result.error || !result.article) {
+        if (result.error) console.error('获取文章详情失败:', result.error);
+        set({ selectedArticle: null });
         return;
       }
-      set({ selectedArticle: result.article || null });
-      if (result.article) {
-        const { useSessionStore, ARTICLE_TAB_ID } = await import('./session-store');
-        useSessionStore.getState().switchTab(ARTICLE_TAB_ID);
-      }
+      set({ selectedArticle: { ...result.article, path: relPath } });
     } catch (error) {
       console.error('获取文章详情失败:', error);
     } finally {
@@ -76,28 +72,47 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     }
   },
 
-  deleteArticle: async (articlePath) => {
+  selectArticle: async (articleMeta) => {
+    const workspaceId = await getWorkspaceId();
+    if (!workspaceId) {
+      console.warn('selectArticle: 无活跃工作区，忽略');
+      return;
+    }
+    if (!articleMeta.path) {
+      console.warn('selectArticle: 文章缺少路径，忽略');
+      return;
+    }
+
+    const { useWorkspaceStore } = await import('./workspace-store');
+    useWorkspaceStore.getState().clearSelectedFile();
+    openInReadingTab(workspaceId, articleMeta.path, articleMeta.title);
+    await get().loadArticleDetailByPath(workspaceId, articleMeta.path);
+  },
+
+  retryParse: async () => {
+    const article = get().selectedArticle;
+    if (!article) return;
     const workspaceId = await getWorkspaceId();
     if (!workspaceId) return;
 
-    if (!await showConfirm('删除文章', '确定要删除这篇文章吗？此操作不可恢复。')) return;
-
     try {
-      const result = await client.deleteItem({ workspaceId, itemPath: articlePath });
-      if (result.error) {
-        toast.error('删除文章失败', { description: result.error });
+      set({ retryingArticle: true });
+      const result = await client.parseArticle({ url: article.url, workspaceId });
+      if ('error' in result) {
+        toast.error('重试解析失败', { description: result.error });
         return;
       }
-      // 如果删除的是当前选中的文章，清除选中状态（含文章 tab 回退）
-      if (get().selectedArticle && get().selectedArticle!.id && articlePath.includes(get().selectedArticle!.id)) {
-        get().clearSelectedArticle();
-      }
-      // 刷新文件树
+      // 管线按 URL 新建文章条目；成功后切到新文章（articlePath 为实际落盘相对路径）
       const { useWorkspaceStore } = await import('./workspace-store');
       useWorkspaceStore.getState().loadWorkspaceFiles();
+      if (result.article && result.articlePath) {
+        await get().selectArticle({ ...result.article, path: result.articlePath });
+        toast.success('重新解析完成');
+      }
     } catch (error) {
-      console.error('删除文章失败:', error);
-      toast.error('删除文章失败', { description: error instanceof Error ? error.message : String(error) });
+      toast.error('重试解析失败', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      set({ retryingArticle: false });
     }
   },
 
@@ -110,97 +125,52 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
   submitArticleUrl: async () => {
     const workspaceId = await getWorkspaceId();
     const { articleUrlInput } = get();
-    if (!workspaceId || !articleUrlInput.trim()) return;
+    if (!workspaceId || !articleUrlInput.trim()) return false;
 
     try {
       set({ parsingArticle: true });
       const result = await client.parseArticle({ url: articleUrlInput.trim(), workspaceId });
       if ('error' in result) {
         toast.error('文章解析失败', { description: result.error });
-        return;
-      }
-      if (result.article?.parseStatus !== 'need_login') {
-        toast.success('文章保存成功');
+        return false;
       }
       // 关闭输入框
       set({ showArticleUrlInput: false, articleUrlInput: '' });
       // 刷新文件树
       const { useWorkspaceStore } = await import('./workspace-store');
       useWorkspaceStore.getState().loadWorkspaceFiles();
-      // 自动选中新解析的文章
-      if (result.article) {
-        get().selectArticle(result.article);
+      // 自动选中新解析的文章（articlePath 为实际落盘相对路径）
+      if (result.article && result.articlePath) {
+        await get().selectArticle({ ...result.article, path: result.articlePath });
       }
+      return true;
     } catch (error) {
       console.error('解析文章失败:', error);
       toast.error('文章解析失败', { description: error instanceof Error ? error.message : String(error) });
+      return false;
     } finally {
       set({ parsingArticle: false });
     }
   },
 
-  retryAfterLogin: async () => {
-    const article = get().selectedArticle;
-    if (!article) return;
-    const workspaceId = await getWorkspaceId();
-    if (!workspaceId) return;
-
-    try {
-      set({ parsingArticle: true });
-      const result = await client.parseArticle({ url: article.url, workspaceId });
-      if ('error' in result) {
-        toast.error('文章解析失败', { description: result.error });
-        return;
-      }
-      // 新结果落盘后清理旧的 need_login stub，避免树里残留重复条目
-      if (result.article && result.article.id !== article.id) {
-        await client.deleteArticle({ workspaceId, articleId: article.id }).catch((error) => {
-          console.warn('清理旧登录墙条目失败:', error);
-        });
-      }
-      if (result.article?.parseStatus === 'need_login') {
-        toast.info('登录态未生效', { description: '请确认已在浏览器窗口完成登录，再点击重试' });
-      } else {
-        toast.success('文章保存成功');
-      }
-      const { useWorkspaceStore } = await import('./workspace-store');
-      useWorkspaceStore.getState().loadWorkspaceFiles();
-      if (result.article) {
-        get().selectArticle(result.article);
-      }
-    } catch (error) {
-      console.error('重试解析文章失败:', error);
-      toast.error('文章解析失败', { description: error instanceof Error ? error.message : String(error) });
-    } finally {
-      set({ parsingArticle: false });
-    }
-  },
-
-  clearSelectedArticle: () => {
-    set({ selectedArticle: null });
-    // 文章 tab 随选中态卸载；若当前正停留在文章 tab，回退到最近会话 tab 或空态
-    void import('./session-store').then(({ useSessionStore, ARTICLE_TAB_ID }) => {
-      const s = useSessionStore.getState();
-      if (s.activeTabId !== ARTICLE_TAB_ID) return;
-      s.fallbackActiveTab();
-    });
-  },
+  clearSelectedArticle: () => set({ selectedArticle: null }),
 
   reset: () => set({
     selectedArticle: null,
     loadingArticleDetail: false,
     parsingArticle: false,
+    retryingArticle: false,
     showArticleUrlInput: false,
     articleUrlInput: '',
   }),
 }));
 
-// Phase 3: 监听后端解析状态变化，实时更新选中文章的 parseStatus
+// 监听后端解析状态变化，实时更新选中文章的 parseStatus
 // 只在浏览器环境启用（有 window.ipcRenderer）
 if (typeof window !== 'undefined' && window.ipcRenderer) {
   rendererEvents.articleParseStatusChanged.listen((data: {
     articleId: string;
-    workspacePath: string;
+    workspaceId: string;
     parseStatus: ArticleParseStatus;
   }) => {
     const state = useArticleStore.getState();
@@ -209,13 +179,5 @@ if (typeof window !== 'undefined' && window.ipcRenderer) {
         selectedArticle: { ...state.selectedArticle, parseStatus: data.parseStatus },
       });
     }
-  });
-
-  // 浏览器层遇登录墙：主进程已把浏览器窗口置前并落 need_login stub，这里提示用户
-  rendererEvents.browserLoginRequired.listen(() => {
-    toast.info('该页面需要登录，已为你打开浏览器窗口');
-    void import('./workspace-store').then(({ useWorkspaceStore }) => {
-      useWorkspaceStore.getState().loadWorkspaceFiles();
-    });
   });
 }

@@ -1,9 +1,8 @@
 import { useParams } from 'react-router';
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Loader2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AgentChat } from '@/components/agent-chat/AgentChat';
-import { ArticlePreview } from '@/components/ArticlePreview';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
@@ -11,7 +10,6 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
-import { useArticleStore } from '@/stores/article-store';
 import { useInterventionFocusStore } from '@/stores/intervention-focus-store';
 import { TitleBar } from '@/components/TitleBar';
 import { FileHistoryPanel } from '@/components/FileHistoryPanel';
@@ -24,8 +22,6 @@ export function SessionWindowPage() {
   const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null);
 
   const workbenchWindowOpen = useUIStore((s) => s.workbenchWindowOpen);
-  const selectedArticle = useArticleStore((s) => s.selectedArticle);
-  const clearSelectedArticle = useArticleStore((s) => s.clearSelectedArticle);
 
   const conversations = useConversationStore((s) => s.conversations);
   const loadConversations = useConversationStore((s) => s.loadConversations);
@@ -151,7 +147,7 @@ export function SessionWindowPage() {
           ) : (
             <div className="h-full relative">
               {/* 聊天位：display 切换保挂载，文章视图打开期间后台消息流不中断 */}
-              <div className="absolute inset-0" style={{ display: selectedArticle ? 'none' : 'block' }}>
+              <div className="absolute inset-0">
                 {conversationId && (
                   <AgentChat
                     conversationIdOverride={conversationId}
@@ -161,20 +157,6 @@ export function SessionWindowPage() {
                   />
                 )}
               </div>
-              {selectedArticle && (
-                <div className="absolute inset-0 flex flex-col bg-background">
-                  <div className="h-9 border-b flex items-center gap-2 px-2 shrink-0">
-                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={clearSelectedArticle}>
-                      <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                      返回会话
-                    </Button>
-                    <span className="text-sm text-muted-foreground truncate">{selectedArticle.title}</span>
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <ArticlePreview />
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </main>

@@ -7,18 +7,13 @@
  * 主进程 rootDir 限制无法跨目录 import 前端类型，因此在此镜像必要字段（同 ContractMetadata 的做法）。
  */
 import type {
-  SessionTreeEntry,
-  MessageEntry,
-  CompactionEntry,
-} from '@earendil-works/pi-agent-core';
-import type {
   TextContent,
   ImageContent,
   ToolResultMessage,
   UserMessage,
   AssistantMessage,
 } from '@earendil-works/pi-ai';
-import { readSessionBranchEntries } from './session-history-reader.js';
+import { readSessionBranchEntries, type SessionBranchEntry } from './session-history-reader.js';
 
 export interface HistoryContentBlock {
   type: 'text' | 'thinking' | 'tool_use' | 'compact_boundary';
@@ -38,11 +33,11 @@ export interface HistoryMessage {
   content: string;
   timestamp: number;
   contentBlocks?: HistoryContentBlock[];
-  /** Harness SessionTreeEntry id（仅助手消息填充），供前端"分叉"按钮作为稳定 entry 定位信息回传 */
+  /** Harness SessionBranchEntry id（仅助手消息填充），供前端"分叉"按钮作为稳定 entry 定位信息回传 */
   sdkUuid?: string;
-  /** 消息级稳定 ID = SessionTreeEntry.id；assistant 合并消息 = 最后一个 entry id（与 sdkUuid 同值） */
+  /** 消息级稳定 ID = SessionBranchEntry.id；assistant 合并消息 = 最后一个 entry id（与 sdkUuid 同值） */
   id?: string;
-  /** assistant 合并消息覆盖的全部 SessionTreeEntry id（按落盘顺序）；user/compaction 为单元素 */
+  /** assistant 合并消息覆盖的全部 SessionBranchEntry id（按落盘顺序）；user/compaction 为单元素 */
   entryIds?: string[];
   model?: string;
   images?: Array<{ preview: string }>;
@@ -68,10 +63,10 @@ function extractToolResultText(content: (TextContent | ImageContent)[]): string 
     .join('\n');
 }
 
-function compactionToMessage(entry: CompactionEntry): HistoryMessage {
-  const ts = new Date(entry.timestamp).getTime();
-  // fromHook 只区分"是否由 session_before_compact hook 提供"，Dogear 未注册该 hook 且
-  // 无法区分手动/自动，不映射 trigger（渲染层对 undefined 不标注，避免错标 manual）
+function compactionToMessage(entry: Extract<SessionBranchEntry, { type: 'compaction' }>): HistoryMessage {
+  const ts = entry.timestamp;
+  // trigger 不映射：历史 entry 只有 durable CompactionEntry 的 reason（自动压缩策略类别），
+  // 与旧 manual/auto 语义不同轴，渲染层对 undefined 不标注避免错标
   return {
     role: 'assistant',
     content: '',
@@ -79,16 +74,15 @@ function compactionToMessage(entry: CompactionEntry): HistoryMessage {
     id: entry.id,
     entryIds: [entry.id],
     isCompactBoundary: true,
-    compactMetadata: { preTokens: entry.tokensBefore },
-    contentBlocks: [{ type: 'compact_boundary', compactPreTokens: entry.tokensBefore, timestamp: ts }],
+    compactMetadata: { trigger: 'auto' },
+    contentBlocks: [{ type: 'compact_boundary', compactTrigger: 'auto', timestamp: ts }],
   };
 }
 
 /**
  * 把 Harness 当前 branch 的 entry 序列转成前端消息数组。
  * 只展示 message（user/assistant，toolResult 并入对应 tool_use 块）和 compaction（映射为
- * compact boundary 元消息）；model_change/label/custom/active_tools_change/branch_summary/
- * session_info/leaf/thinking_level_change 等非展示 entry 一律跳过，不进入消息流。
+ * compact boundary 元消息）；branch_summary/custom 等非展示 entry 一律跳过，不进入消息流。
  */
 export async function buildSessionHistory(workspaceId: string, sessionId: string): Promise<HistoryMessage[]> {
   const entries = await readSessionBranchEntries(workspaceId, sessionId);
@@ -117,8 +111,7 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
     }
 
     if (entry.type !== 'message') continue;
-    const messageEntry = entry as MessageEntry;
-    const message = messageEntry.message as { role: string };
+    const message = entry.message as { role: string };
 
     if (message.role === 'toolResult') continue;
 
@@ -131,8 +124,8 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
         role: 'user',
         content: text,
         timestamp: um.timestamp,
-        id: messageEntry.id,
-        entryIds: [messageEntry.id],
+        id: entry.id,
+        entryIds: [entry.id],
         ...(images.length > 0 ? { images } : {}),
       });
       continue;
@@ -166,9 +159,9 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
     if (current && current.role === 'assistant' && !current.isCompactBoundary) {
       current.contentBlocks = [...(current.contentBlocks ?? []), ...blocks];
       current.content += text;
-      current.sdkUuid = messageEntry.id;
-      current.id = messageEntry.id;
-      current.entryIds = [...(current.entryIds ?? []), messageEntry.id];
+      current.sdkUuid = entry.id;
+      current.id = entry.id;
+      current.entryIds = [...(current.entryIds ?? []), entry.id];
       if (am.model) current.model = am.model;
     } else {
       flush();
@@ -177,9 +170,9 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
         content: text,
         timestamp: am.timestamp,
         contentBlocks: blocks.length > 0 ? blocks : undefined,
-        sdkUuid: messageEntry.id,
-        id: messageEntry.id,
-        entryIds: [messageEntry.id],
+        sdkUuid: entry.id,
+        id: entry.id,
+        entryIds: [entry.id],
         model: am.model,
       };
     }

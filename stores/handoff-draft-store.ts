@@ -1,17 +1,17 @@
 import { create } from 'zustand';
 import { rendererEvents } from '@/lib/events';
 
-/** 浏览器一键移交草稿（等待用户编辑后随消息发出） */
+/** 浏览器一键移交草稿（等待用户编辑后随消息发出）；instruction 为主进程预填的默认指令（整页移交才有，选中内容移交为空走纯内联） */
 export interface HandoffDraft {
   id: string;
   title: string;
   url: string;
   selectionText?: string;
-  textExcerpt?: string;
+  instruction?: string;
   createdAt: number;
 }
 
-type HandoffDraftInput = Pick<HandoffDraft, 'title' | 'url'> & Partial<Pick<HandoffDraft, 'selectionText' | 'textExcerpt'>>;
+type HandoffDraftInput = Pick<HandoffDraft, 'title' | 'url'> & Partial<Pick<HandoffDraft, 'selectionText' | 'instruction'>>;
 
 interface HandoffDraftState {
   draftsByConversation: Record<string, HandoffDraft[]>;
@@ -62,14 +62,14 @@ export const useHandoffDraftStore = create<HandoffDraftState>((set) => ({
 }));
 
 if (typeof window !== 'undefined' && window.ipcRenderer) {
-  rendererEvents.browserHandoffReceived.listen(({ conversationId, title, url, selectionText, textExcerpt }) => {
+  rendererEvents.browserHandoffReceived.listen(({ conversationId, title, url, selectionText, instruction }) => {
     useHandoffDraftStore
       .getState()
       .addDraft(conversationId, {
         title,
         url,
         ...(selectionText ? { selectionText } : {}),
-        ...(textExcerpt ? { textExcerpt } : {}),
+        ...(instruction ? { instruction } : {}),
       });
   });
 }

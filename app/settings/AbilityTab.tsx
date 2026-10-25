@@ -1,29 +1,55 @@
 import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView } from '../../electron/main/tipc/ability';
 import { AbilityPackCard } from './ability/AbilityPackCard';
 import { AbilityPackDetailPage } from './ability/AbilityPackDetailPage';
+import { CustomSkillDetailPage } from './ability/CustomSkillDetailPage';
+import { CustomSkillsSection } from './ability/CustomSkillsSection';
 import { RulesPackCard } from './ability/RulesPackCard';
 import { RulesPackDetailPage } from './ability/RulesPackDetailPage';
 import { SystemBehaviorDetail } from './ability/SystemBehaviorDetail';
 import { CATEGORY_FALLBACK, type AbilityCategoryMeta } from './ability/pack-meta';
 import { EMPTY_CONFIG } from './ability/config-mutations';
+import type { SettingsSearchEntry } from './search-index';
+
+export const ABILITY_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '能力包总览', description: '查看能力详情与加载情况，启停配置在场景页' },
+  { label: '工作区规则', description: '工作区 agent.md 规则包查看与编辑', keywords: ['agent.md'] },
+  { label: '全局规则', description: '跨工作区共享的通用级 agent.md 规则包' },
+  { label: '系统行为', description: '系统内置行为与常驻工具组详情' },
+  { label: '自定义 Skill', description: '自定义技能列表，点击查看与编辑 SKILL.md', keywords: ['skills'] },
+];
+
+const SKILL_ROUTE_PREFIX = '__skill__:';
 
 type PacksResult = Awaited<ReturnType<typeof client.getAbilityPacks>>;
+type ListedSkills = Exclude<Awaited<ReturnType<typeof client.listSkills>>, { error: string }>['skills'];
 
 export function AbilityTab() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>(EMPTY_CONFIG);
   const [packsResult, setPacksResult] = useState<Exclude<PacksResult, { error: string }> | null>(null);
+  const [skills, setSkills] = useState<ListedSkills | null>(null);
   const [categories, setCategories] = useState<readonly AbilityCategoryMeta[]>(CATEGORY_FALLBACK);
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [mountsRefreshKey, setMountsRefreshKey] = useState(0);
 
   const bumpMounts = useCallback(() => setMountsRefreshKey((v) => v + 1), []);
+
+  const refreshSkills = useCallback(async () => {
+    const skillsRes = await client.listSkills({ workspaceId: null });
+    if ('error' in skillsRes) {
+      setSkills(null);
+      toast.error('技能列表读取失败', { description: String(skillsRes.error) });
+      return;
+    }
+    setSkills(skillsRes.skills);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +60,7 @@ export function AbilityTab() {
           client.getAll(),
           client.getDefault(),
           client.getAbilityPacks(),
+          refreshSkills(),
         ]);
         if (cancelled) return;
         const list = allRes?.workspaces ?? [];
@@ -57,7 +84,7 @@ export function AbilityTab() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshSkills]);
 
   const handleWorkspaceChange = async (id: string) => {
     setWorkspaceId(id);
@@ -70,6 +97,19 @@ export function AbilityTab() {
   const systemBehaviors = packsResult?.systemBehaviors ?? [];
   const activeWorkspace = workspaces.find((w) => w.id === workspaceId) ?? null;
 
+  const onDemandGroups = packs.flatMap((pack) =>
+    (pack.deferredToolGroups ?? []).map((id) => {
+      const meta = pack.toolGroupMetas.find((g) => g.id === id);
+      return {
+        id,
+        label: meta?.label ?? id,
+        toolCount: meta?.tools.length ?? 0,
+        packKey: pack.key,
+        packLabel: pack.label,
+      };
+    }),
+  );
+
   const packEnabled = useCallback(
     (pack: AbilityPackView) => workspaceConfig.abilityOverrides?.[pack.key] ?? pack.defaultEnabled,
     [workspaceConfig.abilityOverrides],
@@ -79,7 +119,13 @@ export function AbilityTab() {
   const globalRulesPack = packs.find((p) => p.key === 'global-rules') ?? null;
   const otherPacks = packs.filter((p) => p.key !== 'workspace-rules' && p.key !== 'global-rules');
   const selectedIsRules = selectedKey === 'workspace-rules' || selectedKey === 'global-rules';
-  const selectedPack = selectedKey === '__system__' || selectedIsRules ? null : (packs.find((p) => p.key === selectedKey) ?? null);
+  const selectedSkillName = selectedKey?.startsWith(SKILL_ROUTE_PREFIX)
+    ? selectedKey.slice(SKILL_ROUTE_PREFIX.length)
+    : null;
+  const selectedPack =
+    selectedKey === '__system__' || selectedIsRules || selectedSkillName
+      ? null
+      : (packs.find((p) => p.key === selectedKey) ?? null);
   const selectedIsSystem = selectedKey === '__system__';
 
   const noWorkspace = workspaceId === null;
@@ -114,13 +160,23 @@ export function AbilityTab() {
     );
   }
 
+  if (selectedSkillName) {
+    return (
+      <CustomSkillDetailPage
+        key={selectedSkillName}
+        name={selectedSkillName}
+        onBack={() => setSelectedKey(null)}
+        onRefresh={refreshSkills}
+      />
+    );
+  }
+
   if (selectedPack) {
     return (
       <AbilityPackDetailPage
         key={selectedPack.key}
         pack={selectedPack}
         workspaceId={workspaceId}
-        config={workspaceConfig}
         packEnabled={packEnabled(selectedPack)}
         refreshKey={mountsRefreshKey}
         onBack={() => setSelectedKey(null)}
@@ -218,6 +274,39 @@ export function AbilityTab() {
           </section>
         );
       })}
+
+      {onDemandGroups.length > 0 && (
+        <section className="space-y-2">
+          <div>
+            <h3 className="text-sm font-semibold">按需能力</h3>
+            <p className="text-xs text-muted-foreground">低频工具，会话用到时自动可用。</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {onDemandGroups.map((g) => (
+              <button
+                key={`${g.packKey}:${g.id}`}
+                type="button"
+                onClick={() => setSelectedKey(g.packKey)}
+                className="text-xs rounded px-2 py-1 bg-muted/40 transition-colors hover:bg-muted/70"
+                aria-label={`查看 ${g.packLabel}`}
+              >
+                <span className="text-foreground/80">{g.label}</span>
+                <span className="text-muted-foreground">
+                  {' '}· {g.toolCount} 工具{g.packLabel !== g.label ? ` · ${g.packLabel}` : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {skills && (
+        <CustomSkillsSection
+          skills={skills}
+          onRefresh={refreshSkills}
+          onOpen={(name) => setSelectedKey(`${SKILL_ROUTE_PREFIX}${name}`)}
+        />
+      )}
     </div>
   );
 }

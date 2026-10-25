@@ -252,6 +252,10 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
     releaseParentHold(c);
+    // complete 已结算仍 isRunning() = run 卡死未 settle 的僵尸，遗弃强杀而非等待（close 内部 abort 有界兜底）
+    if (getPiSessionManager().getSession(c.sessionId)?.isRunning()) {
+      void getPiSessionManager().closeSession(c.sessionId);
+    }
   } finally {
     settling.delete(c.childId);
   }

@@ -37,11 +37,44 @@ function clampTitle(text: string): string {
   return (one.length > 30 ? one.slice(0, 30) : one) || '新对话';
 }
 
-function buildFirstMessage(sourceTitle: string, summary: string, userMessage: string): string {
+function buildFirstMessage(sourceTitle: string, summary: string, userMessage: string, sourceSessionId: string | null): string {
   return [
     `来自「${sourceTitle}」的岔题分流`,
     `摘要：${summary}`,
     userMessage ? `补充：${userMessage}` : '',
+    sourceSessionId
+      ? `源会话 sessionId：${sourceSessionId}；需要源会话更多背景时，可用 dogear__ReadReferenceSession 读取`
+      : '',
+  ].filter(Boolean).join('\n');
+}
+
+export const continueConversationInputSchema = z.object({
+  sourceConversationId: z.string().min(1),
+  note: z.string().max(4000).optional().default(''),
+});
+
+// 渲染层调用类型用 z.input：note 有 default，可不传
+export type ContinueConversationInput = z.input<typeof continueConversationInputSchema>;
+
+export interface ContinueConversationResult {
+  ok: boolean;
+  conversationId: string | null;
+  groupId: string | null;
+  title: string | null;
+  warning: string | null;
+  error: string | null;
+}
+
+function continueFail(error: string): ContinueConversationResult {
+  return { ok: false, conversationId: null, groupId: null, title: null, warning: null, error };
+}
+
+// 延续与分流同脚手架不同语义：分流另起炉灶（摘要自含），延续接续前情（指引 agent 读源尾部）
+function buildContinueFirstMessage(sourceTitle: string, sourceSessionId: string, note: string): string {
+  return [
+    `延续自「${sourceTitle}」（源会话 sessionId：${sourceSessionId}）`,
+    note ? `用户补充：${note}` : '',
+    '请先用 dogear__ReadReferenceSession 读取该会话尾部了解前情，再接续处理。',
   ].filter(Boolean).join('\n');
 }
 
@@ -123,12 +156,38 @@ export const shuntRouter = {
           groupId,
           title,
           conv.modelSelection,
-          buildFirstMessage(conv.title, args.summary, args.userMessage),
+          buildFirstMessage(conv.title, args.summary, args.userMessage, conv.sessionId),
         );
         return { ok: true, conversationId, groupId, noteId: null, title, warning, error: null };
       } catch (err) {
         console.error('分流执行失败:', err);
         return fail(err instanceof Error ? err.message : String(err));
+      }
+    }),
+
+  continueConversation: t.procedure
+    .input<ContinueConversationInput>()
+    .action(async ({ input }): Promise<ContinueConversationResult> => {
+      try {
+        const args = continueConversationInputSchema.parse(input);
+        const located = await conversationService.getByIdGlobal(args.sourceConversationId);
+        if (!located) return continueFail('源会话不存在，无法延续');
+        const { conv, workspaceId } = located;
+        if (!conv.groupId) return continueFail('源会话未关联话题，无法延续');
+        if (!conv.sessionId) return continueFail('源会话缺少会话记录，无法延续');
+        await requireActiveGroup(workspaceId, conv.groupId);
+        const title = clampTitle(`${conv.title} · 延续`);
+        const { conversationId, warning } = await createConversationWithFirstMessage(
+          workspaceId,
+          conv.groupId,
+          title,
+          conv.modelSelection,
+          buildContinueFirstMessage(conv.title, conv.sessionId, args.note.trim()),
+        );
+        return { ok: true, conversationId, groupId: conv.groupId, title, warning, error: null };
+      } catch (err) {
+        console.error('延续会话创建失败:', err);
+        return continueFail(err instanceof Error ? err.message : String(err));
       }
     }),
 };

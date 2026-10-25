@@ -85,7 +85,8 @@ test('disabledItems：目录项前缀命中、整目录等值命中，workspaces
   expect(isExcluded('workspaces.json', all)).toBe(false);
   expect(isExcluded('memoryx/a.md', all)).toBe(false);
   expect(isExcluded('settings.json.bak', all)).toBe(false);
-  expect(isExcluded('conversations/c.json', all)).toBe(false); // 未关闭的项放行
+  // 未列入 disabledItems 的活目录放行；退役目录 conversations 无条件排除（见退役防线测试块）
+  expect(isExcluded('usage/a.json', all)).toBe(false);
 });
 
 test('stocks/feishu 走 optionalDirs：关=排除（整树前缀），开=放行；disabledItems 误传不生效（F1）', () => {
@@ -141,10 +142,11 @@ test('buildManifest：shadow-git 与 .conflict-* 不进清单，其余条目照�
   expect(paths).toContain('settings.json');
   expect(paths).toContain('plans.json');
   expect(paths).toContain('memory/a.md');
-  expect(paths).toContain('conversations/c.json');
   expect(paths).toContain('workspaces/ws1/conversations.json');
   expect(paths).toContain('workspaces/ws1/sessions/x.jsonl');
   expect(paths).toContain('workspaces/workspaces.json');
+  // 退役目录不再收录（哪怕磁盘上仍有残留文件）
+  expect(paths.some((p) => p.startsWith('conversations/'))).toBe(false);
   // 排除项一个都不出现
   expect(paths.some((p) => p.split('/').includes('shadow-git'))).toBe(false);
   expect(paths.some((p) => p.endsWith('.conflict-4cc497') || p.endsWith('.conflict-abc'))).toBe(false);
@@ -153,15 +155,15 @@ test('buildManifest：shadow-git 与 .conflict-* 不进清单，其余条目照�
   await fsp.rm(root, { recursive: true, force: true });
 });
 
-test('buildManifest：excludes 缺省 → 排除路径照常进清单（现状行为）', async () => {
+test('buildManifest：excludes 缺省 → 排除路径照常进清单（现状行为）；退役目录除外', async () => {
   const root = await makeTempData();
   const entries = await buildManifest(root, { enabledWorkspaceIds: ['ws1'] });
   const paths = entries.map((e) => e.relPath);
   expect(paths).toContain('workspaces/ws1/shadow-git/HEAD');
   expect(paths).toContain('workspaces/ws1/shadow-git/objects/ab/cdef');
   expect(paths).toContain('memory/a.md.conflict-abc');
-  expect(paths).toContain('conversations/c.json.conflict-4cc497');
   expect(paths).toContain('workspaces/workspaces.json.conflict-4cc497');
+  expect(paths.some((p) => p.startsWith('conversations/'))).toBe(false);
   await fsp.rm(root, { recursive: true, force: true });
 });
 
@@ -175,7 +177,7 @@ test('buildManifest：disabledItems 关闭目录项与文件项', async () => {
   expect(paths.some((p) => p === 'memory/a.md' || p.startsWith('memory/'))).toBe(false);
   expect(paths).not.toContain('plans.json');
   expect(paths).toContain('settings.json');
-  expect(paths).toContain('conversations/c.json');
+  expect(paths).toContain('workspaces/ws1/sessions/x.jsonl');
   await fsp.rm(root, { recursive: true, force: true });
 });
 
@@ -185,25 +187,142 @@ test('diffManifests：对端清单中被排除的路径不进 pull/冲突集合�
   const root = await makeTempData();
   const local: FileEntry[] = [
     { relPath: 'memory/a.md', size: 1, mtimeMs: 1 },
-    { relPath: 'conversations/c.json', size: 1, mtimeMs: 1 },
+    { relPath: 'usage/old.json', size: 1, mtimeMs: 1 },
   ];
   const remote: FileEntry[] = [
     { relPath: 'memory/a.md', size: 2, mtimeMs: 2 }, // 双变无基线 → conflict
-    { relPath: 'conversations/new.json', size: 2, mtimeMs: 2 }, // remote-only → pull
+    { relPath: 'usage/new.json', size: 2, mtimeMs: 2 }, // remote-only → pull
     { relPath: 'workspaces/ws1/shadow-git/HEAD', size: 2, mtimeMs: 2 }, // 排除
     { relPath: 'memory/a.md.conflict-abc', size: 2, mtimeMs: 2 }, // 排除
     { relPath: 'plans.json.conflict-4cc497', size: 2, mtimeMs: 2 }, // 排除
   ];
   const r = await diffManifests({ root, local, remote, excludes: ex() });
-  expect(r.pull.map((e) => e.relPath)).toEqual(['conversations/new.json']);
+  expect(r.pull.map((e) => e.relPath)).toEqual(['usage/new.json']);
   expect(r.conflict.map((c) => c.remote.relPath)).toEqual(['memory/a.md']);
   const excludedSkipped = r.skipped.filter((s) => s.reason === 'excluded by local sync scope').map((s) => s.relPath).sort();
   expect(excludedSkipped).toEqual(['memory/a.md.conflict-abc', 'plans.json.conflict-4cc497', 'workspaces/ws1/shadow-git/HEAD']);
 
   // 本端清单已由 buildManifest 排除，push 侧不受影响：本端有而对端无的正常条目仍推
   const r2 = await diffManifests({ root, local, remote: [], excludes: ex() });
-  expect(r2.push.map((e) => e.relPath).sort()).toEqual(['conversations/c.json', 'memory/a.md']);
+  expect(r2.push.map((e) => e.relPath).sort()).toEqual(['memory/a.md', 'usage/old.json']);
   await fsp.rm(root, { recursive: true, force: true });
+});
+
+// ── 已退役目录 conversations/：对称防线（防旧版本对端推回复活）──
+
+test('isExcluded：退役目录无条件排除（含 excludes 缺省），非完整段不误伤', () => {
+  expect(isExcluded('conversations/c.json')).toBe(true);
+  expect(isExcluded('conversations/sessions/17344.json', undefined)).toBe(true);
+  expect(isExcluded('conversations/c.json', ex())).toBe(true);
+  expect(isExcluded('conversations', ex())).toBe(true);
+  expect(isExcluded('conversations-x/a.json', ex())).toBe(false);
+  expect(isExcluded('workspaces/ws1/conversations.json', ex())).toBe(false);
+});
+
+test('diffManifests：对端清单退役目录条目进 skipped 不进 pull（防 remote-only 复活）', async () => {
+  const local: FileEntry[] = [{ relPath: 'memory/a.md', size: 1, mtimeMs: 1 }];
+  const remote: FileEntry[] = [
+    { relPath: 'conversations/c.json', size: 2, mtimeMs: 2 },
+    { relPath: 'conversations/sessions/17344.json', size: 2, mtimeMs: 2 },
+  ];
+  const r = await diffManifests({ root: tmpdir(), local, remote });
+  expect(r.pull).toEqual([]);
+  expect(r.skipped.filter((s) => s.reason === 'excluded by local sync scope').map((s) => s.relPath).sort())
+    .toEqual(['conversations/c.json', 'conversations/sessions/17344.json']);
+});
+
+test('diffManifests：退役目录条目命中本端墓碑 → deletePropagation 驱动对端删除（不被防线拦住）', async () => {
+  const remote: FileEntry[] = [{ relPath: 'conversations/c.json', size: 1, mtimeMs: 1 }];
+  const r = await diffManifests({
+    root: tmpdir(),
+    local: [],
+    remote,
+    localTombstones: new Set(['conversations/c.json']),
+  });
+  expect(r.pull).toEqual([]);
+  expect(r.deletePropagation.map((e) => e.relPath)).toEqual(['conversations/c.json']);
+});
+
+// ── 退役虚拟声明（tasks/articles 固定声明摘除的过渡防线）：与退役目录同路数 ──
+
+const RETIRED_DECL = [
+  '__ws-external__/ws-a/.dogear/tasks.json',
+  '__ws-external__/ws-a/.dogear/tasks.json.conflict-abcdef-20261004-120000-ab12',
+  '__ws-external__/ws-a/.dogear/articles/uuid/meta.json',
+];
+
+test('isExcluded：退役虚拟声明无条件排除（excludes 缺省也拦），非声明路径不误伤', () => {
+  for (const rel of RETIRED_DECL) {
+    expect(isExcluded(rel)).toBe(true);
+    expect(isExcluded(rel, ex())).toBe(true);
+  }
+  expect(isExcluded('__ws-external__/ws-a/docs/p.md', ex())).toBe(false);
+  expect(isExcluded('workspaces/ws-a/tasks.json', ex())).toBe(false);
+  expect(isExcluded('__ws-external__/ws-a/.dogear/other.json', ex())).toBe(false);
+});
+
+test('diffManifests：对端清单退役声明条目进 skipped 不进 pull；命中墓碑 → deletePropagation', async () => {
+  const remote: FileEntry[] = RETIRED_DECL.map((relPath) => ({ relPath, size: 2, mtimeMs: 2 }));
+  const r = await diffManifests({ root: tmpdir(), local: [], remote });
+  expect(r.pull).toEqual([]);
+  expect(r.skipped.filter((s) => s.reason === 'excluded by local sync scope').map((s) => s.relPath).sort()).toEqual([...RETIRED_DECL].sort());
+  const r2 = await diffManifests({
+    root: tmpdir(),
+    local: [],
+    remote: [{ relPath: RETIRED_DECL[0], size: 2, mtimeMs: 2 }],
+    localTombstones: new Set([RETIRED_DECL[0]]),
+  });
+  expect(r2.deletePropagation.map((e) => e.relPath)).toEqual([RETIRED_DECL[0]]);
+});
+
+// ── 已退役 configDir 实路径（文章迁工作区 dogear/articles 后的过渡防线）：与退役目录同路数 ──
+
+const RETIRED_CONFIG_ARTICLES = [
+  'workspaces/ws-a/articles',
+  'workspaces/ws-a/articles/uuid-1/meta.json',
+  'workspaces/ws-a/articles/folder/a.md',
+];
+
+test('isExcluded：退役实路径 workspaces/{wsid}/articles 无条件排除（含 excludes 缺省），非完整段不误伤', () => {
+  for (const rel of RETIRED_CONFIG_ARTICLES) {
+    expect(isExcluded(rel)).toBe(true);
+    expect(isExcluded(rel, ex())).toBe(true);
+    // 存量 disabledSyncItems 残值不再影响防线（退役恒排除）
+    expect(isExcluded(rel, ex({ disabledItems: new Set(['articles']) }))).toBe(true);
+  }
+  // 非完整段不误伤：相似名目录/文件、其他工作区数据
+  expect(isExcluded('workspaces/ws-a/articles.json', ex())).toBe(false);
+  expect(isExcluded('workspaces/ws-a/articles-backup/x', ex())).toBe(false);
+  expect(isExcluded('workspaces/ws-a/notes/a.md', ex())).toBe(false);
+  expect(isExcluded('workspaces/ws-a/tasks.json', ex())).toBe(false);
+});
+
+test('buildManifest：configDir 留档的 workspaces/{wsid}/articles 不再进清单（目录剪枝）', async () => {
+  const root = await makeTempData();
+  await fsp.mkdir(path.join(root, 'workspaces/ws1/articles/uuid-1'), { recursive: true });
+  await fsp.writeFile(path.join(root, 'workspaces/ws1/articles/uuid-1/meta.json'), '{}');
+  await fsp.writeFile(path.join(root, 'workspaces/ws1/articles/uuid-1/content.md'), 'old article');
+  const entries = await buildManifest(root, { enabledWorkspaceIds: ['ws1'], excludes: ex() });
+  const paths = entries.map((e) => e.relPath);
+  expect(paths.some((p) => p.startsWith('workspaces/ws1/articles'))).toBe(false);
+  // 同目录其他子树照常收集
+  expect(paths).toContain('workspaces/ws1/sessions/x.jsonl');
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test('diffManifests：对端清单退役实路径条目进 skipped 不进 pull；命中墓碑 → deletePropagation 驱动旧对端删旧位置', async () => {
+  const remote: FileEntry[] = RETIRED_CONFIG_ARTICLES.map((relPath) => ({ relPath, size: 2, mtimeMs: 2 }));
+  const r = await diffManifests({ root: tmpdir(), local: [], remote });
+  expect(r.pull).toEqual([]);
+  expect(r.skipped.filter((s) => s.reason === 'excluded by local sync scope').map((s) => s.relPath).sort())
+    .toEqual([...RETIRED_CONFIG_ARTICLES].sort());
+  const r2 = await diffManifests({
+    root: tmpdir(),
+    local: [],
+    remote: [{ relPath: RETIRED_CONFIG_ARTICLES[1], size: 2, mtimeMs: 2 }],
+    localTombstones: new Set([RETIRED_CONFIG_ARTICLES[1]]),
+  });
+  expect(r2.deletePropagation.map((e) => e.relPath)).toEqual([RETIRED_CONFIG_ARTICLES[1]]);
 });
 
 // ── applyIncoming：应用侧入口丢弃（挡旧版本对端推来的文件） ──

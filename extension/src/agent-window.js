@@ -1,5 +1,3 @@
-export const DOGEAR_GROUP_TITLE = 'Dogear'
-
 const WINDOW_ID_KEY = 'dogearWindowId'
 
 async function getStoredWindowId() {
@@ -26,7 +24,7 @@ async function clearStoredWindowId() {
   }
 }
 
-export async function forgetAgentWindowIfDead() {
+export async function getAgentWindowId() {
   const storedId = await getStoredWindowId()
   if (storedId == null) return null
   try {
@@ -38,24 +36,9 @@ export async function forgetAgentWindowIfDead() {
   }
 }
 
-async function findGroupWindowId() {
-  try {
-    const groups = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
-    const windowId = groups[0]?.windowId
-    return typeof windowId === 'number' ? windowId : null
-  } catch {
-    return null
-  }
-}
-
 export async function resolveAgentWindowId() {
-  const aliveId = await forgetAgentWindowIfDead()
+  const aliveId = await getAgentWindowId()
   if (aliveId != null) return aliveId
-  const groupWindowId = await findGroupWindowId()
-  if (groupWindowId != null) {
-    await storeWindowId(groupWindowId)
-    return groupWindowId
-  }
   const created = await chrome.windows.create({ focused: false })
   const createdId = created?.id
   if (typeof createdId !== 'number') throw new Error('窗口创建失败')

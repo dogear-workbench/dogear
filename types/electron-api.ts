@@ -49,6 +49,7 @@ export interface WorkspaceFileNode {
   path: string;
   type: 'file' | 'directory' | 'article';
   ext?: string;
+  gitStatus?: 'tracked' | 'untracked';
   children?: WorkspaceFileNode[];
   /** 文章专属字段（type='article' 时存在） */
   articleMeta?: {
@@ -59,6 +60,13 @@ export interface WorkspaceFileNode {
     wordCount: number;
     parseStatus?: string;
   };
+}
+
+/** 工作区文件名搜索命中（与主进程 workspace-search-service 的同名接口镜像） */
+export interface WorkspaceSearchHit {
+  name: string;
+  path: string;
+  isDir: boolean;
 }
 
 /**
@@ -163,9 +171,13 @@ export interface Conversation {
   modelSelection: ModelSelection | null; // 对话级模型；null=未选(发送被门禁拦下)
   groupId?: string;                      // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';                 // P1 只产生 'main'
+  executor?: boolean;                    // 任务执行会话标记（任务队列链路创建）；普通会话为 undefined
+  schedulerTaskId?: string;              // 定时任务运行会话标记（值为任务 id）；会话列表据此过滤
   contractMetadata?: ContractMetadata;   // Agent 派出契约元数据；手动会话为 undefined
-  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除 */
-  unread?: boolean;
+  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除；'error' = 上一轮执行失败（红点） */
+  unread?: boolean | 'error';
+  /** 挂起标记（毫秒时间戳）：钉住（稍后继续）时置位；掐灭/解除/发消息 settle 兑现时清除；绿线常亮 + 组内置顶，不受活跃窗约束 */
+  pinnedAt?: number;
   usageSummary?: {
     turnCount: number;
     totalInputTokens: number;

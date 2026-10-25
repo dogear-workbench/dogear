@@ -28,6 +28,7 @@ import { getNotificationCenterService } from './notification-center-service.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
 import { resolvePlanPath } from './task-store.js';
+import { getOrCreateHiddenGroup } from './group-service.js';
 import type { Task } from './task-service.js';
 import { buildExecutionPrompt, type ExecProfile } from './task-execution-prompt.js';
 
@@ -69,7 +70,7 @@ function firstLine(text: string, max = 80): string {
 }
 
 // 老会话不知道申报约定，中断类通知带引导句供用户插话时补线
-const REPORT_RESULT_HINT = '让会话继续时，完成后请它调用 dogear__ReportTaskResult 回写任务';
+const REPORT_RESULT_HINT = '让会话继续时，完成后请它调用 dogear__ReportTaskResult 申报完成';
 
 function notifyTask(task: Task, workspaceId: string, title: string, body: string): void {
   const service = getSessionNotificationService();
@@ -167,7 +168,7 @@ class TaskQueueExecutor {
       } catch (err) {
         log.error(`任务 ${next.task.id} 执行异常`, err);
         const reason = `执行器内部错误: ${errorMessage(err)}`;
-        const current = await taskService.getTask(next.workspacePath, next.task.id);
+        const current = await taskService.getTask(next.workspaceId, next.task.id);
         if (current?.status === 'running') await this.safeInterrupt(next, reason);
         else await this.safeReject(next, reason);
       }
@@ -180,7 +181,7 @@ class TaskQueueExecutor {
     for (const ws of workspaces) {
       let tasks: Task[];
       try {
-        tasks = await taskService.listTasks(ws.path);
+        tasks = await taskService.listTasks(ws.id);
       } catch {
         continue;
       }
@@ -219,16 +220,12 @@ class TaskQueueExecutor {
       );
       return;
     }
-    if (!origin.conv.groupId) {
-      await this.safeReject(ctx, '产生任务的会话不属于任何话题，无法创建执行会话');
-      return;
-    }
-
     let execId: string;
     try {
+      const carrierGroup = await getOrCreateHiddenGroup(origin.workspaceId, '任务');
       execId = await conversationService.create(
         origin.workspaceId,
-        origin.conv.groupId,
+        carrierGroup.id,
         `任务: ${task.title}`,
         origin.conv.modelSelection,
         { role: 'main', executor: true },
@@ -238,7 +235,7 @@ class TaskQueueExecutor {
       return;
     }
 
-    const running = await taskService.markTaskRunning(workspacePath, task.id, execId);
+    const running = await taskService.markTaskRunning(ctx.workspaceId, ctx.workspacePath, task.id, execId);
 
     let attachment: Awaited<ReturnType<typeof conversationRuntimeService.attachConversation>>;
     try {
@@ -336,7 +333,7 @@ class TaskQueueExecutor {
       let wokeBy: 'first' | 'complete' | 'tick' = 'first';
       for (;;) {
         rewire();
-        const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
+        const current = await taskService.getTask(ctx.workspaceId, ctx.task.id);
         if (!current || current.status !== 'running') {
           log.info(`任务 ${ctx.task.id} 看护退出：状态 ${current?.status ?? '不存在'}（执行会话 ${execId}），队列放行`);
           return;
@@ -423,12 +420,12 @@ class TaskQueueExecutor {
 
   private async safeInterrupt(ctx: QueuedWork, reason: string): Promise<void> {
     try {
-      const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
+      const current = await taskService.getTask(ctx.workspaceId, ctx.task.id);
       if (!current || current.status !== 'running') {
         log.info(`任务 ${ctx.task.id} 当前状态为 ${current?.status ?? '不存在'}，跳过置 interrupted（可能已被并发处理）`);
         return;
       }
-      const interrupted = await taskService.interruptTask(ctx.workspacePath, ctx.task.id, reason);
+      const interrupted = await taskService.interruptTask(ctx.workspaceId, ctx.workspacePath, ctx.task.id, reason);
       log.warn(`任务 ${ctx.task.id} 置为 interrupted: ${reason}`);
       notifyTaskInterrupted(interrupted, ctx.workspaceId, reason);
     } catch (err) {
@@ -438,12 +435,12 @@ class TaskQueueExecutor {
 
   private async safeReject(ctx: QueuedWork, reason: string): Promise<void> {
     try {
-      const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
+      const current = await taskService.getTask(ctx.workspaceId, ctx.task.id);
       if (!current || current.status !== 'queued') {
         log.info(`任务 ${ctx.task.id} 当前状态为 ${current?.status ?? '不存在'}，跳过置 rejected（仅执行前确定性拒绝走 rejected）`);
         return;
       }
-      const rejected = await taskService.rejectTask(ctx.workspacePath, ctx.task.id, reason);
+      const rejected = await taskService.rejectTask(ctx.workspaceId, ctx.workspacePath, ctx.task.id, reason);
       log.warn(`任务 ${ctx.task.id} 置为 rejected: ${reason}`);
       notifyTask(rejected, ctx.workspaceId, `任务执行失败：${rejected.title}`, firstLine(reason));
     } catch (err) {
@@ -477,7 +474,7 @@ export async function recoverAndStartTaskQueue(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const { recovered, recoveredTasks } = await taskService.recoverInterruptedTasks(ws.path);
+      const { recovered, recoveredTasks } = await taskService.recoverInterruptedTasks(ws.id, ws.path);
       if (recovered > 0) {
         log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务（running → interrupted）`);
         for (const task of recoveredTasks) {

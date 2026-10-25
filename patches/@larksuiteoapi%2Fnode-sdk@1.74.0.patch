@@ -1,0 +1,26 @@
+diff --git a/es/index.js b/es/index.js
+index 996f9af74ae20a19f89abab1e3c32df3f786e460..5c5792d2084006acc6fd22ad1a6368be503ac17d 100644
+--- a/es/index.js
++++ b/es/index.js
+@@ -102650,7 +102650,7 @@ class WSClient {
+             }, {});
+             const { message_id, sum, seq, type, trace_id } = headers;
+             const payload = data.payload;
+-            if (type !== MessageType.event) {
++            if (type !== MessageType.event && type !== MessageType.card) {
+                 return;
+             }
+             let mergedData;
+diff --git a/lib/index.js b/lib/index.js
+index de8fcc9499f428ffbb10b0288e42226c5f04e811..932d503091ac6b7379181312bff40e4414b675d1 100644
+--- a/lib/index.js
++++ b/lib/index.js
+@@ -102668,7 +102668,7 @@ class WSClient {
+             }, {});
+             const { message_id, sum, seq, type, trace_id } = headers;
+             const payload = data.payload;
+-            if (type !== MessageType.event) {
++            if (type !== MessageType.event && type !== MessageType.card) {
+                 return;
+             }
+             let mergedData;

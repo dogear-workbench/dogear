@@ -31,6 +31,7 @@ import {
   type WorkspaceMetaItem,
 } from './workspace-map.js';
 import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type ManifestResponseBody, type SkippedEntry } from './protocol.js';
+import { isMemorySyncRelPath, repairMemoryPathsNow } from '../memory/memory-maintenance.js';
 import {
   applyPeerTombstones,
   propagateLocalDeletes,
@@ -308,6 +309,8 @@ async function runSyncInternal(
   const autoResolved: Array<{ relPath: string; winner: 'local' | 'remote' }> = [];
   // relPath -> 传输时刻权威内容 hash（undefined = 传输过但本端无 hash 可记，baseline 构建时重算）
   const transferred = new Map<string, string | undefined>();
+  // 本轮实际改动本端磁盘的 relPath（拉取落盘 + 跟随删除），供同步后 memory 对账修复用
+  const locallyChangedRelPaths: string[] = [];
   const pullItems: IncomingApplyItem[] = diff.pull.map((entry) => ({
     entry,
     remoteRelPath: remotePathByLocal.get(entry.relPath),
@@ -341,6 +344,7 @@ async function runSyncInternal(
     deleted += outcome.deleted.length;
     deleteConflicts.push(...outcome.conflicts);
     skipped.push(...outcome.skipped);
+    locallyChangedRelPaths.push(...outcome.deleted);
   }
   // 本端已删、对端仍有（deletePropagation）：push/both 档驱动对端删；pull 档不碰对端不驱动
   if (peerSupportsDelete && direction !== 'pull' && diff.deletePropagation.length > 0) {
@@ -464,6 +468,7 @@ async function runSyncInternal(
       pulled += 1;
       transferred.set(entry.relPath, entry.hash);
     }
+    locallyChangedRelPaths.push(...pullReport.applied.map((e) => e.relPath));
     skipped.push(...pullReport.skipped);
     mergedFiles = pullReport.mergedFiles;
     // 合并落盘的是合并结果而非对端原样，baseline 必须记落盘真实内容 hash（原 settingsMerged 特判推广为 mergedFiles）
@@ -491,6 +496,21 @@ async function runSyncInternal(
 
   if (mergedFiles.length > 0) {
     warnings.push(`${mergedFiles.length} 个记录文件已条目级合并（${mergedFiles.join('、')}）`);
+  }
+
+  // ── memory 同步后维护：本轮动过 memory 目录时对账修复（孤儿索引重建 + 垃圾文件清理）──
+  const memoryTouched = locallyChangedRelPaths.filter(isMemorySyncRelPath);
+  if (memoryTouched.length > 0) {
+    try {
+      const repair = await repairMemoryPathsNow(memoryTouched);
+      for (const o of repair.outcomes) {
+        console.log(
+          `[lan-sync] memory 对账修复 ${o.target.scope}:${o.target.workspaceId || 'global'}: rebuiltIndex=${o.rebuiltIndex} garbageRemoved=${o.garbageRemoved.length}`,
+        );
+      }
+    } catch (err) {
+      console.warn('[lan-sync] memory 同步后对账修复失败:', err);
+    }
   }
 
   const nextBaseline = await buildNextBaseline(dataDir, manifestOptions, baseline, transferred);

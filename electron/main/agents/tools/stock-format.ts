@@ -1,6 +1,9 @@
 /**
- * 股票工具共享格式化助手（stock-tools 与 stock-analysis-tools 共用）
+ * 股票分析工具共享助手（stock-tools 与 stock-analysis 三域文件共用）
  */
+
+import { stockService, type KLineDataPoint, type KLinePeriod } from '../../services/stock/stock-service.js';
+import type { ToolResult } from '../pi/tool-adapter.js';
 
 /** 安全数字格式化（防止 undefined.toFixed 崩溃） */
 export function safe(val: number | undefined | null, digits = 2): string {
@@ -111,4 +114,29 @@ export function formatIndicatorResult(name: string, data: Record<string, (number
     default:
       return `${name}: ${JSON.stringify(data)}`;
   }
+}
+
+/** 指标计算超时 */
+export const CALC_TIMEOUT_MS = 30_000;
+/** K线数据默认条数（指标计算需要足够数据） */
+export const DEFAULT_KLINE_LIMIT = 250;
+/** K线最大条数 */
+export const MAX_KLINE_LIMIT = 500;
+
+/** K线周期参数映射（daily/weekly/monthly → 东财 period 代码） */
+export const PERIOD_MAP: Record<string, 101 | 102 | 103> = {
+  daily: 101, weekly: 102, monthly: 103,
+};
+
+/** 获取前复权 K 线（分析工具共用样板，复用 stockService 的缓存+限流+备用源） */
+export function fetchKLine(market: number, code: string, period: KLinePeriod, limit: number): Promise<KLineDataPoint[]> {
+  return stockService.getKLine({ secid: `${market}.${code}`, period, adjust: 1, limit });
+}
+
+/** catch 错误统一返回（单条 text + isError） */
+export function isErrorResult(text: string): ToolResult {
+  return {
+    content: [{ type: 'text' as const, text }],
+    isError: true,
+  };
 }

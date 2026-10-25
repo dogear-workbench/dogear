@@ -33,7 +33,7 @@ interface CollapsibleBlockProps {
  * - 无边框、无背景色，和周围文本融为一体
  * - 默认显示 N 行预览，超出部分 gradient mask 渐隐
  * - 展开按钮在左上角（ChevronRight 旋转动画）
- * - 展开后显示完整内容，max-height + 内部滚动
+ * - 展开后完整内容自然撑高，滚动交给页面
  */
 export function CollapsibleBlock({
   icon,
@@ -100,10 +100,8 @@ export function CollapsibleBlock({
         <div className="pl-5 mt-0.5">
           {open ? (
             <>
-              {/* 展开：完整内容，限制最大高度 + 内部滚动 */}
-              <div className="max-h-[500px] overflow-y-auto">
-                {children}
-              </div>
+              {/* 展开：完整内容自然撑高；中间层不限高走页面滚动，避免嵌套滚动 */}
+              {children}
               <button
                 onClick={() => setIsOpen(false)}
                 className="flex items-center justify-center gap-1 w-full py-1 mt-0.5 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 rounded transition-colors"

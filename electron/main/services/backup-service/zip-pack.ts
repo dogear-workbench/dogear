@@ -4,7 +4,7 @@ import { dirname, join } from 'path';
 import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import { getConfigDir } from '../settings-service.js';
-import { EXTERNAL_ANCHOR_PREFIX, resolveArchiveRelPath, toArchiveRelPath } from '../data-registry.js';
+import { toArchiveRelPath } from '../data-registry.js';
 import { assertScope, type BackupScope } from './categories.js';
 import { packEntriesSharded, type PackEntry } from './zip-pack-core.js';
 
@@ -64,21 +64,13 @@ export function backupZipPath(scope: BackupScope, fileName: string): string {
   return path.join(backupDirPath(scope), fileName);
 }
 
-/** 源清单 → 打包任务条目：外部锚点源（__ws-external__ 虚拟路径，磁盘上不存在）经 registry 反解出真实路径，
- * zip 内条目仍用虚拟路径；不存在的源跳过 */
+/** 源清单 → 打包任务条目：zip 内条目路径 = 相对 configDir 的 posix 路径；不存在的源跳过 */
 export async function resolveSourceEntries(sources: string[]): Promise<PackEntry[]> {
   const entries: PackEntry[] = [];
   for (const src of sources) {
-    const entryPath = toArchiveRelPath(src);
-    let readPath = src;
-    if (entryPath.split('/')[0] === EXTERNAL_ANCHOR_PREFIX) {
-      const resolved = await resolveArchiveRelPath(entryPath);
-      if (!resolved) continue;
-      readPath = resolved;
-    }
-    const st = await fs.stat(readPath).catch(() => null);
+    const st = await fs.stat(src).catch(() => null);
     if (!st) continue;
-    entries.push({ entryPath, readPath, isDir: st.isDirectory() });
+    entries.push({ entryPath: toArchiveRelPath(src), readPath: src, isDir: st.isDirectory() });
   }
   return entries;
 }

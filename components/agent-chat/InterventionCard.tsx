@@ -28,6 +28,7 @@ const OUTCOME_TEXT: Record<string, string> = {
   auto: '已继续',
   timeout: '等待超时，已跳过',
   missing: '请求已失效',
+  unattended: '用户不在，已自动跳过',
 };
 
 export function InterventionCard({ block, readOnly = false }: { block: ContentBlock; readOnly?: boolean }) {

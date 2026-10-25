@@ -1,12 +1,12 @@
 /**
  * 网络文章解析服务共享类型与常量
  */
+import path from 'node:path';
 
 /** 文章解析状态（与 types/article.ts 的 ArticleParseStatus 保持一致） */
 export type ArticleParseStatus =
   | 'script_ok'        // 新增：平台脚本解析成功（零 AI）
   | 'fixed'
-  | 'need_login'
   | 'ai_parsing'
   | 'ai_enhanced'
   | 'quality_warning'
@@ -16,12 +16,11 @@ export type ArticleParseStatus =
 export type ArticleParseLayer =
   | 'script'
   | 'readability'
-  | 'browser'
   | 'ai'
-  | 'fetch_fail_browser'
-  | 'fetch_fail';
+  | 'fetch_fail'
+  | 'duplicated';
 
-/** 文章元数据（存储在 meta.json） */
+/** 文章元数据（内嵌 md 文件 frontmatter） */
 export interface ArticleMeta {
   id: string;
   url: string;
@@ -40,8 +39,16 @@ export interface Article extends ArticleMeta {
   content: string;
 }
 
-/** 文章存储根目录名 */
-export const ARTICLES_DIR = '.dogear/articles';
+/** 文章库相对前缀：树节点 path 与物理位置统一为工作区相对路径 {workspacePath}/dogear/articles */
+export const ARTICLES_DIR = 'dogear/articles';
 
-/** 文章排序索引文件名 */
-export const ORDER_FILE = '.order.json';
+/** 文章库物理根：{workspacePath}/dogear/articles */
+export function getArticlesRoot(workspacePath: string): string {
+  return path.join(workspacePath, ...ARTICLES_DIR.split('/'));
+}
+
+/** relPath 是否落在文章库内（前端分区判定同语义） */
+export function isArticlesRelPath(relPath: string): boolean {
+  const norm = relPath.replace(/\\/g, '/');
+  return norm === ARTICLES_DIR || norm.startsWith(ARTICLES_DIR + '/');
+}

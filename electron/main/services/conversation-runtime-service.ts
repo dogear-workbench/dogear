@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
-import { SessionError } from '@earendil-works/pi-agent-core';
 import { getPiSessionManager, type SessionCloseSource } from '../agents/pi-session/pi-session-manager.js';
+import { PiSession } from '../agents/pi-session/pi-session.js';
+// 0.99.2 删除了上游 SessionError，改用 session-history-reader 的本地同名类（code 语义兼容）
+import { SessionError } from '../agents/pi-session/session-history-reader.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import * as workspaceJsonService from './workspace-json-service.js';
@@ -51,6 +53,8 @@ type AttachConversationOptions = {
   webContentsId?: number;
   /** 明确装载的 skill 全集：执行会话按任务类型恒传查表清单（default 空清单=基础版）；undefined = 不覆盖跟随工作区 enabledSkills，保留给非执行场景 */
   skillsOverride?: readonly string[];
+  /** 任务级工具包覆盖（定时任务 toolPacksOverride 映射）；undefined = 跟随工作区 enabledToolPacks */
+  enabledToolPacksOverride?: string[];
 };
 
 class ConversationRuntimeService {
@@ -108,11 +112,12 @@ class ConversationRuntimeService {
         additionalPaths: (workspace?.additionalPaths ?? []).filter((p) => p.enabled).map((p) => p.path),
         workspaceId,
         harnessSessionId,
-        enabledToolPacks: wsConfig.enabledToolPacks,
+        enabledToolPacks: options?.enabledToolPacksOverride ?? wsConfig.enabledToolPacks,
         skillsOverride: options?.skillsOverride,
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
         executor: conversation.executor,
+        schedulerTask: conversation.schedulerTaskId != null,
         parentConversationId: conversation.parentConversationId ?? undefined,
         subAgent: conversation.role === 'sub'
           ? {
@@ -130,12 +135,18 @@ class ConversationRuntimeService {
       try {
         await session.start();
       } catch (error) {
-        piSessionManager.closeSession(session.getSessionId());
-        // 仅历史文件真缺失/损坏时才用该文案，避免其他异常（如模型配置问题）被误标
-        if (isRestore && error instanceof SessionError && (error.code === 'not_found' || error.code === 'invalid_session')) {
-          throw new Error('会话历史文件缺失或损坏，无法恢复会话');
+        // 撞上一轮销毁 close 未完成（repo openSessions 注册表尚未释放）的竞速：短退避重试一次；
+        // start() 有 adapter 早退保护，首次失败时 adapter 仍为 null，重试仍走完整 open
+        if (error instanceof Error && error.message.includes('Session is already open')) {
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          try {
+            await session.start();
+          } catch (retryError) {
+            this.failSessionStart(session, isRestore, retryError);
+          }
+        } else {
+          this.failSessionStart(session, isRestore, error);
         }
-        throw error;
       }
       if (!isRestore) {
         await conversationService.updateSessionId(
@@ -170,6 +181,15 @@ class ConversationRuntimeService {
       pendingPermissionRequests: liveSnapshot.permissionRequests,
       sessionState: liveSnapshot.sessionState,
     };
+  }
+
+  /** start 失败统一收尾：关 session，仅历史文件真缺失/损坏时换文案（避免其他异常如模型配置问题被误标） */
+  private failSessionStart(session: PiSession, isRestore: boolean, error: unknown): never {
+    getPiSessionManager().closeSession(session.getSessionId());
+    if (isRestore && error instanceof SessionError && (error.code === 'not_found' || error.code === 'invalid_session')) {
+      throw new Error('会话历史文件缺失或损坏，无法恢复会话');
+    }
+    throw error;
   }
 
   async closeConversation(conversationId: string): Promise<void> {

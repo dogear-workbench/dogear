@@ -1,6 +1,6 @@
 import { memo, useMemo, useEffect, useRef, useState, useCallback, type RefObject } from 'react';
 import { toast } from 'sonner';
-import { Shield, ChevronRight, ChevronDown, X, Globe, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, MessageSquareQuote, Folder, StickyNote, Pause, Hourglass } from 'lucide-react';
+import { Shield, ChevronRight, ChevronDown, X, Globe, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, MessageSquareQuote, Folder, StickyNote, Pause, Hourglass, Quote, Newspaper } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,10 +25,12 @@ import { useInputFocusStore } from '@/stores/input-focus-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
-import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { UsageBadge } from './usage-badge/UsageBadge';
 import { ModelSelector } from '@/components/ModelSelector';
+import { EffortSelector } from '@/components/EffortSelector';
+import { resolveEffectiveEffort } from '@/lib/model-selection';
+import { isArticlePath } from '@/components/workspace-explorer/tree-model';
 import type { PendingState } from './hooks/usePendingState';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
@@ -70,7 +72,8 @@ interface ChatInputAreaProps {
   isSubSession?: boolean;
   /** run settled 但仍有 running 直属子会话：状态行展示「等待子会话交付中」，不改变输入框行为 */
   awaitingDelivery?: boolean;
-  pendingImages: PendingImage[];
+  /** 草稿态只传 { preview }（data URL），会话态传完整 PendingImage */
+  pendingImages: Array<{ preview: string }>;
   imageInputRef: RefObject<HTMLInputElement | null>;
   handleSend: () => void;
   handleKeyPress: (e: React.KeyboardEvent) => void;
@@ -121,12 +124,12 @@ export const ChatInputArea = memo(function ChatInputArea({
   const isModelMissing = !currentSelection;
   const effectivePlaceholder = isModelMissing ? '请先选择模型' : placeholder;
   // 从 reference store 读取引用数据，只取锚定本会话的项
-  const allReferencedArticles = useReferenceStore((s) => s.referencedArticles);
-  const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
   const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
   const allMessageSnippets = useReferenceStore((s) => s.messageSnippets);
   const removeMessageSnippet = useReferenceStore((s) => s.removeMessageSnippet);
+  const allFileSnippets = useReferenceStore((s) => s.fileSnippets);
+  const removeFileSnippet = useReferenceStore((s) => s.removeFileSnippet);
   const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
   const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
   const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
@@ -150,10 +153,6 @@ export const ChatInputArea = memo(function ChatInputArea({
       return next;
     });
   }, []);
-  const referencedArticles = useMemo(
-    () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
-    [allReferencedArticles, conversationId]
-  );
   const quotedSnippets = useMemo(
     () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allQuotedSnippets, conversationId]
@@ -161,6 +160,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   const messageSnippets = useMemo(
     () => allMessageSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allMessageSnippets, conversationId]
+  );
+  const fileSnippets = useMemo(
+    () => allFileSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allFileSnippets, conversationId]
   );
   const referencedFiles = useMemo(
     () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
@@ -270,13 +273,13 @@ export const ChatInputArea = memo(function ChatInputArea({
               dragActive && "ring-2 ring-primary/40 border-primary",
             )}>
             {/* 顶部 Addon：移交草稿 + 引用芯片 + 图片预览 */}
-            {(handoffDrafts.length > 0 || referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
+            {(handoffDrafts.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || fileSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 浏览器移交草稿：待编辑引用块，发送时转为「来自浏览器一键移交」文本块拼在用户文本之前 */}
                 {handoffDrafts.length > 0 && (
                   <div className="flex flex-col gap-1.5 w-full">
                     {handoffDrafts.map((d) => {
-                      const hasExcerpt = !!(d.selectionText || d.textExcerpt);
+                      const hasExcerpt = !!d.selectionText;
                       const expanded = expandedDraftIds.has(d.id);
                       return (
                         <div
@@ -311,7 +314,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                           {expanded && hasExcerpt && (
                             <div className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-white/60 dark:bg-black/20 p-1.5 text-cyan-900/80 dark:text-cyan-100/80">
                               {d.selectionText && <div>【选中内容】{d.selectionText}</div>}
-                              {d.textExcerpt && <div>【正文快照】{d.textExcerpt}</div>}
                             </div>
                           )}
                         </div>
@@ -320,26 +322,8 @@ export const ChatInputArea = memo(function ChatInputArea({
                   </div>
                 )}
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0) && (
+                {(quotedSnippets.length > 0 || messageSnippets.length > 0 || fileSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
-                    {/* 文章引用芯片 — 淡蓝 */}
-                    {referencedArticles.map(article => (
-                      <span
-                        key={article.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300"
-                        title={article.title}
-                      >
-                        <span className="max-w-[160px] truncate">{article.title}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => removeReferencedArticle(article.id)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-sky-100 dark:hover:bg-sky-900/40"
-                        >
-                          <X className="w-3 h-3" />
-                        </Button>
-                      </span>
-                    ))}
                     {/* 文字片段引用芯片 — 淡紫灰 */}
                     {quotedSnippets.map(snippet => (
                       <span
@@ -379,22 +363,54 @@ export const ChatInputArea = memo(function ChatInputArea({
                         </Button>
                       </span>
                     ))}
-                    {/* 文件/文件夹引用芯片 — 淡石板绿 */}
+                    {/* 文件内容片段芯片 — 琥珀 */}
+                    {fileSnippets.map(snippet => (
+                      <span
+                        key={snippet.id}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-300"
+                        title={`来自文件 ${snippet.fileName}: ${snippet.text}`}
+                      >
+                        <Quote className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
+                        <span className="text-amber-500 flex-shrink-0">{snippet.fileName.length > 10 ? snippet.fileName.slice(0, 10) + '...' : snippet.fileName}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeFileSnippet(snippet.id)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
+                    {/* 文件/文件夹引用芯片 — 淡石板绿；文章库内条目保留文章样式（淡蓝+报纸图标） */}
                     {referencedFiles.map(file => (
                       <span
                         key={file.path}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300"
+                        className={cn(
+                          'inline-flex items-center gap-1 px-2 py-1 border rounded-full text-xs',
+                          isArticlePath(file.path)
+                            ? 'bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300'
+                            : 'bg-teal-50 border-teal-200 text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300',
+                        )}
                         title={file.path}
                       >
                         {file.type === 'folder'
                           ? <Folder className="w-3 h-3 flex-shrink-0" />
-                          : <FileText className="w-3 h-3 flex-shrink-0" />}
+                          : isArticlePath(file.path)
+                            ? <Newspaper className="w-3 h-3 flex-shrink-0" />
+                            : <FileText className="w-3 h-3 flex-shrink-0" />}
                         <span className="max-w-[160px] truncate">{file.name}</span>
                         <Button
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedFile(file.path)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-teal-100 dark:hover:bg-teal-900/40"
+                          className={cn(
+                            'flex-shrink-0 h-4 w-4 p-0 rounded-full',
+                            isArticlePath(file.path)
+                              ? 'hover:bg-sky-100 dark:hover:bg-sky-900/40'
+                              : 'hover:bg-teal-100 dark:hover:bg-teal-900/40',
+                          )}
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -547,6 +563,20 @@ export const ChatInputArea = memo(function ChatInputArea({
                 triggerVariant="inline"
               />
 
+              {/* 执行力度 */}
+              <EffortSelector
+                variant="inline"
+                value={currentSelection?.effort ?? null}
+                unsetLabel="跟随预设"
+                disabled={!currentSelection}
+                effectiveValue={resolveEffectiveEffort(settings, currentSelection)}
+                onChange={(v) => {
+                  if (!currentSelection) return;
+                  const { effort: _dropped, ...rest } = currentSelection;
+                  onSelectionChange(v === null ? rest : { ...rest, effort: v });
+                }}
+              />
+
               {/* 分隔 */}
               <span className="mx-0.5 h-4 w-px bg-border" />
 
@@ -643,19 +673,23 @@ export const ChatInputArea = memo(function ChatInputArea({
           {/* 容器外：会话状态 */}
           {showStatusHint && (
             <div className="mt-1.5 px-1 flex items-center gap-2 text-xs text-muted-foreground">
-              <span>{sessionId ? `${sessionId.substring(0, 8)}...` : '连接中...'}</span>
-              {isPaused ? (
-                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                  <Pause size={12} />
-                  已暂停 · 发送消息继续
-                </span>
-              ) : awaitingDelivery ? (
-                <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
-                  <Hourglass size={12} />
-                  等待子会话交付中 · 可继续对话
-                </span>
+              {sessionId ? (
+                <>
+                  <span>{sessionId.substring(0, 8)}...</span>
+                  {isPaused ? (
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                      <Pause size={12} />
+                      已暂停 · 发送消息继续
+                    </span>
+                  ) : awaitingDelivery && (
+                    <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+                      <Hourglass size={12} />
+                      等待子会话交付中 · 可继续对话
+                    </span>
+                  )}
+                </>
               ) : (
-                isSessionReady && <span className="text-green-600 dark:text-green-400">● 就绪</span>
+                <span>{conversationId ? '连接中...' : '草稿 · 首条消息发送后创建会话'}</span>
               )}
             </div>
           )}

@@ -25,8 +25,8 @@ function getRendererPath(): string {
 
 const TITLE_BAR_HEIGHT = 36;
 const TITLE_BAR_SCHEMES = {
-  light: { color: '#F5F1E8', symbolColor: '#33302B' },
-  dark: { color: '#1E242C', symbolColor: '#C6CBD2' },
+  light: { color: '#F0EBDE', symbolColor: '#33302B' },
+  dark: { color: '#1A2027', symbolColor: '#C6CBD2' },
 };
 
 function currentTitleBarOverlay() {
@@ -34,11 +34,12 @@ function currentTitleBarOverlay() {
   return { ...scheme, height: TITLE_BAR_HEIGHT };
 }
 
-// darwin 用系统默认原生标题栏：红绿灯+标题画在原生条里，视口从原生条下方开始，页面布局不受影响；
-// titleBarOverlay 的 WCO 按钮是 Windows 专属（hiddenInset 会让红绿灯压住从 y=0 渲染的页面内容，已弃用）
-function titleBarOptions(): Record<string, never> | { titleBarStyle: 'hidden'; titleBarOverlay: ReturnType<typeof currentTitleBarOverlay> } {
+// 主窗口 darwin 用 hiddenInset：红绿灯叠视口左上、视口从 y=0 起，顶栏通栏布局的前提（反转「红绿灯压 y=0 内容」旧决策——
+// 旧理由成立的条件是页面没有自绘顶栏，现布局顶部就是可交互/可拖拽区）；子窗口 darwin 保持原生标题栏，二期统一；
+// titleBarOverlay 的 WCO 按钮是 Windows 专属
+function titleBarOptions(isMainWindow: boolean): Record<string, never> | { titleBarStyle: 'hiddenInset' } | { titleBarStyle: 'hidden'; titleBarOverlay: ReturnType<typeof currentTitleBarOverlay> } {
   if (process.platform === 'darwin') {
-    return {};
+    return isMainWindow ? { titleBarStyle: 'hiddenInset' } : {};
   }
   return { titleBarStyle: 'hidden', titleBarOverlay: currentTitleBarOverlay() };
 }
@@ -96,6 +97,8 @@ export async function createWindowWithBounds(options: {
   hashPath: string;
 }): Promise<BrowserWindowType> {
   const { loadWindowBounds, saveWindowBounds } = await import('./services/window-state-service.js');
+  // 以 stateKey 判定主窗口身份（main-app.ts 的创建调用是唯一 'main-window' 来源），避免为传参扩散改动面
+  const isMainWindow = options.stateKey === 'main-window';
   const saved = await loadWindowBounds(options.stateKey);
   const hasPosition = !!saved && saved.x !== null && saved.y !== null;
 
@@ -105,7 +108,7 @@ export async function createWindowWithBounds(options: {
     x: hasPosition ? saved!.x ?? undefined : undefined,
     y: hasPosition ? saved!.y ?? undefined : undefined,
     title: options.title,
-    ...titleBarOptions(),
+    ...titleBarOptions(isMainWindow),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -245,11 +248,6 @@ export async function createNotesWindow() {
   });
 }
 
-/** 存活笔记窗口实例（Step 5 focusTask 分流用，销毁竞态返回 null） */
-export function getNotesWindow(): BrowserWindowType | null {
-  return notesWindow && !notesWindow.isDestroyed() ? notesWindow : null;
-}
-
 /**
  * 设置已落盘，通知所有窗口刷新 store（主题/字号等 UI 域由渲染层订阅即时热更；
  * agent 快照域由主进程按 diff 对受影响会话标脏，与本广播无关）
@@ -283,7 +281,7 @@ export function createSessionWindow(conversationId: string, title: string) {
     width: 1200,
     height: 800,
     title: `会话: ${title}`,
-    ...titleBarOptions(),
+    ...titleBarOptions(false),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

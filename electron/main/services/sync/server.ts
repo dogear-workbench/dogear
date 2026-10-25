@@ -27,6 +27,7 @@ import {
   mergeIncomingSettings,
 } from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
+import { isMemorySyncRelPath, scheduleMemoryRepair } from '../memory/memory-maintenance.js';
 import { mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
 import { externalWorkspaceIndex } from '../data-registry.js';
 import {
@@ -420,6 +421,8 @@ async function handleFilePush(
     sendJson(res, 400, { error: result.reason });
     return;
   }
+  // memory 目录落盘后防抖对账修复（孤儿索引/垃圾文件，多文件连推合并一次）
+  if (isMemorySyncRelPath(meta.relPath)) scheduleMemoryRepair(meta.relPath);
   sendJson(res, 200, { ok: true, bytesWritten: result.bytesWritten });
 }
 

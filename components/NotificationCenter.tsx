@@ -12,7 +12,7 @@ import { useNotificationStore } from '@/stores/notification-store';
 import { useSyncStore } from '@/stores/sync-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, TASKS_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 
@@ -84,7 +84,7 @@ export function NotificationCenter() {
         if (currentWs?.id !== ws.id) {
           await useWorkspaceStore.getState().setWorkspace(ws);
         }
-        useSessionStore.getState().switchTab(NOTES_TAB_ID);
+        useSessionStore.getState().switchTab(TASKS_TAB_ID);
         useTaskFocusStore.getState().requestTaskFocus(entry.taskId);
       } catch (err) {
         console.error('[notifications] 跳转任务失败:', err);

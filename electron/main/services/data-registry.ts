@@ -1,76 +1,34 @@
 import path from 'node:path';
 import { safeJsonRead } from './safe-json.js';
 import { getConfigDir } from './settings-service.js';
+import {
+  BACKUP_CATEGORY_SCOPES,
+  DATA_ITEMS,
+  EXTERNAL_ANCHOR_PREFIX,
+  WSID_TOKEN,
+  type BackupCategoryKey,
+  type DataItem,
+} from './data-items.js';
+
+/** 字典与纯派生的单一来源在 data-items.ts（无 node 依赖，settings-types/渲染层同构引用），此处 re-export 保既有导入点 */
+export {
+  BACKUP_CATEGORY_KEYS,
+  BACKUP_CATEGORY_SCOPES,
+  DATA_ITEMS,
+  EXTERNAL_ANCHOR_PREFIX,
+  registrySyncItems,
+  sensitiveRelPaths,
+  syncStatusOf,
+  type BackupCategoryKey,
+  type DataItem,
+  type MergePolicy,
+  type SyncStatus,
+} from './data-items.js';
 
 export const GLOBAL_SCOPE = 'global';
 
 /** 'global' 或 workspaceId */
 export type BackupScope = string;
-
-export const BACKUP_CATEGORY_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions', 'app-config'] as const;
-export type BackupCategoryKey = (typeof BACKUP_CATEGORY_KEYS)[number];
-
-export type MergePolicy = 'file' | 'records' | 'settings-fields';
-
-/** 备份分类适用的 scope 类型（backup-service 分类定义从这里消费，不得另写一份） */
-export const BACKUP_CATEGORY_SCOPES: Record<BackupCategoryKey, ReadonlyArray<'workspace' | 'global'>> = {
-  'notes-groups': ['workspace'],
-  memory: ['workspace', 'global'],
-  tasks: ['global'],
-  sessions: ['workspace', 'global'],
-  'app-config': ['global'],
-};
-
-export interface DataItem {
-  id: string;
-  /**
-   * 相对 configDir 的 posix 路径；per-workspace 条目用 {wsid} 占位；
-   * configDir 外文件用 __ws-external__/{wsid}/ 虚拟前缀（真实位置经 workspaces.json 反解）
-   */
-  paths: string[];
-  /** 声明 configDir 外文件，派生时按 workspaces.json 动态展开 */
-  external?: 'workspace-tasks' | 'workspace-articles';
-  /** 含凭据/密钥，同步范围与导出场景须排除或特殊处理 */
-  sensitive?: boolean;
-  mergePolicy: MergePolicy;
-  backupCategory?: BackupCategoryKey;
-  /** 同步范围项 id（= 顶层 relPath），settings-types SYNC_ITEM_IDS 由此派生 */
-  syncItemId?: string;
-}
-
-const WSID_TOKEN = '{wsid}';
-
-export const EXTERNAL_ANCHOR_PREFIX = '__ws-external__';
-
-export const EXTERNAL_TASKS_REL = '.dogear/tasks.json';
-export const EXTERNAL_ARTICLES_REL = '.dogear/articles';
-
-export const DATA_ITEMS: readonly DataItem[] = [
-  { id: 'ws-notes', paths: ['workspaces/{wsid}/notes'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-groups', paths: ['workspaces/{wsid}/groups'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-groups-index', paths: ['workspaces/{wsid}/groups.json'], mergePolicy: 'records', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-conversations-index', paths: ['workspaces/{wsid}/conversations.json'], mergePolicy: 'records', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-config', paths: ['workspaces/{wsid}/config.json'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-agent-md', paths: ['workspaces/{wsid}/agent.md'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
-  { id: 'ws-memory', paths: ['workspaces/{wsid}/memory'], mergePolicy: 'file', backupCategory: 'memory', syncItemId: 'workspaces' },
-  { id: 'ws-sessions', paths: ['workspaces/{wsid}/sessions'], mergePolicy: 'file', backupCategory: 'sessions', syncItemId: 'workspaces' },
-  { id: 'ws-tasks', paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/${EXTERNAL_TASKS_REL}`], external: 'workspace-tasks', mergePolicy: 'file', backupCategory: 'tasks', syncItemId: 'tasks' },
-  { id: 'ws-articles', paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/${EXTERNAL_ARTICLES_REL}`], external: 'workspace-articles', mergePolicy: 'file', syncItemId: 'articles' },
-  { id: 'memory', paths: ['memory'], mergePolicy: 'file', backupCategory: 'memory', syncItemId: 'memory' },
-  { id: 'conversations', paths: ['conversations'], mergePolicy: 'file', backupCategory: 'sessions', syncItemId: 'conversations' },
-  { id: 'workspaces-registry', paths: ['workspaces/workspaces.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'workspaces' },
-  { id: 'agent-md', paths: ['agent.md'], mergePolicy: 'file', backupCategory: 'app-config', syncItemId: 'agent.md' },
-  { id: 'settings', paths: ['settings.json'], mergePolicy: 'settings-fields', backupCategory: 'app-config', syncItemId: 'settings.json' },
-  { id: 'plans', paths: ['plans.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'plans.json' },
-  { id: 'notifications', paths: ['notifications.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'notifications.json' },
-  { id: 'login-accounts', paths: ['login-accounts.json'], sensitive: true, mergePolicy: 'file', backupCategory: 'app-config' },
-  { id: 'usage', paths: ['usage'], mergePolicy: 'file', syncItemId: 'usage' },
-  { id: 'article-parser', paths: ['article-parser'], mergePolicy: 'file', syncItemId: 'article-parser' },
-  { id: 'site-knowledge', paths: ['site-knowledge'], mergePolicy: 'file', syncItemId: 'site-knowledge' },
-  { id: 'run-history', paths: ['run-history'], mergePolicy: 'file', syncItemId: 'run-history' },
-  { id: 'stocks', paths: ['stocks'], mergePolicy: 'file', syncItemId: 'stocks' },
-  { id: 'feishu', paths: ['feishu'], mergePolicy: 'file', syncItemId: 'feishu' },
-];
 
 const SCOPE_SEGMENT_RE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -118,18 +76,10 @@ export async function backupSourcesFor(category: BackupCategoryKey, scope: Backu
     throw new Error(`备份分类 ${category} 不支持 ${scopeType} scope`);
   }
   const configDir = getConfigDir();
-  const items = DATA_ITEMS.filter((item) => item.backupCategory === category);
+  const allItems: readonly DataItem[] = DATA_ITEMS;
+  const items = allItems.filter((item) => item.backupCategory === category);
   const out: string[] = [];
   for (const item of items) {
-    if (item.external === 'workspace-tasks') {
-      if (scopeType === 'global') {
-        const registered = await readRegisteredWorkspaces();
-        for (const ws of registered) {
-          out.push(path.join(configDir, EXTERNAL_ANCHOR_PREFIX, ws.id, EXTERNAL_TASKS_REL));
-        }
-      }
-      continue;
-    }
     for (const rel of item.paths) {
       if (rel.includes(WSID_TOKEN)) {
         if (scopeType === 'workspace') out.push(path.join(configDir, rel.split(WSID_TOKEN).join(scope)));
@@ -164,15 +114,6 @@ export async function resolveExternalRelPath(
   const base = path.resolve(wsPath);
   const abs = path.resolve(base, ...segs.slice(2));
   return abs.startsWith(base + path.sep) ? abs : null;
-}
-
-/** 同步范围条目（每项 syncItemId 即同步项 id），settings-types / sync manifest 由此派生 */
-export function registrySyncItems(): readonly DataItem[] {
-  return DATA_ITEMS.filter((item) => item.syncItemId !== undefined);
-}
-
-export function sensitiveRelPaths(): string[] {
-  return DATA_ITEMS.filter((item) => item.sensitive === true).flatMap((item) => item.paths);
 }
 
 /** 备份源绝对路径 → zip 内条目路径（相对 configDir，posix 分隔符） */

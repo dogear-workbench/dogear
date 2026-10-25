@@ -1,5 +1,5 @@
 /**
- * prompt injection 公共扫描层：检测页面文本中的指令注入模式，内嵌/扩展两侧读内容工具共用。
+ * prompt injection 公共扫描层：检测页面文本中的指令注入模式，读内容类工具共用。
  *
  * 与 site-policy 的 scanAndMarkRisk 正交：注入扫描对所有页面生效、只告警不阻断；
  * riskScan 是站点策略反爬风控（命中即熔断该域），互不替代。

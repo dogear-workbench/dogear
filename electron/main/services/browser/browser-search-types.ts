@@ -1,12 +1,11 @@
 import type { BrowserTaskMeta } from './browser-task-meta.js';
-import type { FetchFailureContext } from './embedded/fetch-page.js';
 import type { SiteSearchId } from './site-search.js';
 
 export type SearchEngineId = 'google' | 'ddg' | 'bing';
 export type SearchEngineConfig = 'auto' | SearchEngineId;
 export type SearchTarget = SearchEngineId | SiteSearchId;
 
-export type SearchErrorClass = 'empty_query' | 'parse_empty' | 'timeout' | 'nav_failed' | 'browser_crash';
+export type SearchErrorClass = 'empty_query' | 'parse_empty' | 'timeout' | 'nav_failed';
 
 export interface SearchResultItem {
   rank: number;
@@ -37,11 +36,9 @@ export type SearchOutcome =
       errorClass: SearchErrorClass;
       message: string;
       degradations: SearchDegradation[];
-      /** 全链失败但页面已保留在内嵌 tab 时的探索上下文（pageAvailable=true 表示可继续观察） */
-      failure?: FetchFailureContext;
     };
 
-export type SearchAction = 'navigate' | 'wait' | 'observe' | 'parse';
+export type SearchAction = 'navigate' | 'observe' | 'parse';
 
 export interface SearchActionEvent {
   taskMeta: BrowserTaskMeta;
@@ -69,8 +66,6 @@ export interface SearchWebOptions {
   taskMeta?: BrowserTaskMeta;
   onAction?: OnSearchAction;
   serpUrls?: SearchSerpUrls;
-  /** 内嵌宿主 workspace（决定持久 partition/Cookie 信誉），agent 场景必传，缺省落独立抓取工作区 */
-  workspaceId?: string;
 }
 
 export const DEFAULT_MAX_RESULTS = 8;
@@ -78,7 +73,8 @@ export const MAX_RESULTS_LIMIT = 15;
 
 export const SERP_URL_TEMPLATES: Record<SearchEngineId, string> = {
   google: 'https://www.google.com/search?q={q}',
-  ddg: 'https://duckduckgo.com/?q={q}',
+  /** 纯 HTTP 快档用 html 子域服务端渲染端点：主域 /?q= 是 JS 渲染骨架页，无结果可解析 */
+  ddg: 'https://html.duckduckgo.com/html/?q={q}',
   bing: 'https://cn.bing.com/search?q={q}',
 };
 

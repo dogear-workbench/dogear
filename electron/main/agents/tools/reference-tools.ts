@@ -3,11 +3,8 @@
  *
  * dogear-history（跨会话检索，常驻组）：绑定工作区即注册，不可关，与基础工具同性质——通用检索是基础设施。
  * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口；可传 workspaceId 列其他工作区）
+ * - dogear__SearchSessions：跨会话与共享文件检索（多词 OR → 结论文件命中 + 过程会话命中，零模型本地扫描）
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
- * - dogear__ReadTopicCard：直读任意工作区指定话题的状态卡（纯读不触发提炼；临时会话归置建议用）
- *
- * dogear-group-context（组状态卡组）：归会话组包，会话属于组且包开时注册。
- * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
  *
  * dogear-sibling（兄弟会话组）：归 Agent 协作包。
  * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
@@ -16,10 +13,7 @@ import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { readCleanTranscript } from '../pi-session/transcript-adapter.js';
 import { getPiSessionRepository } from '../pi-session/pi-session-repository.js';
-import { readTopicStateCard, getStaleConversations } from '../../services/memory/background-store.js';
-import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS, deriveStaleList, staleListText } from '../group-context-builder.js';
-import { ensureGroupFresh } from '../../services/memory/state-extract-trigger.js';
-import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicStateCard, type TopicVersion } from '../../services/memory/state-card.js';
+import { searchSessions, fmtTs } from '../../services/session-search-service.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { listGroups } from '../../services/group-service.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -28,17 +22,13 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
-const READ_SYNC_WAIT_MS = 120_000;
-
-const COMPLETED_KEEP = 8;
-
 /** 跨会话检索常驻组：只依赖 workspaceId，不需要 groupId / 会话身份 */
 export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
   return [
     defineTool(
       'dogear__ListTopics',
       '列出工作区全部话题',
-      '列出指定工作区的全部话题（含已归档）：每个话题一行 groupId + 话题一句话 + 更新时间 + 主会话数 + 归档状态。零模型纯本地读取，用于跨话题检索时先定位目标话题，再用 dogear__ReadGroupBackground / dogear__ReadReferenceSession 深挖。不传 workspaceId 时列当前绑定工作区；在临时会话（personal）中协助用户移入工作区时，传入候选工作区 id 列出近期话题，结合 dogear__ReadTopicCard 了解候选话题内容后给出归置建议（你只能建议，移入操作由用户点 UI 确认）。',
+      '列出指定工作区的全部话题（含已归档）：每个话题一行 groupId + 话题一句话 + 更新时间 + 主会话数 + 归档状态。零模型纯本地读取，用于跨话题检索时先定位目标话题，再用 dogear__ReadReferenceSession 深挖。不传 workspaceId 时列当前绑定工作区；协助用户把会话移入其他工作区时，传入候选工作区 id 列出近期话题，结合话题标题与更新时间给出归置建议（你只能建议，移入操作由用户点 UI 确认）。',
       z.object({
         workspaceId: z.string().optional().describe('目标工作区 id；缺省为当前会话绑定的工作区'),
       }),
@@ -57,21 +47,13 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
           }
           const rows: Array<{ groupId: string; label: string; updatedAt: string; mainConvs: number; archived: boolean; sortTs: number }> = [];
           for (const g of groups) {
-            let label = g.title?.trim() || '(未命名话题)';
-            let updatedAtTs = g.updatedAt;
-            try {
-              const card = await readTopicStateCard(wsId, g.id);
-              const topic = card?.topicHistory[card.topicHistory.length - 1];
-              if (topic?.text) label = topic.text;
-              if (card?.updatedAt) updatedAtTs = Date.parse(card.updatedAt) || updatedAtTs;
-            } catch { /* 单组状态卡读失败不阻塞列表，回退组标题 */ }
             rows.push({
               groupId: g.id,
-              label,
-              updatedAt: fmtTs(new Date(updatedAtTs).toISOString()),
+              label: g.title?.trim() || '(未命名话题)',
+              updatedAt: fmtTs(new Date(g.updatedAt).toISOString()),
               mainConvs: mainConvCount.get(g.id) ?? 0,
               archived: g.archivedAt !== undefined,
-              sortTs: updatedAtTs,
+              sortTs: g.updatedAt,
             });
           }
           rows.sort((a, b) => (a.archived === b.archived ? b.sortTs - a.sortTs : a.archived ? 1 : -1));
@@ -94,15 +76,69 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
     ),
 
     defineTool(
+      'dogear__SearchSessions',
+      '跨会话与共享文件检索',
+      `跨会话与共享区文件检索：按多个关键词扫描工作区会话原文（只搜 user/assistant 讨论文本，不含工具输出与引用块）与话题共享区文件，返回「📄 结论文件命中」（附内容，读完即得）+「💬 过程会话命中」（片段 + 结论预览）。检索策略：\n- queries 一次传 1~5 个候选词，任一命中即返回：同义词、原话变体、中英文写法一次传齐，如 ["检索预算","扫描上限","budget"]\n- 优先用讨论中可能出现过的原文字面词：文件名、报错信息、专有名词、代码标识符\n- 0 命中时换更短的词根或更多同义词重试，不要直接放弃\n- 📄 文件命中是结论沉淀（交付物/报告）：内容直接附上，命中带 sourceSessionId 时可用 dogear__ReadReferenceSession 深挖讨论过程\n- 💬 会话命中是过程原文：按片段与结论预览判断相关性，需要细节用 dogear__ReadReferenceSession(sessionId)\n- 「上周」「昨天」等时间词自行换算成日期传 after/before\n受扫描预算限制（最多 150 个文件 / 200MB / 10 秒，按 主会话 → 共享文件 → 子会话 优先扫描），未扫完时返回如实覆盖率，此时换更精确关键词或传 groupId 缩小范围再搜。`,
+      z.object({
+        queries: z.array(z.string().min(2)).min(1).max(5).describe('检索关键词 1~5 个，任一命中即候选（ASCII 大小写不敏感，中文按原样子串匹配；至少 2 字符/词）'),
+        groupId: z.string().optional().describe('限定只在指定话题组内检索（groupId 从 dogear__ListTopics 获取）'),
+        limit: z.number().int().min(1).max(100).optional().describe('会话命中数上限，默认 30'),
+        after: z.string().optional().describe('只返回该时间之后（不含）更新的内容，ISO 或 YYYY-MM-DD'),
+        before: z.string().optional().describe('只返回该时间之前（不含）更新的内容，ISO 或 YYYY-MM-DD'),
+      }),
+      async (args) => {
+        try {
+          const r = await searchSessions(workspaceId, args);
+          const q = `queries=[${r.queries.map((x) => `"${x}"`).join(', ')}]`;
+          const coverage = r.stoppedBy === 'completed'
+            ? `已扫 ${r.scanned}/${r.totalCandidates} 个候选源`
+            : `已按 主会话→共享文件→子会话 优先扫描 ${r.scanned}/${r.totalCandidates} 个候选源（${{ files: '文件数', bytes: '容量', time: '时长' }[r.stoppedBy]}预算触顶），可用更精确关键词或 groupId 缩小范围`;
+          if (!r.fileHits.length && !r.sessionHits.length) {
+            return {
+              content: [{ type: 'text' as const, text: `${q} 未命中任何文件或会话（${coverage}，耗时 ${r.elapsedMs}ms）。建议换更短的词根或更同义的词重试，也可先用 dogear__ListTopics 定位话题再传 groupId 限定范围。` }],
+            };
+          }
+          const lines: string[] = [`${q} 命中共享文件 ${r.fileHits.length} 个、会话 ${r.sessionHits.length} 个（${coverage}，耗时 ${r.elapsedMs}ms）`];
+          if (r.fileHits.length) {
+            lines.push('', '📄 结论文件命中（内容如下，读完即得）：');
+            r.fileHits.forEach((f, i) => {
+              lines.push(`${i + 1}. ${f.relPath} · ${f.groupTitle} · groupId=${f.groupId} · 更新 ${fmtTs(f.mtime)} · matched=[${f.matchedTerms.join(', ')}]`);
+              lines.push(`   片段：${f.snippet}`);
+              if (f.sourceSessionId) lines.push(`   源会话 sessionId=${f.sourceSessionId}（可 dogear__ReadReferenceSession 深挖过程）`);
+              lines.push(`--- 文件内容${f.truncated ? '（超长，截断至前 8K 字符）' : ''} ---`);
+              lines.push(f.content);
+              lines.push('--- 内容结束 ---');
+            });
+          }
+          if (r.sessionHits.length) {
+            lines.push('', '💬 过程会话命中：');
+            r.sessionHits.forEach((hit, i) => {
+              lines.push(`${i + 1}. 「${hit.title}」 convId=${hit.conversationId} sessionId=${hit.sessionId} 更新 ${fmtTs(hit.updatedAt)}${hit.groupId ? ` groupId=${hit.groupId}` : ''}${hit.archived ? ' · 已归档' : ''}${hit.titleMatched ? ' · 标题命中' : ''} · matched=[${hit.matchedTerms.join(', ')}]`);
+              for (const m of hit.matches) lines.push(`   [${m.role} ${fmtTs(m.timestamp)}] ${m.snippet}`);
+              if (hit.tailPreview) lines.push(`   结论预览：${hit.tailPreview}`);
+            });
+          }
+          return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        } catch (e) {
+          return {
+            content: [{ type: 'text' as const, text: `跨会话检索失败: ${e instanceof Error ? e.message : String(e)}` }],
+            isError: true,
+          };
+        }
+      },
+    ),
+
+    defineTool(
       'dogear__ReadReferenceSession',
       '读取会话去噪原文',
-      '读指定会话的去噪原文（可尾切或区间切）。仅用于需要查看其他会话的完整对话内容时。',
+      '读指定会话的去噪原文（可尾切或区间切）。仅用于需要查看其他会话的完整对话内容时。默认 detail=clean：只含 user/assistant 文本与工具调用骨架，适合快速了解会话讲了什么；排查任务运行过程、需要复现 agent 当时看到/执行了什么时传 detail="full"（完整工具调用参数 + 每条执行结果文本前 300 字）。',
       z.object({
         sessionId: z.string().describe('目标会话的 SDK sessionId'),
         workspaceId: z.string().optional().describe('目标会话所属工作区 id；引用跨工作区会话时从 <conversation> 标签取'),
         tail: z.number().int().positive().optional().describe('返回最后 N 条；不传则返回全量'),
         rangeStart: z.number().int().nonnegative().optional().describe('区间起始（含），与 rangeEnd 配合使用；不传则不切区间'),
         rangeEnd: z.number().int().nonnegative().optional().describe('区间结束（不含），与 rangeStart 配合使用'),
+        detail: z.enum(['clean', 'full']).optional().describe('输出保真度：clean（默认）快速了解内容；full 保留完整工具调用参数与执行结果摘要，排查运行过程时用'),
       }),
       async (args) => {
         const range = (args.rangeStart != null && args.rangeEnd != null)
@@ -111,6 +147,7 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
         const r = await readCleanTranscript(args.workspaceId ?? workspaceId, args.sessionId, {
           tail: args.tail,
           range,
+          detail: args.detail,
         });
         if (!r.ok) {
           return {
@@ -121,12 +158,11 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
         return {
           content: [{
             type: 'text' as const,
-            text: `sessionId=${args.sessionId} count=${r.count} totalCount=${r.totalCount} lastTimestamp=${r.lastTimestamp}\n\n${r.text}`,
+            text: `sessionId=${args.sessionId} detail=${args.detail ?? 'clean'} count=${r.count} totalCount=${r.totalCount} lastTimestamp=${r.lastTimestamp}\n\n${r.text}`,
           }],
         };
       },
     ),
-    ...createCrossWorkspaceCardToolDefs(),
   ];
 }
 
@@ -135,109 +171,6 @@ export interface ReferenceToolsOpts {
   groupId: string;
   /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除。主会话没有父会话 */
   parentConversationId?: string;
-  /** 当前会话自身的 conversationId：话题状态抽取与未提炼列表排除自己，避免抽自己正在进行的对话 */
-  selfConversationId?: string;
-}
-
-export function createGroupContextToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
-  const { workspaceId, groupId, selfConversationId } = opts;
-
-  return [
-    defineTool(
-      'dogear__ReadGroupBackground',
-      '读取话题状态卡',
-      '读取当前会话组的话题状态卡（返回唯一最新卡）：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。默认精简返回：版本链只记计数、已完成只留最近 8 条（防活跃话题膨胀），需要完整历史时传 full: true。存在未提炼会话时会现场抽取并等待，可能需 30s~2min。仅用于需要了解当前组最新整体状态时。',
-      z.object({
-        full: z.boolean().optional().describe('true 返回全量（完整版本链 + 全部已完成条目）；缺省精简返回'),
-      }),
-      async (args) => {
-        const fresh = await ensureGroupFresh(workspaceId, groupId, READ_SYNC_WAIT_MS, selfConversationId);
-        const card = await readTopicStateCard(workspaceId, groupId);
-        if (!card) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `(本组话题状态卡尚未生成${fresh.synced ? '' : '，且本次同步抽取未能完成'} · groupId=${groupId})`,
-            }],
-          };
-        }
-        const withMeta = (source: string, ts: string) => `（${[sourceLabel(source), fmtTs(ts)].filter(Boolean).join(' · ')}）`;
-        const topicLines: string[] = [];
-        const topic = card.topicHistory[card.topicHistory.length - 1];
-        if (topic) {
-          const first = card.topicHistory[0];
-          topicLines.push(
-            `## 话题背景（生效）`,
-            topic.text,
-            `确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}`,
-          );
-          if (card.topicHistory.length > 1) {
-            if (args.full) {
-              topicLines.push(
-                '',
-                `## 话题版本链（共 ${card.topicHistory.length} 版，末位生效）`,
-                ...card.topicHistory.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
-              );
-            } else {
-              topicLines.push(
-                '',
-                `## 话题版本链（共 ${card.topicHistory.length} 版，末版即上方生效话题；完整链传 full: true）`,
-              );
-            }
-          }
-        }
-        const entryLines: string[] = [];
-        for (const cat of TOPIC_CARD_CATEGORIES) {
-          const items = card.entries[cat];
-          if (!items.length) continue;
-          entryLines.push(`### ${CATEGORY_LABELS[cat]}`);
-          if (cat === 'completed' && !args.full && items.length > COMPLETED_KEEP) {
-            entryLines.push(...items.slice(-COMPLETED_KEEP).map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
-            entryLines.push(`- …另有 ${items.length - COMPLETED_KEEP} 条更早的已完成条目（完整列表传 full: true；深挖历史可用 dogear__ReadReferenceSession）`);
-          } else {
-            entryLines.push(...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
-          }
-        }
-        const parts = [
-          `groupId=${card.groupId} updatedAt=${fmtTs(card.updatedAt)}`,
-          '',
-          ...topicLines,
-        ];
-        if (!fresh.synced) {
-          let staleCount = 0;
-          let staleList = '';
-          try {
-            const stale = await getStaleConversations(workspaceId, groupId, selfConversationId);
-            staleCount = stale.length;
-            staleList = staleListText(await deriveStaleList(workspaceId, stale));
-          } catch { /* 列表派生失败不阻塞返回 */ }
-          parts.push(
-            '',
-            `【未能同步】以下为提炼至 ${fmtTs(card.updatedAt)} 的状态${staleCount ? `，另有 ${staleCount} 个会话未提炼，可能包含更晚的事实` : '，本次抽取未能完成'}：`,
-          );
-          if (staleList) parts.push(staleList);
-          parts.push(
-            fresh.timedOut
-              ? `（同步等待超过 ${READ_SYNC_WAIT_MS / 1000}s，抽取仍在后台进行，可稍后重试本工具获取最新卡）`
-              : '（抽取失败，可稍后重试本工具；深挖会话原文可用 dogear__ReadReferenceSession）',
-          );
-        }
-        if (entryLines.length) {
-          parts.push('', '## 当前状态', ...entryLines);
-        } else if (!topicLines.length) {
-          parts.push('(状态卡为空，尚无任何提炼记录)');
-        }
-        if (card.pendingTopicChanges.length) {
-          parts.push(
-            '',
-            `## 待确认话题变更（${card.pendingTopicChanges.length} 条，等用户在话题面板裁决，不要自行当已生效事实）`,
-            ...card.pendingTopicChanges.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
-          );
-        }
-        return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
-      },
-    ),
-  ];
 }
 
 export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
@@ -263,10 +196,6 @@ export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
             && !!c.sessionId,
           );
 
-          // 状态卡的 sourcesSeen 用来判断该会话是否已被提炼
-          const card = await readTopicStateCard(workspaceId, groupId);
-          const coveredSids = new Set((card?.sourcesSeen ?? []).map((s) => s.sessionId));
-
           const now = Date.now();
           const rows: string[] = [];
           for (const c of siblings) {
@@ -279,11 +208,10 @@ export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
               mtime = stat.mtimeMs;
             } catch { /* session 不存在，视为无活动 */ }
             const isActive = mtime > 0 && now - mtime < ACTIVE_THRESHOLD_MS;
-            const hasStateCoverage = coveredSids.has(sid);
             const lastActivity = mtime ? new Date(mtime).toISOString() : '(未知)';
             rows.push(
               `- sessionId=${sid} · title=${c.title} · lastActivity=${lastActivity}`
-                + ` · isActive=${isActive} · hasStateCoverage=${hasStateCoverage}`,
+                + ` · isActive=${isActive}`,
             );
           }
 
@@ -305,74 +233,11 @@ export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
   ];
 }
 
-/** 直读任意工作区指定话题的状态卡（纯读不触发提炼）；临时会话归置建议用 */
-function formatTopicCardBrief(card: TopicStateCard): string {
-  const lines: string[] = [`groupId=${card.groupId} updatedAt=${fmtTs(card.updatedAt)}`];
-  const topic = card.topicHistory[card.topicHistory.length - 1];
-  if (topic) {
-    const first = card.topicHistory[0];
-    lines.push('', '## 话题背景（生效）', topic.text, `确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}`);
-  }
-  const entryLines: string[] = [];
-  for (const cat of TOPIC_CARD_CATEGORIES) {
-    const items = card.entries[cat];
-    if (!items.length) continue;
-    entryLines.push(`### ${CATEGORY_LABELS[cat]}`, ...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
-  }
-  if (entryLines.length) lines.push('', '## 当前状态', ...entryLines);
-  else if (!topic) lines.push('', '(状态卡为空，尚无任何提炼记录)');
-  return lines.join('\n');
-}
-
-function withMeta(source: string, ts: string): string {
-  return `（${[sourceLabel(source), fmtTs(ts)].filter(Boolean).join(' · ')}）`;
-}
-
-/**
- * 跨工作区话题状态卡直读工具（归 dogear-history 常驻组）。
- * 与 dogear__ReadGroupBackground 的区别：指定 workspaceId+groupId、纯读不触发状态提炼，
- * 供临时会话（personal）在归置建议场景了解候选工作区话题内容。
- */
-export function createCrossWorkspaceCardToolDefs(): ToolDef[] {
-  return [
-    defineTool(
-      'dogear__ReadTopicCard',
-      '读取指定工作区的话题状态卡',
-      '直接读取任意工作区指定话题的状态卡（生效话题 + 六类状态条目；纯读，不触发状态提炼）。典型场景：用户想把当前临时会话移入工作区时，先 dogear__ListTopics 列候选工作区话题，再用本工具了解目标话题在聊什么，然后给出归置建议（你只能建议，移入操作由用户点 UI 确认）。',
-      z.object({
-        workspaceId: z.string().describe('目标工作区 id'),
-        groupId: z.string().describe('目标话题的 groupId（从 dogear__ListTopics 输出获取）'),
-      }),
-      async (args) => {
-        try {
-          const card = await readTopicStateCard(args.workspaceId, args.groupId);
-          if (!card) {
-            return { content: [{ type: 'text' as const, text: `(话题 ${args.groupId} 尚无状态卡，workspaceId=${args.workspaceId})` }] };
-          }
-          return { content: [{ type: 'text' as const, text: formatTopicCardBrief(card) }] };
-        } catch (e) {
-          return {
-            content: [{ type: 'text' as const, text: `读话题状态卡失败: ${e instanceof Error ? e.message : String(e)}` }],
-            isError: true,
-          };
-        }
-      },
-    ),
-  ];
-}
-
 registerToolGroup({
   server: 'dogear-history',
   label: '跨会话检索',
   create: createHistorySearchToolDefs,
   placeholder: [''],
-});
-
-registerToolGroup({
-  server: 'dogear-group-context',
-  label: '会话组状态',
-  create: createGroupContextToolDefs,
-  placeholder: [{ workspaceId: '', groupId: '' }],
 });
 
 registerToolGroup({

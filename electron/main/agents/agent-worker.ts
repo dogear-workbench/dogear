@@ -20,12 +20,6 @@ import {
 import { workerLogger, createTaskLogger } from './logger.js';
 import type { TaskHandlerContext } from './tasks/task-context.js';
 import { handleParseArticleTask } from './tasks/parse-article-task.js';
-import { handleStateExtractTask } from './tasks/state-extract-task.js';
-import {
-  handleCustomAgentTask,
-  handleSummarizeTask,
-  handleReadingAssistTask,
-} from './tasks/custom-agent-task.js';
 
 /**
  * Agent Worker 类
@@ -115,24 +109,8 @@ class AgentWorker {
 
       // 根据任务类型分发处理
       switch (task.type) {
-        case TaskType.SUMMARIZE:
-          result = await handleSummarizeTask(task, taskLogger);
-          break;
-
-        case TaskType.READING_ASSIST:
-          result = await handleReadingAssistTask(task, taskLogger);
-          break;
-
         case TaskType.PARSE_ARTICLE:
           result = await handleParseArticleTask(task, taskLogger, ctx);
-          break;
-
-        case TaskType.CUSTOM_AGENT:
-          result = await handleCustomAgentTask(task, taskLogger, ctx);
-          break;
-
-        case TaskType.STATE_EXTRACT:
-          result = await handleStateExtractTask(task, taskLogger, ctx);
           break;
 
         default:

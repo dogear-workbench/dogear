@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务面板原型 v2 · 统一形态：详情 / 会话历史 / 引用到主会话</title>
+<style>
+:root, body[data-theme="light"] {
+  --bg: #F5F1E8; --surface: #FBF9F3; --sidebar: #EFE9DC; --rail: #EBE4D4;
+  --text: #33302B; --muted: #8A8272; --border: #E0D8C6; --border-soft: #EAE3D3;
+  --accent: #10B981; --accent-soft: rgba(16,185,129,.12);
+  --red: #EF4444; --red-soft: rgba(239,68,68,.10);
+  --amber: #D97706; --amber-soft: rgba(217,119,6,.12);
+  --code-bg: #EDE7D8; --hover: rgba(51,48,43,.05);
+  --user-bubble: #E7E0CE; --tool-bg: #EFEADB;
+}
+body[data-theme="dark"] {
+  --bg: #1E242C; --surface: #232A33; --sidebar: #1A2027; --rail: #171D24;
+  --text: #C6CBD2; --muted: #737D89; --border: #2E3742; --border-soft: #28313B;
+  --accent: #10B981; --accent-soft: rgba(16,185,129,.15);
+  --red: #EF4444; --red-soft: rgba(239,68,68,.14);
+  --amber: #E8A33D; --amber-soft: rgba(232,163,61,.14);
+  --code-bg: #1A222B; --hover: rgba(198,203,210,.06);
+  --user-bubble: #2B333E; --tool-bg: #212933;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); font-size: 13px; overflow: hidden; }
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+.topbar { height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.topbar .title { font-weight: 600; font-size: 12.5px; }
+.topbar .searchbox { flex: 1; max-width: 340px; margin: 0 auto; display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: 12px; }
+.wco { display: flex; gap: 14px; margin-left: auto; color: var(--muted); font-size: 12px; user-select: none; }
+.wco span { cursor: default; width: 14px; text-align: center; }
+.traffic { display: flex; gap: 8px; }
+.traffic i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.traffic .r { background: #FF5F57; } .traffic .y { background: #FEBC2E; } .traffic .g { background: #28C840; }
+
+.main { flex: 1; display: flex; min-height: 0; }
+.rail { width: 48px; background: var(--rail); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 6px 0 8px; gap: 2px; flex-shrink: 0; }
+.rail button { position: relative; width: 36px; height: 36px; border-radius: 8px; border: none; background: transparent; color: var(--muted); cursor: pointer; display: grid; place-items: center; transition: all .12s; }
+.rail button:hover { background: var(--hover); color: var(--text); }
+.rail button.active { background: var(--accent-soft); color: var(--accent); }
+.rail button.active::before { content: ''; position: absolute; left: -6px; top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--accent); }
+.rail button .dot { position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); border: 1.5px solid var(--rail); }
+.rail .spacer { flex: 1; }
+svg { display: block; }
+
+.taskpanel { flex: 1; display: flex; min-width: 0; }
+.tp-left { width: 300px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--sidebar); display: flex; flex-direction: column; min-height: 0; }
+.tp-left-head { padding: 10px 12px 6px; display: flex; align-items: center; justify-content: space-between; }
+.tp-left-head .h { font-weight: 700; font-size: 14px; }
+.tp-scroll { flex: 1; overflow-y: auto; padding: 2px 6px 20px; }
+.sec-head { display: flex; align-items: center; gap: 6px; padding: 10px 8px 4px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .05em; }
+.sec-head .cnt { background: var(--hover); border-radius: 8px; padding: 0 6px; font-size: 10px; }
+.sec-head .add { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
+.sec-head .add:hover { background: var(--accent-soft); }
+.trow { border-radius: 8px; margin: 1px 2px; }
+.trow:hover { background: var(--hover); }
+.trow.selected { background: var(--accent-soft); }
+.trow-main { display: flex; align-items: center; gap: 8px; padding: 7px 8px; cursor: pointer; }
+.trow-main .nm { flex: 1; min-width: 0; }
+.trow-main .nm .t { font-weight: 550; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.trow-main .nm .d { color: var(--muted); font-size: 11px; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; flex-shrink: 0; }
+.badge.new { background: var(--accent); color: #fff; }
+.badge.run { background: var(--accent-soft); color: var(--accent); }
+.badge.review { background: var(--amber-soft); color: var(--amber); }
+.switch { width: 26px; height: 15px; border-radius: 8px; background: var(--accent); position: relative; flex-shrink: 0; cursor: pointer; }
+.switch::after { content: ''; position: absolute; top: 1.5px; right: 1.5px; width: 12px; height: 12px; border-radius: 50%; background: #fff; }
+.switch.off { background: var(--border); }
+.switch.off::after { right: 12.5px; }
+.runs { display: none; padding: 0 4px 4px 26px; }
+.runs.open { display: block; }
+.runrow { display: flex; align-items: center; gap: 7px; padding: 4px 8px; border-radius: 6px; font-size: 11.5px; color: var(--muted); cursor: pointer; }
+.runrow:hover { background: var(--hover); }
+.runrow.selected { background: var(--accent-soft); color: var(--text); }
+.runrow .st-ok { color: var(--accent); } .runrow .st-err { color: var(--red); }
+.runrow .tk { margin-left: auto; font-size: 10px; }
+.chev { transition: transform .15s; color: var(--muted); flex-shrink: 0; display: grid; place-items: center; }
+.chev.open { transform: rotate(90deg); }
+.spin { width: 12px; height: 12px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: rot .8s linear infinite; flex-shrink: 0; }
+@keyframes rot { to { transform: rotate(360deg); } }
+.collapse-hint { display: flex; align-items: center; gap: 6px; padding: 5px 10px; color: var(--muted); font-size: 11px; cursor: pointer; }
+.urlinput { display: flex; align-items: center; gap: 6px; margin: 3px 6px; padding: 5px 8px; border: 1px solid var(--accent); border-radius: 7px; background: var(--surface); }
+.urlinput input { flex: 1; border: none; background: none; color: var(--text); font-size: 11.5px; outline: none; min-width: 0; }
+
+.tp-right { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface); }
+.detail-head { padding: 14px 20px 10px; border-bottom: 1px solid var(--border-soft); }
+.detail-head .t { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.detail-head .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.kv { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.kv .chip { border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; font-size: 11.5px; color: var(--muted); background: var(--bg); }
+.kv .chip b { color: var(--text); font-weight: 600; }
+.detail-body { flex: 1; overflow-y: auto; padding: 14px 20px; }
+.promptbox { border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg); padding: 10px 12px; font-size: 12px; line-height: 1.7; color: var(--muted); white-space: pre-wrap; max-height: 140px; overflow: hidden; position: relative; }
+.promptbox::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 46px; background: linear-gradient(transparent, var(--code-bg)); }
+.detail-actions { display: flex; gap: 8px; margin-top: 14px; }
+.btn { display: inline-flex; align-items: center; gap: 5px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text); padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { opacity: .9; }
+.iterate-hint { margin-top: 18px; border: 1px dashed var(--border); border-radius: 9px; padding: 10px 12px; font-size: 11.5px; color: var(--muted); line-height: 1.8; }
+.iterate-hint b { color: var(--text); }
+
+.chatwrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.runmeta { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border-soft); font-size: 11.5px; color: var(--muted); background: var(--bg); }
+.runmeta b { color: var(--text); }
+.runmeta .to-main { margin-left: auto; }
+.chatscroll { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.msg-user { align-self: flex-end; max-width: 78%; background: var(--user-bubble); border-radius: 12px 12px 3px 12px; padding: 9px 12px; font-size: 12.5px; line-height: 1.65; }
+.msg-ai { max-width: 92%; display: flex; flex-direction: column; gap: 8px; }
+.msg-ai .who { font-size: 10.5px; color: var(--muted); font-weight: 600; }
+.msg-ai .txt { font-size: 12.5px; line-height: 1.7; }
+.toolcall { border: 1px solid var(--border); border-left: 3px solid var(--muted); background: var(--tool-bg); border-radius: 7px; padding: 7px 10px; font-size: 11.5px; color: var(--muted); font-family: "Cascadia Code", Consolas, monospace; }
+.toolcall b { color: var(--text); font-weight: 600; }
+.toolcall.ok { border-left-color: var(--accent); }
+.thinking { display: inline-flex; gap: 4px; align-items: center; }
+.thinking i { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+.thinking i:nth-child(2) { animation-delay: .2s; } .thinking i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+
+.basepanel { flex: 1; display: flex; min-width: 0; }
+.base-left { width: 280px; border-right: 1px solid var(--border); background: var(--sidebar); overflow-y: auto; padding: 6px; }
+.base-note-row { padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+.base-note-row:hover { background: var(--hover); }
+.base-note-row .t { font-weight: 550; }
+.base-note-row .d { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.dc-tabs { display: flex; gap: 2px; padding: 8px 14px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; background: var(--surface); }
+.dc-tabs .t { padding: 7px 12px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
+.dc-tabs .t.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+.dc-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
+.demo-chips { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); display: flex; gap: 6px; z-index: 40; }
+.demo-chips button { font-size: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--muted); border-radius: 14px; padding: 3px 10px; cursor: pointer; }
+.demo-chips button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+
+.convlist { width: 256px; border-right: 1px solid var(--border); background: var(--sidebar); overflow-y: auto; padding: 8px 6px; }
+.conv-grp .gt { padding: 6px 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.conv-row { padding: 7px 10px 7px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px; display: flex; gap: 8px; align-items: center; }
+.conv-row:hover { background: var(--hover); }
+.conv-row .exec-tag { font-size: 10px; color: var(--amber); background: var(--amber-soft); border-radius: 6px; padding: 1px 6px; font-weight: 600; }
+.conv-empty-note { margin: 14px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 8px; color: var(--muted); font-size: 11.5px; line-height: 1.7; }
+
+.draftwrap { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--surface); }
+.draft-main { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.refcard { border: 1px solid var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; max-width: 560px; }
+.refcard .ic { color: var(--accent); }
+.refcard .tt { flex: 1; min-width: 0; }
+.refcard .tt .a { font-weight: 650; font-size: 12.5px; }
+.refcard .tt .b { color: var(--muted); font-size: 11px; margin-top: 1px; }
+.refcard .x { color: var(--muted); cursor: pointer; font-size: 13px; padding: 2px 6px; }
+.draft-input { border-top: 1px solid var(--border); padding: 12px 18px 16px; }
+.draft-input .box { max-width: 720px; margin: 0 auto; border: 1.5px solid var(--accent); border-radius: 12px; background: var(--bg); padding: 12px 14px; }
+.draft-input textarea { width: 100%; border: none; background: none; color: var(--text); font-size: 13px; outline: none; resize: none; font-family: inherit; line-height: 1.6; }
+.draft-input .hint { max-width: 720px; margin: 8px auto 0; color: var(--muted); font-size: 11px; text-align: center; }
+.draft-reply { max-width: 720px; align-self: flex-start; }
+.draft-reply .who { font-size: 10.5px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.draft-reply .txt { font-size: 12.5px; line-height: 1.75; border-left: 3px solid var(--accent); padding-left: 12px; }
+
+#ctrl { position: fixed; right: 14px; bottom: 14px; z-index: 99; }
+#ctrl-btn { background: #2D3748; color: #A0AEC0; border: 1px solid #4A5568; border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+#ctrl-panel { display: none; width: 250px; background: #2D3748; color: #CBD5E0; border: 1px solid #4A5568; border-radius: 10px; padding: 12px 14px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+#ctrl.open #ctrl-panel { display: block; }
+#ctrl h5 { color: #E2E8F0; font-size: 11px; margin: 8px 0 4px; letter-spacing: .05em; }
+#ctrl .seg { display: flex; gap: 4px; margin: 3px 0; }
+#ctrl .seg button { flex: 1; font-size: 11px; border: 1px solid #4A5568; background: #374151; color: #CBD5E0; border-radius: 6px; padding: 4px 0; cursor: pointer; }
+#ctrl .seg button.on { background: #10B981; border-color: #10B981; color: #fff; }
+#ctrl .note { color: #718096; font-size: 10.5px; line-height: 1.5; margin-top: 6px; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+.toast { position: fixed; top: 50px; left: 50%; transform: translateX(-50%); background: #2D3748; color: #E2E8F0; font-size: 12px; border-radius: 8px; padding: 8px 16px; z-index: 98; opacity: 0; transition: opacity .25s; pointer-events: none; }
+.toast.show { opacity: 1; }
+</style>
+</head>
+<body data-theme="light">
+<div id="app">
+  <div class="topbar">
+    <span id="platform-left" style="display:flex;align-items:center"></span>
+    <span class="title">Dogear</span>
+    <div class="searchbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span id="search-hint">搜索任务与运行记录…</span></div>
+    <div id="platform-right"></div>
+  </div>
+  <div class="main" id="main"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<div id="ctrl">
+  <button id="ctrl-btn">⚙ 原型控制</button>
+  <div id="ctrl-panel">
+    <h5>视图</h5>
+    <div class="seg" id="seg-variant">
+      <button data-v="panel" class="on">任务面板（方案）</button>
+      <button data-v="baseline">现状基线</button>
+    </div>
+    <h5>主题 / 平台</h5>
+    <div class="seg" id="seg-theme"><button data-v="light" class="on">浅色</button><button data-v="dark">深色</button></div>
+    <div class="seg" id="seg-platform"><button data-v="win" class="on">Windows</button><button data-v="mac">macOS</button></div>
+    <h5>协作任务执行会话</h5>
+    <div class="seg" id="seg-exec"><button data-v="hidden" class="on">话题组隐藏</button><button data-v="dual">双入口保留</button></div>
+    <div class="note">统一形态：点任务=详情，点会话=只读历史，迭代=引用到主会话。点 rail「对话」验证执行会话可见性。</div>
+  </div>
+</div>
+
+<script>
+const state = { variant: 'panel', theme: 'light', platform: 'win', exec: 'hidden', view: 'panel', baselineScreen: 'notes', expanded: 'code-review', selected: 'run-cr-1019', draftRef: null, parseOpen: false };
+
+const ico = {
+  chat: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  note: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></svg>',
+  task: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>',
+  db: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>',
+  archive: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>',
+  feishu: '<svg width="18" height="18" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#3370FF"/><text x="12" y="16.5" font-size="11" fill="#fff" text-anchor="middle" font-weight="700">飞</text></svg>',
+  settings: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>',
+  chev: '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m9 6 6 6-6 6"/></svg>',
+  play: '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4l14 8-14 8z"/></svg>',
+  ok: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6 9 17l-5-5"/></svg>',
+  err: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  plus: '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"/></svg>',
+  globe: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18"/></svg>',
+  tomain: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 5h6v6"/><path d="M19 5 9 15"/><path d="M19 14v5H5V5h5"/></svg>',
+  clock: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
+  cal: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>',
+  doc: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></svg>',
+  pin: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 17v5"/><path d="M9 10.8V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v5.8l2.7 2.7a1 1 0 0 1-.7 1.7H7a1 1 0 0 1-.7-1.7z"/></svg>',
+};
+
+const tasks = [
+  { id: 'code-review', name: '代码审查', desc: '每周日 12:00', on: true, runs: [
+    { id: 'run-cr-1019', date: '10-19 12:00', ok: true, tk: '20.3k' },
+    { id: 'run-cr-1012', date: '10-12 12:00', ok: true, tk: '18.7k' },
+    { id: 'run-cr-1005', date: '10-05 12:00', ok: false, tk: '—' } ] },
+  { id: 'dep-check', name: '依赖月度巡检', desc: '每月1号 09:00', on: true, runs: [
+    { id: 'run-dc-1001', date: '10-01 09:00', ok: true, tk: '12.1k' },
+    { id: 'run-dc-0901', date: '09-01 09:00', ok: true, tk: '11.8k' } ] },
+  { id: 'mem-check', name: '记忆体检', desc: '每周五 09:00', on: true, isNew: true, running: true, runs: [
+    { id: 'run-mc-live', date: '今天 09:00', ok: null } ] },
+];
+const collab = [
+  { id: 'c1', name: '记忆系统 v2：偏好层 + 写入治理', badge: '执行中', running: true, execLabel: '今天 09:12', execId: 'exec-c1', ok: null },
+  { id: 'c2', name: '任务面板改版', badge: '待审核', execLabel: '昨天 18:40', execId: 'exec-c2', ok: true },
+];
+const parses = [
+  { name: 'RAG 检索优化实践', d: '今天 10:24 · 8s', ok: true, path: 'articles/tech/rag-retrieval.md' },
+  { name: 'Electron 36 破坏性变更梳理', d: '昨天 21:03 · 12s', ok: true, path: 'articles/tech/electron-36.md' },
+  { name: '小红书·读书方法笔记', d: '昨天 20:47', ok: false, path: '（解析失败，无产物）' },
+];
+
+const chatCR = `
+<div class="msg-user">对本工作区（Dogear 项目）做代码健康双周巡检，产出一张笔记卡片。这是无人值守任务：只用 Read/Glob/Grep 静态扫描，不跑任何命令……</div>
+<div class="msg-ai"><div class="who">任务运行 · 第 1 轮</div>
+  <div class="toolcall ok"><b>Grep</b> "ipcRenderer\\.(on|send|invoke)" app/ components/ → <b>0 命中</b></div>
+  <div class="toolcall ok"><b>Grep</b> "window\\.(confirm|prompt)" → <b>0 命中</b></div>
+  <div class="toolcall ok"><b>Grep</b> "TODO|FIXME|HACK" src electron → <b>4 命中</b>（topbar-search.ts:88 …）</div>
+  <div class="txt">红线快扫四项全部通过。纪律扫描发现 4 个 TODO 累积未修（较上次新增 1、已修 2）；超长文件 top1 仍为 pi-session.ts。codemap 抽查 30 条路径无失效。</div>
+</div>
+<div class="msg-ai"><div class="who">任务运行 · 第 2 轮</div>
+  <div class="toolcall ok"><b>dogear__SearchNotes</b> tag="代码巡检" → 1 张（10-05）</div>
+  <div class="toolcall ok"><b>dogear__CreateNote</b> tags=["代码巡检"] → <b>note-3f2a</b></div>
+  <div class="txt">巡检卡片已创建：红线全过 / TODO 4 个累积 / 与上次对比新增 1。建议立项：TopBarSearch 空 provider 时的降级处理。</div>
+</div>`;
+
+const chatFail = `
+<div class="msg-user">对本工作区（Dogear 项目）做代码健康双周巡检……（同上）</div>
+<div class="msg-ai"><div class="who">任务运行 · 第 1 轮</div>
+  <div class="toolcall ok"><b>Grep</b> "ipcRenderer" → <b>0 命中</b></div>
+  <div class="toolcall ok"><b>Grep</b> "TODO|FIXME" → <b>6 命中</b></div>
+</div>
+<div class="msg-ai"><div class="who">任务运行 · 第 12 轮（卡死在此）</div>
+  <div class="toolcall"><b>Read</b> electron/main/agents/pi-session/pi-session.ts（超时）</div>
+  <div class="toolcall"><b>Read</b> electron/main/agents/pi-session/tool-assembly.ts（超时）</div>
+  <div class="txt" style="color:var(--red)">超过最大轮次 30，任务终止。会话化后这里能直接看到卡在哪一步、当时在读什么——排障不再靠猜。</div>
+</div>`;
+
+const chatMC = `
+<div class="msg-user">执行每周记忆体检：调体检工具检测重复对、死重、孤儿索引、垃圾文件；无歧义项直接修，有歧义项给出建议与理由等用户拍板。</div>
+<div class="msg-ai"><div class="who">任务运行 · 第 1 轮</div>
+  <div class="toolcall ok"><b>dogear__MemoryCheckup</b> → 重复 4 对 · 死重 23 条 · 孤儿 12 · 垃圾 19</div>
+  <div class="toolcall ok"><b>修复</b> rebuildIndex + 清理 .bak/.conflict → <b>31 项已修</b></div>
+  <div class="txt">疑似重复对 4 组已列入建议清单（bun-test 两版、config-dir 三版…）；死重 23 条均为 60 天未召回。<span class="thinking" style="margin-left:6px"><i></i><i></i><i></i></span></div>
+</div>`;
+
+const chatExec = `
+<div class="msg-user">执行任务「任务面板改版」：按 plan 文档实施……</div>
+<div class="msg-ai"><div class="who">执行会话 · 第 3 轮</div>
+  <div class="toolcall ok"><b>Read</b> docs/plans/…/tasks-panel-design.md</div>
+  <div class="toolcall ok"><b>dogear__GitDiff</b> → 2 文件未提交（他人改动，已避开）</div>
+  <div class="txt">Step 2 完成：scheduler 执行链切换为 headless PiSession……</div>
+</div>`;
+
+function rail(active) {
+  const hasTask = state.variant !== 'baseline';
+  const items = [
+    { id: 'chat', t: '对话', i: ico.chat, act: active === 'chat' },
+    { id: 'notes', t: '笔记', i: ico.note, act: active === 'notes' },
+    ...(hasTask ? [{ id: 'panel', t: '任务', i: ico.task, act: active === 'panel', dot: true }] : []),
+    { id: 'dc', t: '数据中心', i: ico.db, act: active === 'dc' },
+    { id: 'archive', t: '归档', i: ico.archive, act: false },
+    { id: 'feishu', t: '飞书', i: ico.feishu, act: false },
+  ];
+  return `<aside class="rail">` + items.map(x =>
+    `<button title="${x.t}" data-rail="${x.id}" class="${x.act ? 'active' : ''}">${x.i}${x.dot ? '<span class="dot"></span>' : ''}</button>`
+  ).join('') + `<div class="spacer"></div><button title="设置">${ico.settings}</button></aside>`;
+}
+
+function runRow(r) {
+  const st = r.ok === true ? `<span class="st-ok">${ico.ok}</span>` : r.ok === false ? `<span class="st-err">${ico.err}</span>` : `<span class="spin"></span>`;
+  return `<div class="runrow ${state.selected === r.id ? 'selected' : ''}" data-run="${r.id}">${st}<span>${r.date}</span><span class="tk">${r.tk}</span></div>`;
+}
+
+function taskRow(t) {
+  const open = state.expanded === t.id;
+  const taskSel = state.selected === 'task-' + t.id ? 'selected' : '';
+  return `<div class="trow ${taskSel}">
+    <div class="trow-main" data-toggle="${t.id}">
+      <span class="chev ${open ? 'open' : ''}">${ico.chev}</span>
+      <div class="nm" data-taskname="${t.id}"><div class="t">${t.name}${t.isNew ? '<span class="badge new">NEW</span>' : ''}${t.running ? '<span class="badge run">运行中</span>' : ''}</div><div class="d">${t.desc}</div></div>
+      <div class="switch ${t.on ? '' : 'off'}" data-switch title="启用/停用"></div>
+    </div>
+    <div class="runs ${open ? 'open' : ''}">${t.runs.map(runRow).join('')}</div>
+  </div>`;
+}
+
+function collabRow(c) {
+  const open = state.expanded === c.id;
+  return `<div class="trow">
+    <div class="trow-main" data-toggle="${c.id}">
+      <span class="chev ${open ? 'open' : ''}">${ico.chev}</span>
+      <div class="nm" data-taskname="${c.id}"><div class="t">${c.name}</div><div class="d">${c.running ? '执行会话运行中' : '执行会话已结束'}</div></div>
+      ${c.running ? '<span class="spin"></span>' : ''}
+      <span class="badge ${c.badge === '执行中' ? 'run' : 'review'}">${c.badge}</span>
+    </div>
+    <div class="runs ${open ? 'open' : ''}">${runRow({ id: c.execId, date: c.execLabel, ok: c.ok, tk: c.ok ? '—' : '' })}</div>
+  </div>`;
+}
+
+function leftPanel() {
+  const parseSec = `
+    <div class="sec-head">解析记录 <span class="cnt">3</span><button class="add" id="parse-add">${ico.globe} 解析文章</button></div>
+    ${state.parseOpen ? `<div class="urlinput">${ico.globe}<input id="parse-url" placeholder="粘贴文章 URL，Enter 解析"></div>` : ''}
+    ${parses.map(p => `<div class="trow"><div class="trow-main" data-toast="打开阅读视图（demo）——文章已是工作区文件，agent 也能直接 Read">
+      <span style="color:var(--muted)">${ico.doc}</span>
+      <div class="nm"><div class="t" style="font-weight:500;font-size:12px">${p.name}</div><div class="d">${p.d} · <span style="font-family:Consolas,monospace">${p.path}</span></div></div>
+      ${p.ok ? `<span class="st-ok" style="color:var(--accent)">${ico.ok}</span>` : `<span style="color:var(--red)">${ico.err}</span>`}
+    </div></div>`).join('')}`;
+  return `<div class="tp-left">
+    <div class="tp-left-head"><span class="h">任务</span></div>
+    <div class="tp-scroll">
+      <div class="sec-head">定时任务 <span class="cnt">${tasks.length}</span><button class="add" data-toast="新建定时任务（demo）">${ico.plus} 添加任务</button></div>
+      ${tasks.map(taskRow).join('')}
+      <div class="sec-head">协作任务 <span class="cnt">${collab.length}</span></div>
+      ${collab.map(collabRow).join('')}
+      <div class="collapse-hint">${ico.chev} 已完成 · 1（定时任务系统优化 10-18，含 1 条执行会话）</div>
+      ${parseSec}
+    </div>
+  </div>`;
+}
+
+function taskDetail(t) {
+  return `<div class="detail-head"><div class="t">${ico.cal} ${t.name}${t.running ? '<span class="badge run">运行中</span>' : ''}</div>
+    <div class="sub">${t.desc} · 下次 ${t.name === '代码审查' ? '10-26 12:00' : t.name === '依赖月度巡检' ? '11-01 09:00' : '周五 09:00'}</div>
+    <div class="kv"><span class="chip">模型 <b>GLM-5.3-Flash</b></span><span class="chip">工具 <b>基础只读 + 笔记</b></span><span class="chip">共运行 <b>${t.runs.length + 12} 次</b></span></div>
+  </div>
+  <div class="detail-body">
+    <div style="font-size:11px;color:var(--muted);font-weight:600;margin-bottom:6px">提示词（迭代 = 在这里改）</div>
+    <div class="promptbox">对本工作区（Dogear 项目）做代码健康双周巡检，产出一张笔记卡片。这是无人值守任务：只用 Read/Glob/Grep 静态扫描，不跑任何命令……\n\n## 1. 红线快扫（Grep 全仓）\n## 2. 纪律与半成品扫描\n## 3. codemap 漂移抽查\n## 4. 对比上次\n## 5. 落巡检卡片</div>
+    <div class="detail-actions"><button class="btn primary" data-toast="已触发立即运行（demo）">${ico.play}立即运行</button><button class="btn" data-toast="任务编辑器（demo）">编辑</button></div>
+    <div class="iterate-hint"><b>迭代动线</b>：点下面的运行记录查看当次完整过程 → 发现问题 → 点会话页右上角<b>「引用到主会话」</b> → 在主会话里只描述问题，agent 自己读取运行全过程与任务定义来分析。</div>
+  </div>`;
+}
+
+function chatHeader(title, sub, running, refLabel) {
+  return `<div class="runmeta">
+    ${running ? '<span class="spin"></span>' : ico.clock}
+    <span>${sub}</span><b>${title}</b>
+    <button class="btn primary to-main" data-tomain="${refLabel}">${ico.tomain} 引用到主会话</button>
+  </div>`;
+}
+
+function sessionView(kind) {
+  if (kind === 'mc') return chatHeader('记忆体检', '任务运行会话 · 今天 09:00 · 运行中，只读实时更新 ·', true, '任务运行 · 记忆体检 10-24') + `<div class="chatscroll">${chatMC}</div>`;
+  if (kind === 'fail') return chatHeader('代码审查 · 10-05（失败）', '任务运行会话 ·', false, '任务运行 · 代码审查 10-05') + `<div class="chatscroll">${chatFail}</div>`;
+  if (kind === 'exec') return chatHeader('任务面板改版 · 执行', '协作任务执行会话 · 昨天 18:40 ·', false, '执行会话 · 任务面板改版') + `<div class="chatscroll">${chatExec}</div>`;
+  return chatHeader('代码审查 · 10-19', '任务运行会话 · 已结束 ·', false, '任务运行 · 代码审查 10-19') + `<div class="chatscroll">${chatCR}</div>`;
+}
+
+function panelRight() {
+  const sel = state.selected;
+  if (sel === 'task-code-review') return taskDetail(tasks[0]);
+  if (sel === 'task-mem-check') return taskDetail(tasks[2]);
+  if (sel === 'run-mc-live') return sessionView('mc');
+  if (sel === 'run-cr-1005') return sessionView('fail');
+  if (sel === 'exec-c2') return sessionView('exec');
+  return sessionView('cr');
+}
+
+function draftView() {
+  return `<div class="draftwrap">
+    <div class="draft-main" id="draft-main">
+      <div class="refcard"><span class="ic">${ico.pin}</span>
+        <div class="tt"><div class="a">${state.draftRef}</div><div class="b">会话引用 · agent 可读取完整过程（含工具调用）</div></div>
+        <span class="x" data-xref>✕</span>
+      </div>
+    </div>
+    <div class="draft-input">
+      <div class="box"><textarea id="draft-ta" rows="2" placeholder="只描述问题，比如：为什么 TODO 只报了 4 个？我想让它把 docs 里的也扫进去"></textarea></div>
+      <div class="hint">Enter 发送 · agent 会自己读取引用的运行会话 + 任务定义 + 工作区代码</div>
+    </div>
+  </div>`;
+}
+
+function convListView() {
+  const execRows = state.exec === 'dual'
+    ? `<div class="conv-row"><span class="exec-tag">执行</span> 任务: 记忆系统 v2</div><div class="conv-row"><span class="exec-tag">执行</span> 任务: 任务面板改版</div>`
+    : `<div class="conv-empty-note">协作任务执行会话已收进「任务」面板（当前：话题组隐藏）。定时任务运行会话不在此列表，唯一入口在任务面板。</div>`;
+  return `<div style="flex:1;display:flex;min-width:0">
+    <div class="convlist">
+      <div class="conv-grp"><div class="gt">Dogear 开发 · 8</div>
+        <div class="conv-row">定时任务系统优化讨论</div>
+        <div class="conv-row">记忆体检设计</div>${execRows}
+      </div>
+      <div class="conv-grp"><div class="gt">个人 · 3</div><div class="conv-row">琐事</div><div class="conv-row">周报草稿</div></div>
+    </div>
+    <div style="flex:1;background:var(--surface);display:grid;place-items:center;color:var(--muted);font-size:12.5px">选择左侧会话（demo 未实现内容区）</div>
+  </div>`;
+}
+
+function baselineView() {
+  const screen = state.baselineScreen;
+  const notesScreen = `<div class="basepanel">
+    <div class="base-left">
+      <div class="sec-head" style="padding-left:10px">笔记 · 26</div>
+      <div class="base-note-row"><div class="t">记忆体检方案要点</div><div class="d">今天 09:40</div></div>
+      <div class="base-note-row"><div class="t">依赖巡检异常包清单</div><div class="d">10-01</div></div>
+      <div class="sec-head" style="padding-left:10px">任务（将迁出） · 2</div>
+      <div class="base-note-row"><div class="t">记忆系统 v2：偏好层 + 写入治理</div><div class="d" style="color:var(--accent)">执行中</div></div>
+      <div class="base-note-row"><div class="t">任务面板改版</div><div class="d" style="color:var(--amber)">待审核</div></div>
+    </div>
+    <div class="tp-right"><div class="detail-head"><div class="t">${ico.cal} 记忆系统 v2</div><div class="sub">计划栏任务 · 计划/待办/执行中/待审核/已完成 分组</div></div>
+    <div class="detail-body"><div class="promptbox">planPath: docs/plans/2026-10/2026-10-24/memory-system-v2-design.md\n执行会话本体散在话题组会话列表中……</div>
+    <div style="margin-top:14px;font-size:12px;color:var(--muted);line-height:1.8">现状痛点：任务在笔记面板、定时任务在数据中心、执行会话散在话题组——三处无聚合视图；定时任务无会话过程，只有 500 字摘要。</div></div></div>
+  </div>`;
+  const dcScreen = `<div style="flex:1;display:flex;flex-direction:column;min-width:0">
+    <div class="dc-tabs"><div class="t">用量</div><div class="t active">定时计划</div><div class="t">执行历史</div><div class="t">记忆与资产</div><div class="t">版本与备份</div><div class="t">设备同步</div></div>
+    <div class="dc-body">
+      <div class="trow" style="background:var(--surface);border:1px solid var(--border)"><div class="trow-main"><span style="color:var(--muted)">${ico.cal}</span><div class="nm"><div class="t">代码审查</div><div class="d">每周日 12:00</div></div><div class="switch"></div></div></div>
+      <div class="trow" style="background:var(--surface);border:1px solid var(--border);margin-top:6px"><div class="trow-main"><span style="color:var(--muted)">${ico.cal}</span><div class="nm"><div class="t">依赖月度巡检</div><div class="d">每月1号 09:00</div></div><div class="switch"></div></div></div>
+      <div style="margin-top:16px;font-size:11px;color:var(--muted);font-weight:600">执行历史（最近）</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px;line-height:2">✓ 代码审查 10-19 · tokens 20.3k<br>✓ 代码审查 10-12 · tokens 18.7k<br>✗ 代码审查 10-05 · 超过最大轮次<br><span style="color:var(--red)">→ 只有 500 字摘要，无会话过程，无法追溯</span></div>
+    </div>
+  </div>`;
+  return `<div style="position:relative;flex:1;display:flex;min-width:0">
+    <div class="demo-chips"><button data-bs="notes" class="${screen === 'notes' ? 'on' : ''}">现状① 笔记面板·任务</button><button data-bs="dc" class="${screen === 'dc' ? 'on' : ''}">现状② 数据中心·定时计划</button></div>
+    ${screen === 'notes' ? notesScreen : dcScreen}
+  </div>`;
+}
+
+function render() {
+  document.body.dataset.theme = state.theme;
+  const pl = document.getElementById('platform-left'), pr = document.getElementById('platform-right');
+  if (state.platform === 'mac') { pl.innerHTML = '<div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>'; pr.innerHTML = ''; }
+  else { pl.innerHTML = ''; pr.innerHTML = '<div class="wco"><span>—</span><span>▢</span><span>✕</span></div>'; }
+  document.getElementById('search-hint').textContent =
+    state.view === 'panel' ? '搜索任务与运行记录…' : state.view === 'chat' ? '搜索当前会话内容…' : state.view === 'draft' ? '对话内搜索（Ctrl+F）…' : '搜索当前页面内容…';
+
+  let railActive = state.view === 'chat' || state.view === 'draft' ? 'chat' : state.view === 'panel' ? 'panel' : 'notes';
+  let content = '';
+  if (state.variant === 'baseline') { railActive = 'notes'; content = baselineView(); }
+  else if (state.view === 'chat') content = convListView();
+  else if (state.view === 'draft') content = draftView();
+  else content = `<div class="taskpanel">${leftPanel()}<div class="tp-right">${panelRight()}</div></div>`;
+  document.getElementById('main').innerHTML = rail(railActive) + `<div style="flex:1;display:flex;min-width:0;position:relative">${content}</div>`;
+  bind();
+}
+
+function bind() {
+  document.querySelectorAll('[data-rail]').forEach(b => b.onclick = () => {
+    const id = b.dataset.rail;
+    if (id === 'chat') state.view = 'chat';
+    else if (id === 'panel') state.view = 'panel';
+    else if (id === 'notes' || id === 'dc') { if (state.variant === 'baseline') { state.view = 'panel'; state.baselineScreen = id === 'notes' ? 'notes' : 'dc'; } else showToast('demo 只实现了任务面板 / 对话 / 草稿'); }
+    render();
+  });
+  document.querySelectorAll('[data-bs]').forEach(b => b.onclick = () => { state.baselineScreen = b.dataset.bs; render(); });
+  document.querySelectorAll('[data-toggle]').forEach(el => el.onclick = e => {
+    e.stopPropagation();
+    state.expanded = state.expanded === el.dataset.toggle ? null : el.dataset.toggle;
+    state.selected = 'task-' + el.dataset.toggle;
+    render();
+  });
+  document.querySelectorAll('[data-taskname]').forEach(el => el.onclick = e => { e.stopPropagation(); state.selected = 'task-' + el.dataset.taskname; render(); });
+  document.querySelectorAll('[data-switch]').forEach(el => el.onclick = e => { e.stopPropagation(); el.classList.toggle('off'); });
+  document.querySelectorAll('[data-run]').forEach(el => el.onclick = e => { e.stopPropagation(); state.selected = el.dataset.run; render(); });
+  document.querySelectorAll('[data-toast]').forEach(el => el.onclick = () => showToast(el.dataset.toast));
+  document.querySelectorAll('[data-tomain]').forEach(el => el.onclick = () => { state.draftRef = el.dataset.tomain; state.view = 'draft'; render(); });
+  const xref = document.querySelector('[data-xref]');
+  if (xref) xref.onclick = () => { state.draftRef = null; state.view = 'panel'; render(); };
+  const pa = document.getElementById('parse-add');
+  if (pa) pa.onclick = e => { e.stopPropagation(); state.parseOpen = !state.parseOpen; render(); const i = document.getElementById('parse-url'); if (i) i.focus(); };
+  const pu = document.getElementById('parse-url');
+  if (pu) pu.onkeydown = e => { if (e.key === 'Enter' && pu.value.trim()) { showToast('已加入解析队列，完成后落入工作区文章文件夹（demo）'); state.parseOpen = false; render(); } };
+  const ta = document.getElementById('draft-ta');
+  if (ta) {
+    ta.focus();
+    ta.onkeydown = e => {
+      if (e.key === 'Enter' && !e.shiftKey && ta.value.trim()) {
+        e.preventDefault();
+        const v = ta.value.trim(); ta.value = '';
+        const m = document.getElementById('draft-main');
+        m.insertAdjacentHTML('beforeend', `<div class="msg-user" style="align-self:flex-end;max-width:560px">${v.replace(/</g, '&lt;')}</div>`);
+        m.insertAdjacentHTML('beforeend', `<div class="draft-reply"><div class="who">回复</div><div class="txt"><span class="thinking"><i></i><i></i><i></i></span></div></div>`);
+        m.scrollTop = m.scrollHeight;
+        setTimeout(() => {
+          const t = m.querySelector('.draft-reply:last-child .txt');
+          if (t) t.innerHTML = '（demo）已读取该次运行会话：第 1 轮 Grep 范围排除了 docs/，所以 TODO 只统计了 src/electron——要纳入 docs 的话，我建议把任务提示词 §1 的扫描范围改为全仓，需要的话我直接帮你改任务定义。';
+          m.scrollTop = m.scrollHeight;
+        }, 1100);
+      }
+    };
+  }
+}
+
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+document.getElementById('ctrl-btn').onclick = () => document.getElementById('ctrl').classList.toggle('open');
+function seg(id, key, cb) {
+  document.querySelectorAll(`#${id} button`).forEach(b => b.onclick = () => {
+    document.querySelectorAll(`#${id} button`).forEach(x => x.classList.remove('on'));
+    b.classList.add('on'); state[key] = b.dataset.v; if (cb) cb(); render();
+  });
+}
+seg('seg-variant', 'variant', () => { state.view = 'panel'; });
+seg('seg-theme', 'theme');
+seg('seg-platform', 'platform');
+seg('seg-exec', 'exec');
+render();
+</script>
+</body>
+</html>

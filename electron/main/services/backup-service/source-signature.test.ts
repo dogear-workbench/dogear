@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import AdmZip from 'adm-zip';
 
 process.env.DOGEAR_CONFIG_DIR = await fsp.mkdtemp(path.join(tmpdir(), 'dogear-src-sig-'));
-const wsDiskRoot = await fsp.mkdtemp(path.join(tmpdir(), 'dogear-src-sig-ws-'));
 
 mock.module('electron', () => ({
   default: { app: { getPath: () => tmpdir() }, nativeTheme: {} },
@@ -26,12 +25,9 @@ async function seedFixtures(): Promise<string[]> {
   await fsp.writeFile(cfg('notes', 'a.md'), 'aaa', 'utf8');
   await fsp.writeFile(cfg('notes', 'b.md'), 'bbbb', 'utf8');
   await fsp.writeFile(cfg('settings.json'), '{"k":1}', 'utf8');
-  const wsDogear = path.join(wsDiskRoot, '.dogear');
-  await fsp.mkdir(path.dirname(cfg('workspaces', 'workspaces.json')), { recursive: true });
-  await fsp.mkdir(wsDogear, { recursive: true });
-  await fsp.writeFile(cfg('workspaces', 'workspaces.json'), JSON.stringify({ version: 1, workspaces: [{ id: 'ws-x', path: wsDiskRoot }] }), 'utf8');
-  await fsp.writeFile(path.join(wsDogear, 'tasks.json'), '{"tasks":[]}', 'utf8');
-  return [cfg('notes'), cfg('settings.json'), cfg('__ws-external__', 'ws-x', '.dogear', 'tasks.json'), cfg('missing.txt')];
+  await fsp.mkdir(cfg('workspaces', 'ws-x'), { recursive: true });
+  await fsp.writeFile(cfg('workspaces', 'ws-x', 'tasks.json'), '{"tasks":[]}', 'utf8');
+  return [cfg('notes'), cfg('settings.json'), cfg('workspaces', 'ws-x', 'tasks.json'), cfg('missing.txt')];
 }
 
 test('computeSourceSignature：稳定且不含不存在源；全部无效 → null', async () => {
@@ -44,7 +40,7 @@ test('computeSourceSignature：稳定且不含不存在源；全部无效 → nu
   expect(await computeSourceSignature([])).toBeNull();
 });
 
-test('签名遍历与 packSources 打包文件集合一致（含外部锚点、跳过不存在源）', async () => {
+test('签名遍历与 packSources 打包文件集合一致（含工作区子树、跳过不存在源）', async () => {
   const sources = await seedFixtures();
   const outZip = cfg('out.zip');
   expect(await packSources(sources, outZip)).toBeGreaterThan(0);
@@ -52,7 +48,7 @@ test('签名遍历与 packSources 打包文件集合一致（含外部锚点、�
   const zipFiles = new Set(zip.getEntries().filter((e) => !e.isDirectory).map((e) => e.entryName));
   const collected = new Set((await collectPackFiles(await resolveSourceEntries(sources))).map((f) => f.entryPath));
   expect(collected).toEqual(zipFiles);
-  expect(collected.has(path.posix.join('__ws-external__', 'ws-x', '.dogear', 'tasks.json'))).toBe(true);
+  expect(collected.has('workspaces/ws-x/tasks.json')).toBe(true);
 });
 
 test('签名对 mtime 变化敏感', async () => {

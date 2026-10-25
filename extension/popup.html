@@ -23,6 +23,12 @@
     }
     button:hover { background: #1d4ed8; }
     button:disabled { background: #93c5fd; cursor: default; }
+    #hint {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #6b7280;
+      line-height: 1.5;
+    }
     #status {
       margin-top: 12px;
       line-height: 1.6;
@@ -43,6 +49,8 @@
 <body>
   <button id="handoff">发送当前页到 Dogear</button>
   <button id="disconnect" class="secondary" hidden>断开连接</button>
+  <button id="reconnect" class="secondary" hidden>重新连接</button>
+  <div id="hint" hidden>已手动断开，扩展不再自动连接</div>
   <div id="status" class="muted">未连接</div>
   <script src="popup.js"></script>
 </body>

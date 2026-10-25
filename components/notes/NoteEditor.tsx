@@ -29,7 +29,7 @@ function formatMetaDate(iso: string): string {
 }
 
 /** 标题即正文首个 ATX 标题行（frontmatter 无标题字段），编辑区把它剥离为独立标题输入 */
-function splitLeadingHeading(content: string): { heading: string | null; body: string } {
+export function splitLeadingHeading(content: string): { heading: string | null; body: string } {
   const lines = content.split(/\r?\n/);
   let start = 0;
   while (start < lines.length && lines[start].trim() === '') start += 1;
@@ -203,7 +203,7 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto min-h-0">
-          <div className="mx-auto flex w-full max-w-[760px] flex-col px-8 pt-8 pb-24">
+          <div className="mx-auto flex w-full max-w-[900px] flex-col px-8 pt-8 pb-24">
             <input
               ref={titleInputRef}
               value={titleDraft}

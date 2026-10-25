@@ -16,6 +16,7 @@ import {
   useWorkspaceRoots,
 } from './agent-chat/path-link';
 import { useConversationStore } from '@/stores/conversation-store';
+import { openExternalUrl } from '@/lib/open-external';
 
 export interface MarkdownRendererProps {
   /** Markdown 文本内容 */
@@ -230,7 +231,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
               void useConversationStore.getState().focusConversationFromLink(href);
               return;
             }
-            window.open(href, '_blank');
+            openExternalUrl(href);
           }}
           className="text-blue-500 hover:underline"
           {...props}
@@ -256,7 +257,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         rehypePlugins={[rehypeHighlight]}
         components={mdComponents}
         urlTransform={(url) => (url.startsWith('dogear://') ? url : defaultUrlTransform(url))}

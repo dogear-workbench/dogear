@@ -4,7 +4,7 @@ import * as groupService from './group-service.js';
 import { conversationRuntimeService } from './conversation-runtime-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
 import { deleteUsageStrict } from './usage/usage-service.js';
-import { getGroupDir, getGroupsRootDir } from './memory/background-store.js';
+import { getGroupDir, getGroupsRootDir } from './group-service.js';
 import type { ConversationIndex } from './conversation-service.js';
 
 export type TopicLifecycleResult =

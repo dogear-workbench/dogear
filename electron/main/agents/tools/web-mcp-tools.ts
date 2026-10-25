@@ -5,8 +5,8 @@
  *   - bigmodel__webSearch  — 全网搜索（web_search_prime，智谱服务端已从驼峰 webSearchPrime 改为下划线命名）
  *   - bigmodel__webReader  — 网页读取（webReader）
  *
- * 与浏览器的分工按会话实际能力三态化（fallbackHint）：有 dogear__browser__* 工具时引导改用；
- * 主会话无浏览器工具时引导派「浏览器解析」子会话；子会话无浏览器工具时不提浏览器（不能派单）。
+ * 与浏览器的分工按会话实际能力两态化（fallbackHint）：主会话引导派「浏览器解析」子会话；
+ * 子会话不提浏览器（不能派单）。
  * API Key 在设置 → 基础设置 → 联网搜索（GLM MCP）填写，未配置时工具返回 isError 提示。
  */
 
@@ -42,16 +42,14 @@ async function runBigmodelTool(
   }
 }
 
-export type WebMcpFallbackHint = 'browser-tools' | 'browser-subagent' | 'none';
+export type WebMcpFallbackHint = 'browser-subagent' | 'none';
 
 const SEARCH_FALLBACK_TAILS: Record<WebMcpFallbackHint, string> = {
-  'browser-tools': '\n与浏览器工具的分工：本工具是快档（纯 API 直出）；需要打开页面深度阅读、翻页或应对登录墙时改用 dogear__browser__* 系列工具。',
   'browser-subagent': '\n与浏览器的分工：本工具是快档（纯 API 直出）；深度阅读、翻页拼接或登录墙场景建议派「浏览器解析」子会话（profile: browser-parse）。',
   none: '',
 };
 
 const READER_FALLBACK_TAILS: Record<WebMcpFallbackHint, string> = {
-  'browser-tools': '\n与浏览器工具的分工：本工具是快档（服务端抓取，无 JS 渲染）；页面依赖前端渲染、需要交互或遇到登录墙时改用 dogear__browser__readArticle。',
   'browser-subagent': '\n与浏览器的分工：本工具是快档（服务端抓取，无 JS 渲染）；JS 渲染、页面交互或登录态场景建议派「浏览器解析」子会话（profile: browser-parse）。',
   none: '',
 };
@@ -99,5 +97,5 @@ registerToolGroup({
   server: 'dogear-web-mcp',
   label: '联网搜索（GLM MCP）',
   create: createWebMcpToolDefs,
-  placeholder: [{ fallbackHint: 'browser-tools' }],
+  placeholder: [{ fallbackHint: 'browser-subagent' }],
 });

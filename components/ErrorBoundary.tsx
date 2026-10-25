@@ -4,6 +4,7 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { logToMain } from '@/lib/log-report';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -29,17 +30,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('[ErrorBoundary] 组件崩溃:', error, errorInfo);
     // 通过 IPC 发送到主进程记录日志（如果 IPC 可用）
-    try {
-      if (window.ipcRenderer) {
-        window.ipcRenderer.invoke('logFromRenderer', {
-          level: 'error',
-          message: `[ErrorBoundary] ${error.message}`,
-          stack: error.stack,
-        });
-      }
-    } catch {
-      // IPC 不可用时忽略
-    }
+    logToMain('error', `[ErrorBoundary] ${error.message}`, error.stack);
   }
 
   handleReload = () => {

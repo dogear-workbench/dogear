@@ -20,6 +20,18 @@ export async function getSharedDir(workspaceId: string, groupId: string): Promis
   return dir;
 }
 
+// 源会话指针：文件首行 HTML 注释，SearchSessions 命中文件时解析回填，连「结论文件 → 源会话过程」两层漏斗
+const SOURCE_POINTER_RE = /^(?:\uFEFF)?<!--\s*source-session:\s*(\S+?)\s*-->(?:[ \t]*(?:\r?\n|$))/;
+
+export function parseSourcePointer(content: string): string | undefined {
+  return SOURCE_POINTER_RE.exec(content)?.[1];
+}
+
+export function prependSourcePointer(content: string, sessionId: string): string {
+  if (!sessionId || parseSourcePointer(content)) return content;
+  return `<!-- source-session: ${sessionId} -->\n${content}`;
+}
+
 function safeResolve(sharedDir: string, relPath: string): string {
   const resolved = path.normalize(path.resolve(sharedDir, relPath));
   const normalizedBase = path.normalize(sharedDir);

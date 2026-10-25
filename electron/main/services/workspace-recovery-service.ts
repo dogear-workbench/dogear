@@ -151,3 +151,26 @@ export async function importOrphanToWorkspace(
 
   return { importedCount };
 }
+
+/**
+ * 舍弃孤儿工作区：删除 .dogear/workspaces/<orphanId> 源目录（会话正文等全部数据）。
+ * 仅删除扫描口径内的孤儿：目录名纯净化 + 未注册校验，防止误删已注册工作区。
+ */
+export async function discardOrphanWorkspace(orphanId: string): Promise<void> {
+  if (!orphanId || orphanId.includes('/') || orphanId.includes('\\') || orphanId.includes('..')) {
+    throw new Error('无效的目录标识');
+  }
+
+  const configDir = getConfigDir();
+  const workspacesDir = path.join(configDir, 'workspaces');
+
+  const workspacesFile = await safeJsonRead<{ version: number; workspaces: Array<{ id: string }> }>(
+    path.join(workspacesDir, 'workspaces.json'),
+    { version: 1, workspaces: [] },
+  );
+  if (workspacesFile.workspaces.some((w) => w.id === orphanId)) {
+    throw new Error('该目录已是注册工作区，拒绝删除');
+  }
+
+  await fs.rm(path.join(workspacesDir, orphanId), { recursive: true, force: true });
+}

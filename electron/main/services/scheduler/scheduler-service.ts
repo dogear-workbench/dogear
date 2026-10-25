@@ -60,7 +60,7 @@ class SchedulerService {
     });
     const bootAt = Date.now();
     const tasks = await this.listSchedulableTasks();
-    await cleanupHistory().catch((err) => mainLogger.warn('[scheduler] 清理运行历史失败:', err));
+    await cleanupHistory().catch((err) => mainLogger.warn('[scheduler] 清理执行历史失败:', err));
     const missed = this.collectMissed(tasks, bootAt);
     if (missed.length > 0) {
       await this.recordMissed(missed);
@@ -121,6 +121,8 @@ class SchedulerService {
       mainLogger.info(`[scheduler] on_session_close：会话不存在或已删除，跳过: ${conversationId}`);
       return;
     }
+    // 运行会话关闭不触发 on_session_close：防任务自触发环（运行会话被清 close → 再拉起任务）
+    if (found.conv.schedulerTaskId) return;
     const tasks = await this.listSchedulableTasks();
     for (const task of tasks) {
       if (!task.enabled) continue;

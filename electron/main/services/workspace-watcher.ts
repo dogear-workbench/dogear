@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import { mainLogger } from '../agents/logger.js';
 import { broadcastToWindows } from './renderer-broadcast.js';
 import * as workspaceJsonService from './workspace-json-service.js';
-import { PERSONAL_WORKSPACE_ID } from '../types.js';
+import { invalidateSearchIndex } from './workspace-search-service.js';
 
 const DEBOUNCE_MS = 500;
 
@@ -36,6 +36,7 @@ async function startWatch(workspaceId: string, workspacePath: string): Promise<v
       if (state.timer) clearTimeout(state.timer);
       state.timer = setTimeout(() => {
         state.timer = null;
+        invalidateSearchIndex(workspaceId);
         broadcastToWindows((h) => h.workspaceFilesChanged.send({ workspaceId }));
       }, DEBOUNCE_MS);
     });
@@ -54,6 +55,7 @@ export function stopWatch(workspaceId: string): void {
   const state = watches.get(workspaceId);
   if (!state) return;
   watches.delete(workspaceId);
+  invalidateSearchIndex(workspaceId);
   if (state.timer) clearTimeout(state.timer);
   try { state.watcher.close(); } catch {
     // ignore
@@ -74,8 +76,6 @@ export async function syncWorkspaceWatchers(): Promise<void> {
     if (!live.has(id)) stopWatch(id);
   }
   for (const ws of workspaces) {
-    // personal 不注册进 workspaces.json，这里防御性再拦一道
-    if (ws.id === PERSONAL_WORKSPACE_ID) continue;
     await startWatch(ws.id, ws.path);
   }
 }

@@ -13,12 +13,12 @@ import type { AppSettings, ModelSelection, SubAgentProfile } from './settings-ty
  * | webMcpApiKey                                                       | perCall（web-mcp-tools 每次调用读取） |
  * | failover.enabled / failover.chain                                 | perCall（maybeFailoverMainSession 每轮读取） |
  * | update.serverUrl / migrated.*                                     | perCall |
- * | ai.parseModelSelection / ai.stateModelSelection                   | perCall（agent-worker 每任务 loadSettings） |
+ * | ai.parseModelSelection                                            | perCall（agent-worker 每任务 loadSettings） |
  * | snapshot.*                                                        | perCall（shadow takeSnapshot 每次快照现读） |
  * | subAgent.profiles[].timeoutMinutes                                | perCall（delegation-bridge 派时读） |
  * | ai.settingSources                                                 | perCall（暂无消费方） |
- * | ai.effort                                                         | snapshot（全部会话；thinkingLevel 在 start() 定型） |
  * | ai.permissionMode                                                 | snapshot·热 setter（主会话 setPermissionMode） |
+ | ai.unattended                                                     | snapshot·热分发（无人值守开关切换分发） |
  * | basicToolPermissions                                              | snapshot（主会话；子会话 autoExecute 无感） |
  * | profiles[id].apiKey/baseUrl/piWireApi/piModels/apiTimeoutMs/autoCompactPercent | snapshot（生效该 profile 的会话） |
  * | ai.defaultModelSelection                                          | snapshot（回退默认模型选会的会话） |
@@ -26,8 +26,9 @@ import type { AppSettings, ModelSelection, SubAgentProfile } from './settings-ty
  */
 
 export interface SettingsSnapshotDiff {
-  effortChanged: boolean;
   permissionModeChanged: boolean;
+  /** 无人值守开关切换（真逻辑在 pi-session-manager 分发处） */
+  unattendedChanged: boolean;
   basicToolPermissionsChanged: boolean;
   /** 发生快照域变化的 profile id（含增删；name-only 变化不计入） */
   changedProfileIds: string[];
@@ -54,7 +55,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 
 function selectionEquals(a: ModelSelection | null | undefined, b: ModelSelection | null | undefined): boolean {
   if (!a || !b) return a === b;
-  return a.profileId === b.profileId && a.tier === b.tier;
+  return a.profileId === b.profileId && a.tier === b.tier && (a.effort ?? null) === (b.effort ?? null);
 }
 
 const PROFILE_SNAPSHOT_FIELDS = ['apiKey', 'baseUrl', 'piWireApi', 'piModels', 'apiTimeoutMs', 'autoCompactPercent'] as const;
@@ -104,8 +105,8 @@ export function diffSettings(prev: AppSettings, next: AppSettings): SettingsSnap
   }
 
   return {
-    effortChanged: !deepEqual(prev.ai?.effort ?? null, next.ai?.effort ?? null),
     permissionModeChanged: prev.ai?.permissionMode !== next.ai?.permissionMode,
+    unattendedChanged: (prev.ai?.unattended ?? false) !== (next.ai?.unattended ?? false),
     basicToolPermissionsChanged: !deepEqual(prev.basicToolPermissions, next.basicToolPermissions),
     changedProfileIds,
     defaultModelSelectionChanged: !selectionEquals(prev.ai?.defaultModelSelection ?? null, next.ai?.defaultModelSelection ?? null),
@@ -129,7 +130,6 @@ export function isSessionSnapshotAffected(
   view: SessionSnapshotView,
   next: AppSettings,
 ): boolean {
-  if (diff.effortChanged) return true;
   if (diff.basicToolPermissionsChanged && view.role === 'main') return true;
 
   const effectiveProfileId = view.currentModelSelection?.profileId;
@@ -152,8 +152,8 @@ export function isSessionSnapshotAffected(
 }
 
 export function hasSnapshotChange(diff: SettingsSnapshotDiff): boolean {
-  return diff.effortChanged
-    || diff.permissionModeChanged
+  return diff.permissionModeChanged
+    || diff.unattendedChanged
     || diff.basicToolPermissionsChanged
     || diff.changedProfileIds.length > 0
     || diff.defaultModelSelectionChanged

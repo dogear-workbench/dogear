@@ -42,13 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 nul
-/.claude-history
-/claude_code_doc_md
 
 # 应用配置目录（含 API Key 等敏感信息）
 .dogear/
-/claude_code_doc_md
-skills-lock.json
 
 # 热更新发布产物
 update-server/
@@ -65,3 +61,4 @@ __pycache__/
 
 # 临时调研文件
 /tmp/
+.tmp-*

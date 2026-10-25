@@ -13,8 +13,8 @@ const TARGET = getOpt('target') ?? path.resolve('..', 'dogear-oss');
 const REMOTE = getOpt('remote');
 const VERSION = getOpt('version');
 
-// 开源仓库排除清单：私有计划文档与个人开发配置
-const EXCLUDES = ['docs/plans', '.vscode'];
+// 开源仓库排除清单：私有计划文档、个人收藏文章与个人开发配置
+const EXCLUDES = ['dogear/plans', 'dogear/articles', '.vscode'];
 
 const run = (cmd, opts = {}) =>
   execSync(cmd, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'inherit'], ...opts });
@@ -29,7 +29,7 @@ if (dirty && !allowDirty) {
   process.exit(1);
 }
 
-const files = run('git ls-tree -r HEAD --name-only')
+const files = run('git -c core.quotepath=false ls-tree -r HEAD --name-only')
   .trim()
   .split('\n')
   .filter(Boolean)

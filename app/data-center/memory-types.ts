@@ -4,6 +4,9 @@
  * 原则：只在数据中心记忆面板内部使用；如其他渲染层文件需要 Topic，
  * 再考虑镜像到全局类型文件。
  */
+/** 记忆作用域：workspace = 工作区级；global = 跨工作区共享（config/memory） */
+export type MemoryScope = 'workspace' | 'global';
+
 export interface TopicIndexEntry {
   slug: string;
   title: string;

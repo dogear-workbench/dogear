@@ -6,6 +6,8 @@ import {
   toggleUserSyncPath,
   userSyncPathsListEqual,
   userSyncPathsForWorkspaces,
+  buildSyncGitIndex,
+  classifyGitPath,
 } from './user-sync-paths';
 
 describe('isUserPathChecked（整树覆盖语义）', () => {
@@ -77,5 +79,39 @@ describe('userSyncPathsForWorkspaces', () => {
     expect(userSyncPathsForWorkspaces(undefined, 'ws-a')).toEqual([]);
     expect(userSyncPathsForWorkspaces({ 'ws-b': ['docs'] }, 'ws-a')).toEqual([]);
     expect(userSyncPathsForWorkspaces({ 'ws-a': ['docs'] }, 'ws-a')).toEqual(['docs']);
+  });
+});
+
+describe('classifyGitPath（git 分组归类）', () => {
+  const index = buildSyncGitIndex(
+    ['src/index.ts', 'README.md', 'src/lib/util.ts'],
+    ['node_modules', 'src/temp.log', 'dist'],
+  );
+
+  test('ignored 精确命中（折叠目录或文件）→ 外层', () => {
+    expect(classifyGitPath('node_modules', index)).toBe('ignored');
+    expect(classifyGitPath('dist', index)).toBe('ignored');
+  });
+
+  test('有 managed 后代的目录 → 折叠组（即使也含 ignored 后代）', () => {
+    expect(classifyGitPath('src', index)).toBe('managed');
+    expect(classifyGitPath('src/lib', index)).toBe('managed');
+  });
+
+  test('仅含 ignored 后代的目录 → 外层', () => {
+    const onlyIgnored = buildSyncGitIndex(['a.ts'], ['pkg/sub/x.log']);
+    expect(classifyGitPath('pkg', onlyIgnored)).toBe('ignored');
+    expect(classifyGitPath('pkg/sub', onlyIgnored)).toBe('ignored');
+  });
+
+  test('两集合外（并发新文件）→ 保守归折叠组', () => {
+    expect(classifyGitPath('newfile.txt', index)).toBe('managed');
+    expect(classifyGitPath('newdir', index)).toBe('managed');
+  });
+
+  test('兄弟前缀不误判（docs2 与 docs 无关）', () => {
+    const idx = buildSyncGitIndex(['docs/a.md'], []);
+    expect(classifyGitPath('docs2', idx)).toBe('managed');
+    expect(classifyGitPath('docs2/a.md', idx)).toBe('managed');
   });
 });

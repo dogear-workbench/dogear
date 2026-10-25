@@ -3,8 +3,8 @@ import { tipc } from '@egoist/tipc/main';
 import * as conversationService from '../services/conversation-service.js';
 import * as groupService from '../services/group-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
-import { moveConversationToWorkspace } from '../services/conversation-move-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
+import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import { loadSettings } from '../services/settings-service.js';
 
@@ -110,8 +110,10 @@ export const conversationsRouter = {
           const forkOptions = input.forkMessageSdkUuid
             ? { entryId: input.forkMessageSdkUuid, position: 'at' as const }
             : {};
-          const { info } = await repository.fork(input.workspaceId, parent.sessionId, forkOptions);
+          const { storage, info } = await repository.fork(input.workspaceId, parent.sessionId, forkOptions);
+          // fork 只取 id 落 metadata；数据已全部提交，storage 立即归还（用户打开时再 open）
           forkedSessionId = info.id;
+          await storage.close(BACKGROUND_CONTEXT).catch(() => {});
         } catch (error) {
           console.error('[createFork] Harness fork 失败:', error);
           return { conversationId: null, error: `分叉会话失败: ${error instanceof Error ? error.message : String(error)}` };
@@ -183,18 +185,21 @@ export const conversationsRouter = {
       }
     }),
 
-  /** 把临时会话（personal）移入真实工作区：索引迁移 + session JSONL 搬运 + personal 侧清理 */
-  moveConversationToWorkspace: t.procedure
-    .input<{ conversationId: string; targetWorkspaceId: string; targetGroupId?: string; newGroupTitle?: string }>()
+  /** 会话挂起：pin=钉住「稍后继续」（写 pinnedAt=now，绿线常亮+组内置顶）；clear=掐灭/解除（清 pinnedAt + 清「最近活跃」绿线立即熄灭） */
+  setConversationHold: t.procedure
+    .input<{ workspaceId: string; conversationId: string; action: 'pin' | 'clear' }>()
     .action(async ({ input }) => {
       try {
-        const result = await moveConversationToWorkspace(input);
-        return result.ok
-          ? { ok: true, conversationId: result.conversationId, groupId: result.groupId, error: undefined }
-          : { ok: false, conversationId: null, groupId: null, error: result.error };
+        await conversationService.setPinnedAt(
+          input.workspaceId,
+          input.conversationId,
+          input.action === 'pin' ? Date.now() : null,
+        );
+        if (input.action === 'clear') getPiSessionManager().clearConversationActivity(input.conversationId);
+        return { success: true, error: undefined };
       } catch (error) {
-        console.error('移入工作区失败:', error);
-        return { ok: false, conversationId: null, groupId: null, error: error instanceof Error ? error.message : String(error) };
+        console.error('更新会话挂起状态失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

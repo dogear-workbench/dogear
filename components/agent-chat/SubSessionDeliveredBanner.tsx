@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { CornerUpLeft, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConversationStore } from '@/stores/conversation-store';
-import { openOrFocusConversation, openPersonalConversation } from '@/components/conversation-list/utils';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
+import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { useSubSessionDelivered } from './hooks/useSubSessionDelivered';
 import type { Conversation } from '@/components/ConversationList';
 
@@ -11,10 +10,10 @@ interface SubSessionDeliveredBannerProps {
   conversation: Conversation;
 }
 
-/** 本地分片 + personal 列表反查父会话：parentConversationId 直查，缺失时按 contractMetadata.parentSessionId 反查（老数据兜底） */
+/** 本地分片反查父会话：parentConversationId 直查，缺失时按 contractMetadata.parentSessionId 反查（老数据兜底） */
 function findParentConversation(conversation: Conversation): Conversation | undefined {
   const store = useConversationStore.getState();
-  const candidates = [...store.conversations, ...store.personalConversations];
+  const candidates = store.conversations;
   if (conversation.parentConversationId) {
     const parent = candidates.find((c) => c.id === conversation.parentConversationId);
     if (parent) return parent;
@@ -35,19 +34,11 @@ export function SubSessionDeliveredBanner({ conversation }: SubSessionDeliveredB
   const goBack = () => {
     const parent = findParentConversation(conversation);
     if (parent) {
-      if (conversation.workspaceId === PERSONAL_WORKSPACE_ID) {
-        openPersonalConversation(parent);
-      } else {
-        openOrFocusConversation(parent, parent.groupId ? `topic:${parent.groupId}:${parent.id}` : undefined);
-      }
+      openOrFocusConversation(parent, parent.groupId ? `topic:${parent.groupId}:${parent.id}` : undefined);
       return;
     }
-    // 本地分片未命中（子会话 tab 跨工作区保留）：深链跳转自带工作区切换与高亮；深链不支持 personal（getAll 不含）
-    if (
-      conversation.parentConversationId
-      && conversation.workspaceId
-      && conversation.workspaceId !== PERSONAL_WORKSPACE_ID
-    ) {
+    // 本地分片未命中（子会话 tab 跨工作区保留）：深链跳转自带工作区切换与高亮
+    if (conversation.parentConversationId && conversation.workspaceId) {
       void useConversationStore.getState().focusConversationFromLink(
         `dogear://conversation/${conversation.parentConversationId}?ws=${conversation.workspaceId}`,
       );

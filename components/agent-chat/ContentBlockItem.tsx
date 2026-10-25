@@ -154,16 +154,11 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       return (
         <ToolGroupBlock
           blocks={block.children || []}
-          sessionId={sessionId}
-          onPermissionResolved={onPermissionResolved}
-          onAskUserResolved={onAskUserResolved}
-          onInterrupt={onInterrupt}
           searchQuery={searchQuery}
           activeMatchId={activeMatchId}
           activeBlockMatchCount={activeBlockMatchCount}
           messageId={messageId}
           childOriginalIndices={childOriginalIndices}
-          readOnly={readOnly}
         />
       );
 

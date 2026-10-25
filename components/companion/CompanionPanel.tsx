@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
-import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useUIStore } from '@/stores/ui-store';
+import { resolveThreeColumnLinkage } from '@/hooks/use-panel-linkage';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { TopicPanel } from '@/components/TopicPanel';
 import { TerminalPanel } from '@/components/companion/TerminalPanel';
-import { BrowserPanel } from '@/components/companion/BrowserPanel';
+import { ReadingPanel } from '@/components/companion/ReadingPanel';
+import type { RightPanelTab } from '@/stores/ui-store';
 
-export type CompanionTab = 'files' | 'additional' | 'topic' | 'terminal' | 'browser';
+export type CompanionTab = RightPanelTab;
 
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 720;
@@ -17,16 +17,16 @@ const DEFAULT_WIDTHS: Record<CompanionTab, number> = {
   files: 384,
   additional: 384,
   topic: 384,
+  reading: 560,
   terminal: 560,
-  browser: 384,
 };
 
 const TABS: { id: CompanionTab; label: string }[] = [
   { id: 'files', label: '文件' },
   { id: 'additional', label: '附加' },
   { id: 'topic', label: '话题' },
+  { id: 'reading', label: '阅读' },
   { id: 'terminal', label: '终端' },
-  { id: 'browser', label: '浏览器' },
 ];
 
 const widthStorageKey = (tab: CompanionTab) => `companion-width:${tab}`;
@@ -61,8 +61,6 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
   const open = useUIStore((s) => s.rightPanelOpen);
   const tab = useUIStore((s) => s.rightPanelTab);
   const setTab = useUIStore((s) => s.setRightPanelTab);
-  // WorkspaceExplorer 数据源是当前工作区 store，临时会话聚焦时显式展示空态而非别的工作区文件
-  const isPersonal = workspaceId === PERSONAL_WORKSPACE_ID;
 
   const [width, setWidth] = useState(() => readStoredWidth(tab));
   const [dragging, setDragging] = useState(false);
@@ -71,8 +69,11 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
   widthRef.current = width;
 
   useEffect(() => {
-    setWidth(readStoredWidth(tab));
-  }, [tab]);
+    const next = readStoredWidth(tab);
+    setWidth(next);
+    // full 模式占满容器无固定宽度，不同步；运行时宽度供三栏联动判定共享读
+    if (!full) useUIStore.getState().setRightPanelWidth(next);
+  }, [tab, full]);
 
   const onHandleMouseDown = (e: ReactMouseEvent) => {
     e.preventDefault();
@@ -84,8 +85,10 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
     if (!dragging) return;
     const onMove = (e: MouseEvent) => {
       if (!dragOrigin.current) return;
-      const next = dragOrigin.current.width + (dragOrigin.current.x - e.clientX);
-      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, next)));
+      const next = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, dragOrigin.current.width + (dragOrigin.current.x - e.clientX)));
+      setWidth(next);
+      useUIStore.getState().setRightPanelWidth(next);
+      resolveThreeColumnLinkage('right');
     };
     const onUp = () => setDragging(false);
     document.body.style.userSelect = 'none';
@@ -131,23 +134,16 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
         ))}
       </div>
       {tab === 'files' ? (
-        isPersonal ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-16">
-            <Zap className="w-8 h-8 mb-2 opacity-40" />
-            <p className="text-sm">临时会话无文件目录</p>
-          </div>
-        ) : (
-          <WorkspaceExplorer />
-        )
+        <WorkspaceExplorer />
       ) : tab === 'additional' ? (
         <AdditionalFilesPanel workspaceId={workspaceId} />
       ) : tab === 'topic' ? (
         <TopicPanel workspaceId={workspaceId} groupId={groupId} />
+      ) : tab === 'reading' ? (
+        <ReadingPanel />
       ) : tab === 'terminal' ? (
         <TerminalPanel terminalAnchor={terminalAnchor} />
-      ) : (
-        <BrowserPanel workspaceId={workspaceId} />
-      )}
+      ) : null}
     </aside>
   );
 }

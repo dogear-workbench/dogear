@@ -18,7 +18,13 @@ function PromptText({ text }: { text: string }) {
   return <MarkdownRenderer content={text} className={PROSE_DOWN_CLASS} />;
 }
 
-function PromptItem({ prompt, fetched }: { prompt: SceneSummaryPrompt; fetched?: PromptSection[] | { error: string } }) {
+function PromptItem({
+  prompt,
+  fetched,
+}: {
+  prompt: SceneSummaryPrompt;
+  fetched?: PromptSection[] | { error: string };
+}) {
   return (
     <section className="rounded-md border overflow-hidden">
       <div className="px-3 py-2 bg-muted/30 border-b">
@@ -50,15 +56,6 @@ function PromptItem({ prompt, fetched }: { prompt: SceneSummaryPrompt; fetched?:
 }
 
 async function fetchSections(id: string): Promise<PromptSection[] | { error: string }> {
-  if (id === 'state-extract') {
-    const r = await client.getStateExtractPrompt();
-    return 'error' in r
-      ? { error: r.error ?? '读取失败' }
-      : [
-          { label: '固定角色语（运行时内置）', text: r.systemPrompt ?? '' },
-          { label: '抽取模板（<configDir>/state-extract-prompt.md，可编辑）', text: r.template ?? '' },
-        ];
-  }
   if (id === 'parse-article') {
     const r = await client.getParseArticlePrompt();
     return 'error' in r

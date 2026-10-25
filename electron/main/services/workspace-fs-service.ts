@@ -5,9 +5,12 @@
  * 与 agent 侧 allowedPaths 语义对齐，防止越权访问
  */
 import fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import path from 'path';
 import type { WorkspaceFileNode } from '../types.js';
 import { takeSnapshot, type SnapshotSource } from './git-service/index.js';
+import { parseArticleFile } from './article/frontmatter.js';
+import { isArticlesRelPath } from './article/types.js';
 
 /** fire-and-forget：快照失败不阻塞原操作（无 git 时 takeSnapshot 静默跳过） */
 function snapshotAfterUi(workspaceId: string | undefined, workspacePath: string, source: SnapshotSource, relPath: string): void {
@@ -61,69 +64,103 @@ export function resolveWithinRoots(roots: string[], candidate: string): string |
 }
 
 /**
+ * 逐根解析且要求真实存在：前缀解析会被主根遮蔽（任何相对路径都落在主根内），
+ * 存在性场景（读盘/胶囊校验）必须逐根 stat 直到命中，否则后位根（组共享区等）永远轮不到
+ */
+async function resolveExistingWithinRoots(roots: string[], candidate: string): Promise<string | null> {
+  for (const root of roots) {
+    if (!root) continue;
+    const resolved = path.normalize(path.resolve(root, candidate));
+    if (!isWithinRoot(root, resolved)) continue;
+    try {
+      await fs.stat(resolved);
+      return resolved;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/**
  * 批量存在性校验：仅对落在 roots 内的路径做 stat，根外路径一律 false（不泄露工作区外文件信息）
  * @returns 入参 path → 是否存在
  */
 export async function checkPathsExist(roots: string[], paths: string[]): Promise<Record<string, boolean>> {
   const result: Record<string, boolean> = {};
   for (const candidate of paths) {
-    const abs = resolveWithinRoots(roots, candidate);
-    if (!abs) {
-      result[candidate] = false;
-      continue;
-    }
-    try {
-      await fs.stat(abs);
-      result[candidate] = true;
-    } catch {
-      result[candidate] = false;
-    }
+    result[candidate] = (await resolveExistingWithinRoots(roots, candidate)) !== null;
   }
   return result;
 }
 
-/**
- * 递归扫描工作区目录，构建文件树（排除隐藏目录）
- */
-export async function scanWorkspaceFiles(workspacePath: string): Promise<WorkspaceFileNode[]> {
-  return scanDirectory(workspacePath, workspacePath);
+/** 原地标注 git 未跟踪节点（?? 项：散文件或纯未跟踪目录折叠形式），命中即整棵子树归属该节点，不再深入 */
+export function markUntrackedNodes(nodes: WorkspaceFileNode[], untrackedPaths: ReadonlySet<string>): void {
+  for (const node of nodes) {
+    if (untrackedPaths.has(node.path)) {
+      node.gitStatus = 'untracked';
+      continue;
+    }
+    if (node.type === 'directory' && node.children) markUntrackedNodes(node.children, untrackedPaths);
+  }
+}
+
+/** 读文章 md 的 frontmatter 组树节点（显示标题）；解析失败返回 null 由调用方降级普通文件 */
+async function readArticleNode(absPath: string, relPath: string, fileName: string): Promise<WorkspaceFileNode | null> {
+  try {
+    const parsed = parseArticleFile(await fs.readFile(absPath, 'utf-8'));
+    if (!parsed) return null;
+    return {
+      name: parsed.meta.title || fileName,
+      path: relPath,
+      type: 'article',
+      articleMeta: {
+        id: parsed.meta.id,
+        url: parsed.meta.url,
+        siteName: parsed.meta.siteName,
+        fetchedAt: parsed.meta.fetchedAt,
+        wordCount: parsed.meta.wordCount,
+        parseStatus: parsed.meta.parseStatus,
+      },
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
- * 递归扫描单个目录，返回该目录下的文件节点列表
+ * 单层扫描目录（不递归），供文件树逐层懒加载：children 留空由前端展开时逐层拉取。
+ * 文章库（dogear/articles）内的 .md 按 frontmatter 识别为文章节点（带元数据行），
+ * 伴随 .raw.html 不单独列（跟随 md 增删改名）；frontmatter 缺损的 md 降级普通文件显示
  */
-async function scanDirectory(dirPath: string, workspacePath: string): Promise<WorkspaceFileNode[]> {
+export async function scanDirectoryLevel(workspacePath: string, relPath: string): Promise<WorkspaceFileNode[]> {
+  const dirAbsPath = resolveAndValidate(workspacePath, relPath);
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const entries = await fs.readdir(dirAbsPath, { withFileTypes: true });
     const nodes: WorkspaceFileNode[] = [];
 
     for (const entry of entries) {
-      // 跳过隐藏文件和目录
       if (HIDDEN_NAMES.includes(entry.name) || entry.name.startsWith('.')) continue;
 
-      const fullPath = path.join(dirPath, entry.name);
-      const relativePath = path.relative(workspacePath, fullPath).replace(/\\/g, '/');
-
+      const childRelPath = path.relative(workspacePath, path.join(dirAbsPath, entry.name)).replace(/\\/g, '/');
       if (entry.isDirectory()) {
-        const children = await scanDirectory(fullPath, workspacePath);
-        nodes.push({
-          name: entry.name,
-          path: relativePath,
-          type: 'directory',
-          children,
-        });
+        nodes.push({ name: entry.name, path: childRelPath, type: 'directory' });
+      } else if (isArticlesRelPath(childRelPath)) {
+        const lowerName = entry.name.toLowerCase();
+        if (lowerName.endsWith('.raw.html')) continue;
+        if (lowerName.endsWith('.md')) {
+          const articleNode = await readArticleNode(path.join(dirAbsPath, entry.name), childRelPath, entry.name);
+          if (articleNode) {
+            nodes.push(articleNode);
+            continue;
+          }
+        }
+        nodes.push({ name: entry.name, path: childRelPath, type: 'file', ext: path.extname(entry.name).toLowerCase() });
       } else {
-        const ext = path.extname(entry.name).toLowerCase();
-        nodes.push({
-          name: entry.name,
-          path: relativePath,
-          type: 'file',
-          ext,
-        });
+        nodes.push({ name: entry.name, path: childRelPath, type: 'file', ext: path.extname(entry.name).toLowerCase() });
       }
     }
 
-    // 文件夹在前，文件在后，各自按名称排序
     nodes.sort((a, b) => {
       if (a.type === 'directory' && b.type !== 'directory') return -1;
       if (a.type !== 'directory' && b.type === 'directory') return 1;
@@ -134,6 +171,53 @@ async function scanDirectory(dirPath: string, workspacePath: string): Promise<Wo
   } catch {
     return [];
   }
+}
+
+export interface CollectedWorkspacePath {
+  path: string;
+  isDir: boolean;
+}
+
+/**
+ * 并行收集工作区全部文件/目录相对路径（供工作区搜索索引）。
+ * 忽略 `.` 开头项、node_modules、快照排除清单；50k 条上限 + 3s 超时兜底（超限截断不抛错，truncated 标记）
+ */
+export async function collectWorkspacePaths(workspacePath: string, excludedPaths?: ReadonlySet<string>): Promise<{ entries: CollectedWorkspacePath[]; truncated: boolean }> {
+  const COLLECT_CAP = 50_000;
+  const COLLECT_TIMEOUT_MS = 3000;
+  const SCAN_IGNORE_DIRS = new Set(['node_modules']);
+  const BATCH_SIZE = 16;
+  const out: CollectedWorkspacePath[] = [];
+  const deadline = Date.now() + COLLECT_TIMEOUT_MS;
+
+  async function walk(dirAbsPath: string, relPrefix: string): Promise<void> {
+    if (out.length >= COLLECT_CAP || Date.now() > deadline) return;
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(dirAbsPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    const dirs: Dirent[] = [];
+    for (const entry of entries) {
+      if (out.length >= COLLECT_CAP || Date.now() > deadline) break;
+      if (HIDDEN_NAMES.includes(entry.name) || entry.name.startsWith('.') || SCAN_IGNORE_DIRS.has(entry.name)) continue;
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      if (excludedPaths?.has(rel)) continue;
+      const isDir = entry.isDirectory();
+      out.push({ path: rel, isDir });
+      if (isDir) dirs.push(entry);
+    }
+    for (let i = 0; i < dirs.length; i += BATCH_SIZE) {
+      if (out.length >= COLLECT_CAP || Date.now() > deadline) break;
+      await Promise.all(dirs.slice(i, i + BATCH_SIZE).map(entry =>
+        walk(path.join(dirAbsPath, entry.name), relPrefix ? `${relPrefix}/${entry.name}` : entry.name),
+      ));
+    }
+  }
+
+  await walk(workspacePath, '');
+  return { entries: out, truncated: out.length >= COLLECT_CAP || Date.now() > deadline };
 }
 
 /**
@@ -219,9 +303,12 @@ export async function deleteItem(workspacePath: string, itemRelPath: string, wor
 const ALLOWED_TEXT_EXT = ['.md', '.markdown', '.txt', '.json'];
 
 export async function readWorkspaceTextFile(roots: string[], relPath: string): Promise<string> {
-  const safePath = resolveWithinRoots(roots, relPath);
-  if (!safePath) {
+  if (!resolveWithinRoots(roots, relPath)) {
     throw new Error('路径越权：不允许访问工作区外的文件');
+  }
+  const safePath = await resolveExistingWithinRoots(roots, relPath);
+  if (!safePath) {
+    throw new Error(`文件不存在: ${relPath}`);
   }
   const ext = path.extname(safePath).toLowerCase();
   if (!ALLOWED_TEXT_EXT.includes(ext)) {

@@ -1,8 +1,5 @@
 // electron/main/tipc/agent.ts
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
-import { getAgentManager } from '../agents/agent-manager.js';
-import { AgentTask, TaskType } from '../agents/task-types.js';
-import { sendToDebugWindow } from '../main-app.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
@@ -13,6 +10,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { getSessionNotificationService } from '../services/session-notification-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { maybeFailoverMainSession, clearFailoverTriedBySession } from '../agents/model-failover.js';
+import { maybeRetryUnattendedFailover, clearUnattendedRetryBySession } from '../agents/unattended-retry.js';
 import { routeImageMessage } from '../agents/pi-session/vision-shunt.js';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
@@ -51,10 +49,17 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
     const result = payload as PiSessionTurnResult;
     if (result.subtype === 'success') {
       void clearFailoverTriedBySession(sessionId);
+      void clearUnattendedRetryBySession(sessionId);
+      void handleSessionNotification(sessionId, event, payload);
+    } else if (result.subtype === 'cancelled') {
+      void clearUnattendedRetryBySession(sessionId);
       void handleSessionNotification(sessionId, event, payload);
     } else {
       void maybeFailoverMainSession(sessionId, result).then((tookOver) => {
-        if (!tookOver) void handleSessionNotification(sessionId, event, payload);
+        if (tookOver) return;
+        void maybeRetryUnattendedFailover(sessionId, result).then((retried) => {
+          if (!retried) void handleSessionNotification(sessionId, event, payload);
+        });
       });
     }
   }
@@ -88,6 +93,9 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
       } else if (event === 'sessionClosed') {
         const data = payload as { conversationId: string };
         h.sessionClosed.send(data);
+      } else if (event === 'compactionFailure') {
+        const data = payload as { conversationId: string; failed: boolean };
+        h.compactionFailureChanged.send(data);
       }
     } catch { /* 窗口已销毁，忽略 */ }
   }
@@ -128,7 +136,7 @@ async function handleSessionNotification(
         body: COMPLETE_BODY[result.subtype] ?? COMPLETE_BODY.success,
       });
       service.playCue(result.subtype === 'failed' ? 'error' : 'complete');
-      void conversationService.markUnreadIfNotFocused(convId);
+      void conversationService.markUnreadIfNotFocused(convId, result.subtype === 'failed' ? 'error' : 'reply');
     } else if (event === 'permissionRequest') {
       const data = payload as { requestId: string; toolName: string; toolInput: unknown };
       service.notify({
@@ -147,33 +155,6 @@ async function handleSessionNotification(
 }
 
 export const agentRouter = {
-  // ── 旧版 Agent 任务 ──────────────────────────────────────
-  submitTask: t.procedure
-    .input<{ task: AgentTask }>()
-    .action(async ({ input }) => {
-      const agentManager = getAgentManager();
-      const taskId = await agentManager.submitTask(input.task, (taskId, status, result, error) => {
-        sendToDebugWindow('debug:taskUpdate', { taskId, status, result, error });
-        if (result?.message) {
-          sendToDebugWindow('debug:agentMessage', { role: 'assistant', content: result.message, timestamp: Date.now() });
-        }
-      });
-      return { taskId };
-    }),
-
-  cancelTask: t.procedure
-    .input<{ taskId: string }>()
-    .action(async ({ input }) => {
-      getAgentManager().cancelTask(input.taskId);
-      return { success: true };
-    }),
-
-  getStatus: t.procedure
-    .action(async () => getAgentManager().getStatus()),
-
-  getDetailedStatus: t.procedure
-    .action(async () => getAgentManager().getDetailedStatus()),
-
   // ── 基于 Query 的会话（支持 Skills）────────────────────────
   sendQueryBasedSessionMessage: t.procedure
     .input<{
@@ -442,8 +423,8 @@ export const agentRouter = {
     .action(async () => {
       await Promise.all([
         import('../agents/tools/memory-tools.js'),
+        import('../agents/tools/skill-tools.js'),
         import('../agents/tools/article-tools.js'),
-        import('../agents/tools/browser-tools.js'),
         import('../agents/tools/extension-tools.js'),
         import('../agents/tools/stock-tools.js'),
         import('../agents/tools/stock-analysis-tools.js'),

@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, AlertCircle, ArrowLeftRight, ChevronDown, FolderInput, X, Zap, Search as SearchIcon } from 'lucide-react';
+import { Archive, AlertCircle, ArrowLeftRight, Bookmark, ChevronDown, TriangleAlert, X, Search as SearchIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
+import {
+  connectConversationSearch,
+  disconnectConversationSearch,
+  reportConversationSearch,
+} from '@/stores/conversation-search-store';
 import { registerHotkey } from '@/lib/hotkey-registry';
 import { SCROLL_DIAG } from '@/lib/scroll-diag';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -31,7 +36,6 @@ import { SearchBar } from './SearchBar';
 import { useMessageSearch, type SearchMatch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { AwaitingDeliveryIndicator } from './AwaitingDeliveryIndicator';
-import { MoveToWorkspaceDialog } from './MoveToWorkspaceDialog';
 import { SubSessionDeliveredBanner } from './SubSessionDeliveredBanner';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
@@ -72,6 +76,7 @@ export function AgentChat({
   conversationIdOverride,
   workspaceId,
   visible = true,
+  panelActive = false,
 }: AgentChatProps) {
   const conversationId = conversationIdOverride ?? null;
   const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
@@ -99,7 +104,6 @@ export function AgentChat({
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
-  const isReadOnly = isTopicReadOnly;
 
   const applyLiveSnapshot = useCallback((snapshot: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => {
     applySnapshot(snapshot, pendingPermissionRequests, turnEntryIds);
@@ -109,10 +113,11 @@ export function AgentChat({
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
     useAgentSession({
       conversationId,
-      archived: isReadOnly,
+      archived: isTopicReadOnly,
       setIsLoading,
       onLiveSnapshot: applyLiveSnapshot,
       workspaceId,
+      panelActive,
     });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
@@ -125,6 +130,12 @@ export function AgentChat({
   );
   const pendingState = derivePendingState({ isRunning: isLoading || isRunningInStore, pendingCount });
 
+  // 侧轨挂起按钮三态数据源：钉住态取会话字段，自动亮态取主进程 aliveSet；running 会话禁用关闭（关了也会被 running 恒亮盖住）
+  const isPinned = !!currentConversation?.pinnedAt;
+  const isAliveConv = useConversationStore((s) => (conversationId ? s.aliveConversationIds.has(conversationId) : false));
+  const setConversationHold = useConversationStore((s) => s.setConversationHold);
+  const isConversationRunning = isLoading || isRunningInStore;
+
   // 主会话派出的子会话快照（驱动侧边轨道等待交付动效 + 输入区状态行）
   const childrenForThis = useConversationStore(
     (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
@@ -133,6 +144,9 @@ export function AgentChat({
     (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined) ?? EMPTY_FAILOVER_NOTICES,
   );
   const dismissFailoverNotice = useConversationStore((s) => s.dismissFailoverNotice);
+  const hasCompactionFailure = useConversationStore((s) =>
+    conversationId ? s.compactionFailureConversationIds.has(conversationId) : false,
+  );
   const { awaitCount, doneCount, issueCount } = useMemo(() => {
     if (!childrenForThis) return { awaitCount: 0, doneCount: 0, issueCount: 0 };
     let awaiting = 0;
@@ -262,7 +276,7 @@ export function AgentChat({
     pendingImages: imageAttachment.pendingImages,
     setPendingImages: imageAttachment.setPendingImages,
     currentSelection: currentConversation?.modelSelection ?? null,
-    readOnly: isReadOnly,
+    readOnly: isTopicReadOnly,
   });
 
   // 权限/AskUser 响应后恢复自动跟随
@@ -322,6 +336,30 @@ export function AgentChat({
   const search = useMessageSearch(stableHistory, transcriptStore.getLiveSnapshot);
   // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
   const openSearch = search.open;
+
+  // 会话 tab 激活时接管顶栏搜索桥（visible 即当前 tab 内容），失活/卸载释放，切 tab 自然交接
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  useEffect(() => {
+    if (!visible) return;
+    connectConversationSearch({
+      setQuery: (q) => searchRef.current.setQuery(q),
+      next: () => searchRef.current.next(),
+      prev: () => searchRef.current.prev(),
+      close: () => searchRef.current.close(),
+    });
+    return () => disconnectConversationSearch();
+  }, [visible]);
+
+  // 内部 search 状态回报桥镜像，顶栏与 Ctrl+F 双入口状态同源
+  useEffect(() => {
+    if (!visible) return;
+    reportConversationSearch({
+      query: search.query,
+      unitCount: search.units.length,
+      unitIndex: search.activeUnitIndex,
+    });
+  }, [visible, search.query, search.units.length, search.activeUnitIndex]);
 
   // 激活命中所在块（messageId+blockIndex）的命中总数，供块级域卡片显示「命中 n 处」徽标
   const activeBlockMatchCount = useMemo(() => {
@@ -391,29 +429,10 @@ export function AgentChat({
     if (conversationId) toggleCollapse(conversationId);
   }, [conversationId, toggleCollapse]);
 
-  const isPersonal = workspaceId === PERSONAL_WORKSPACE_ID;
-  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
-
   return (
     <WorkspaceIdProvider workspaceId={workspaceId ?? null} groupId={currentConversation?.groupId ?? null}>
-    <div className={`relative flex flex-col h-full rounded-lg border shadow-sm ${isPersonal ? 'bg-muted/30' : 'bg-card'}`}>
-      {isPersonal && (
-        <div className="flex items-center gap-1.5 px-4 py-1.5 border-b text-[11px] text-muted-foreground shrink-0">
-          <Zap size={12} className="text-sky-500" />
-          <span>临时会话 · 与工作区无关的随手问，7 天未活跃自动归档</span>
-          {conversationId && (
-            <button
-              className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors"
-              title="把此会话及其历史移入真实工作区"
-              onClick={() => setMoveDialogOpen(true)}
-            >
-              <FolderInput size={11} />
-              移入工作区
-            </button>
-          )}
-        </div>
-      )}
-      {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
+    <div className="relative flex flex-col h-full rounded-lg border shadow-sm bg-card">
+      {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，内部原生滚动 */}
       <div className="relative flex-1 overflow-hidden">
       <div
         ref={scrollAreaRef}
@@ -473,7 +492,7 @@ export function AgentChat({
           </div>
         )}
 
-        {historyStatus === 'empty' && hasMessages === false && !isReadOnly && !isTopicStatePending && (
+        {historyStatus === 'empty' && hasMessages === false && !isTopicReadOnly && !isTopicStatePending && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
@@ -495,7 +514,7 @@ export function AgentChat({
           searchQuery={search.query || undefined}
           activeMatchId={search.activeMatch?.id ?? null}
           activeBlockMatchCount={activeBlockMatchCount}
-          readOnly={isReadOnly}
+          readOnly={isTopicReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}
         />
@@ -511,7 +530,7 @@ export function AgentChat({
           searchQuery={search.query || undefined}
           activeMatchId={search.activeMatch?.id ?? null}
           activeBlockMatchCount={activeBlockMatchCount}
-          readOnly={isReadOnly}
+          readOnly={isTopicReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}
         />
@@ -529,8 +548,33 @@ export function AgentChat({
 
       {/* 右侧工具轨道：w-12 透明浮层，顶部+底部两组按钮 */}
       <div className="absolute top-0 right-0 bottom-0 w-12 flex flex-col pointer-events-none z-10">
-        {/* 顶部按钮组：搜索 + Minimap */}
+        {/* 顶部按钮组：挂起 + 搜索 + Minimap */}
         <div className="flex flex-col gap-1 p-1 pointer-events-auto">
+          {currentConversation && !isTopicReadOnly && (
+            <button
+              onClick={() => {
+                if (!conversationId) return;
+                void setConversationHold(conversationId, isPinned || isAliveConv ? 'clear' : 'pin');
+              }}
+              disabled={isAliveConv && !isPinned && isConversationRunning}
+              className={cn(
+                'w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-muted',
+                isAliveConv && !isPinned && isConversationRunning && 'opacity-50 cursor-not-allowed',
+              )}
+              title={isPinned ? '已钉住 · 点击关闭' : isAliveConv ? '关闭' : '稍后继续'}
+            >
+              <Bookmark
+                size={14}
+                className={cn(
+                  isPinned
+                    ? 'text-emerald-600 dark:text-emerald-400 fill-current'
+                    : isAliveConv
+                      ? 'text-emerald-500'
+                      : 'text-muted-foreground',
+                )}
+              />
+            </button>
+          )}
           {!search.isOpen && hasMessages && (
             <button
               onClick={openSearch}
@@ -571,8 +615,8 @@ export function AgentChat({
         isOpen={search.isOpen}
         query={search.query}
         setQuery={search.setQuery}
-        totalMatches={search.matches.length}
-        activeIndex={search.activeIndex}
+        unitCount={search.units.length}
+        unitIndex={search.activeUnitIndex}
         onPrev={search.prev}
         onNext={search.next}
         onClose={search.close}
@@ -599,12 +643,20 @@ export function AgentChat({
         </div>
       )}
 
+      {/* 压缩异常持续态横幅（恢复后自动消失，无需手动关闭） */}
+      {hasCompactionFailure && (
+        <div className="px-4 py-2 border-t bg-amber-50/70 dark:bg-amber-950/30 flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
+          <TriangleAlert size={12} className="flex-shrink-0" />
+          <span>对话压缩异常，历史过长可能影响发送</span>
+        </div>
+      )}
+
       {/* 输入区域 */}
       {isTopicStatePending ? (
         <div className="flex items-center gap-2 px-4 py-3 border-t text-xs text-muted-foreground bg-muted/30">
           <span>正在检查话题状态…</span>
         </div>
-      ) : isReadOnly ? (
+      ) : isTopicReadOnly ? (
         <div className="flex items-center gap-2 px-4 py-3 border-t text-xs text-muted-foreground bg-muted/30">
           <Archive size={14} className="flex-shrink-0" />
           <span>{topicArchived ? '此话题已归档，恢复后才能发送新消息' : '此话题已删除，无法发送新消息'}</span>
@@ -646,14 +698,6 @@ export function AgentChat({
         onSlashMenuClose={slashCommands.closeSlashMenu}
       />
       </>
-      )}
-      {isPersonal && conversationId && (
-        <MoveToWorkspaceDialog
-          open={moveDialogOpen}
-          onOpenChange={setMoveDialogOpen}
-          conversationId={conversationId}
-          conversationTitle={currentConversation?.title ?? ''}
-        />
       )}
     </div>
     </WorkspaceIdProvider>

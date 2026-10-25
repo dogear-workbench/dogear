@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设置页改版原型</title>
+<style>
+  :root {
+    --bg: #F5F1E8; --fg: #33302B; --muted: #8A8578;
+    --card: #FDFBF5; --border: #E3DDCF; --border-soft: #EAE5D8;
+    --accent: #10B981; --accent-soft: rgba(16,185,129,.12); --red: #EF4444;
+    --hover: rgba(51,48,43,.05);
+  }
+  body.theme-dark {
+    --bg: #1E242C; --fg: #C6CBD2; --muted: #7C8590;
+    --card: #232A33; --border: #333B45; --border-soft: #2A313A;
+    --accent: #10B981; --accent-soft: rgba(16,185,129,.15); --red: #EF4444;
+    --hover: rgba(198,203,210,.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background: var(--bg); color: var(--fg); font-size: 14px; line-height: 1.5;
+    min-height: 100vh;
+  }
+  .app-window { max-width: 1180px; margin: 24px auto; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg); box-shadow: 0 8px 32px rgba(0,0,0,.08); }
+  .titlebar { height: 36px; display: flex; align-items: center; padding: 0 14px; gap: 8px; border-bottom: 1px solid var(--border-soft); font-size: 12px; color: var(--muted); background: var(--card); }
+  .titlebar .dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ── 新框架：顶部横向导航 ── */
+  .frame-new .topnav { display: flex; align-items: center; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--border); background: var(--bg); overflow-x: auto; }
+  .frame-new .topnav button { border: none; background: none; padding: 10px 13px; font-size: 13.5px; color: var(--muted); cursor: pointer; border-radius: 6px 6px 0 0; white-space: nowrap; position: relative; }
+  .frame-new .topnav button:hover { color: var(--fg); background: var(--hover); }
+  .frame-new .topnav button.active { color: var(--fg); font-weight: 600; }
+  .frame-new .topnav button.active::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+
+  /* ── 旧框架：左侧纵向导航 ── */
+  .frame-old .shell { display: flex; min-height: 640px; }
+  .frame-old .sidenav { width: 200px; border-right: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+  .frame-old .sidenav button { text-align: left; border: none; background: none; padding: 7px 10px; font-size: 13.5px; color: var(--muted); cursor: pointer; border-radius: 6px; }
+  .frame-old .sidenav button:hover { background: var(--hover); color: var(--fg); }
+  .frame-old .sidenav button.active { background: var(--hover); color: var(--fg); font-weight: 600; }
+  .frame-old .content-old { flex: 1; max-width: 680px; margin: 0 auto; padding: 20px 24px; }
+
+  .frame-new .sidenav, .frame-old .topnav { display: none; }
+  .frame-new .tabbody { display: block; }
+  .frame-old .tabbody { display: none; }
+  .frame-old .tabbody-old { display: block; }
+
+  .tabbody, .tabbody-old { min-height: 640px; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── 基础设置：锚点布局 ── */
+  .anchor-layout { display: flex; min-height: 640px; }
+  .anchor-nav { width: 160px; flex-shrink: 0; border-right: 1px solid var(--border-soft); padding: 20px 10px 20px 16px; position: sticky; top: 0; align-self: flex-start; }
+  .anchor-nav button { display: block; width: 100%; text-align: left; border: none; background: none; font-size: 13px; color: var(--muted); padding: 6px 10px; border-radius: 6px; cursor: pointer; margin-bottom: 2px; border-left: 2px solid transparent; }
+  .anchor-nav button:hover { color: var(--fg); background: var(--hover); }
+  .anchor-nav button.active { color: var(--fg); background: var(--accent-soft); border-left-color: var(--accent); font-weight: 600; }
+  .anchor-content { flex: 1; padding: 20px 28px 40px; max-width: 760px; }
+
+  .group { margin-bottom: 36px; scroll-margin-top: 12px; }
+  .group > h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 12px; }
+  .group > h3 .cnt { font-weight: 400; opacity: .7; }
+
+  .setting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border-soft); }
+  .group .setting-row:last-child { border-bottom: none; }
+  .setting-row .txt { min-width: 0; }
+  .setting-row .txt .name { font-size: 13.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .setting-row .txt .desc { font-size: 12px; color: var(--muted); margin-top: 2px; max-width: 480px; }
+  .setting-row .ctrl { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+
+  /* switch */
+  .switch { width: 36px; height: 20px; border-radius: 10px; background: var(--border); position: relative; cursor: pointer; transition: background .15s; flex-shrink: 0; border: none; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 18px; }
+
+  /* 分段控件 */
+  .segmented { display: inline-flex; background: var(--hover); border-radius: 8px; padding: 3px; gap: 2px; }
+  .segmented button { border: none; background: none; padding: 5px 14px; font-size: 12.5px; color: var(--muted); border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  .segmented button.on { background: var(--card); color: var(--fg); font-weight: 500; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+
+  /* 模型选择器块 */
+  .model-pick { display: flex; gap: 8px; width: 100%; }
+  .model-pick .sel { flex: 1; min-width: 0; }
+  .model-select { display: flex; align-items: center; justify-content: space-between; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); padding: 0 12px; font-size: 13px; cursor: pointer; }
+  .model-select:hover { border-color: var(--muted); }
+  .model-select .caret { color: var(--muted); font-size: 11px; }
+  .model-select small { color: var(--muted); }
+
+  input[type=text], input[type=password] { height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); padding: 0 10px; font-size: 13px; outline: none; width: 100%; }
+  input[type=text]:focus { border-color: var(--accent); }
+  select.selbox { height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg); padding: 0 8px; font-size: 13px; }
+
+  .sub-row { display: flex; align-items: center; gap: 14px; padding: 10px 0 2px; flex-wrap: wrap; }
+  .sub-row .item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--fg); }
+  .vol { width: 110px; accent-color: var(--accent); }
+  .btn { display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--fg); font-size: 12.5px; cursor: pointer; }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.ghost { border: none; background: none; color: var(--muted); }
+  .btn.ghost:hover { color: var(--fg); background: var(--hover); }
+  .btn.danger { color: var(--red); }
+  .btn svg { width: 14px; height: 14px; }
+
+  /* ── 浏览器 tab ── */
+  .browser-page { max-width: 760px; padding: 20px 28px 40px; }
+  .statusline { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.ok { background: var(--accent); }
+  .status-dot.off { background: var(--muted); }
+
+  /* ── 能力 tab ── */
+  .ability-page { padding: 20px 28px 40px; }
+  .page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .page-head h2 { font-size: 17px; font-weight: 600; }
+  .page-head p { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .pcard { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 14px; cursor: pointer; transition: border-color .15s; display: flex; flex-direction: column; gap: 8px; }
+  .pcard:hover { border-color: var(--accent); }
+  .pcard .t { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .pcard .d { font-size: 12px; color: var(--muted); line-height: 1.45; }
+  .pcard .meta { font-size: 11px; color: var(--muted); background: var(--hover); border-radius: 5px; padding: 2px 7px; align-self: flex-start; }
+  .badge { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--hover); color: var(--muted); flex-shrink: 0; }
+
+  /* 挂载矩阵 */
+  .mounts { border: 1px solid var(--border); border-radius: 10px; background: var(--card); overflow: hidden; }
+  .mounts .mrow { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; }
+  .mounts .mrow:last-child { border-bottom: none; }
+  .mk { width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+  .mk.on { background: var(--accent-soft); color: var(--accent); }
+  .mk.off { background: var(--hover); color: var(--muted); }
+
+  /* 自定义技能 */
+  .skill-list { border: 1px solid var(--border); border-radius: 10px; background: var(--card); overflow: hidden; }
+  .skill-list .srow { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--border-soft); cursor: pointer; }
+  .skill-list .srow:last-child { border-bottom: none; }
+  .skill-list .srow:hover { background: var(--hover); }
+  .skill-list .srow .nm { font-size: 13px; font-weight: 500; font-family: ui-monospace, Consolas, monospace; }
+  .skill-list .srow .ds { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .skill-list .srow .chev { color: var(--muted); font-size: 12px; }
+  .dotmark { color: var(--accent); font-weight: 700; }
+
+  /* 二级页 */
+  .detail-page { padding: 20px 28px 40px; max-width: 900px; }
+  .back { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; color: var(--muted); cursor: pointer; margin-bottom: 14px; border: none; background: none; }
+  .back:hover { color: var(--fg); }
+  .editor { border: 1px solid var(--border); border-radius: 10px; background: var(--card); font-family: ui-monospace, Consolas, monospace; font-size: 12px; padding: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--fg); min-height: 320px; }
+
+  /* ── 模型方案：左右布局 ── */
+  .profiles-layout { display: flex; min-height: 640px; }
+  .profiles-left { width: 220px; flex-shrink: 0; border-right: 1px solid var(--border-soft); padding: 16px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .plist-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--fg); }
+  .plist-item:hover { background: var(--hover); }
+  .plist-item.sel { background: var(--accent-soft); font-weight: 600; }
+  .plist-item .st { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .plist-item .st.ok { background: var(--accent); }
+  .plist-item .st.no { background: var(--red); }
+  .plist-item .st.off { background: var(--muted); }
+  .profiles-left .addp { margin-top: auto; }
+  .profiles-right { flex: 1; min-width: 0; padding: 18px 24px 40px; overflow-x: auto; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin-bottom: 20px; }
+  .fitem label { display: block; font-size: 12.5px; font-weight: 500; margin-bottom: 5px; }
+  .fitem label .req { color: var(--red); }
+  .fitem .hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+  .fitem.full { grid-column: 1 / -1; }
+
+  /* 模型行：两行卡片 */
+  .mcard-list { display: flex; flex-direction: column; gap: 8px; }
+  .mcard { border: 1px solid var(--border); border-radius: 10px; background: var(--card); padding: 10px 12px; }
+  .mcard .r1 { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mcard .r1 .mid { flex: 1; min-width: 0; font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  .mcard .r2 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); cursor: pointer; background: var(--bg); white-space: nowrap; }
+  .chip:hover { border-color: var(--muted); }
+  .chip.manual { color: #3B82F6; border-color: #93C5FD; }
+  .chip.vis { color: var(--accent); border-color: rgba(16,185,129,.4); }
+  .chip.warn { color: #B45309; border-color: #FCD34D; }
+  body.theme-dark .chip.manual { color: #7DD3FC; border-color: #1D4ED8; }
+  .addrow { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* 模型行：单行 */
+  .mline-list { display: flex; flex-direction: column; gap: 6px; }
+  .mline { display: flex; align-items: center; gap: 6px; }
+  .mline .mid { flex: 1; min-width: 120px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+  .modelrow-inline .mcard-list { display: none; }
+  .modelrow-inline .mline-list { display: flex; }
+  body:not(.modelrow-inline) .mline-list { display: none; }
+
+  /* 窄浏览器变体：后两组挪回基础设置 */
+  .browser-only-wide { display: block; }
+  .browser-narrow .browser-only-wide { display: none; }
+  .browser-narrow .basic-only-narrow { display: block; }
+  .basic-only-narrow { display: none; }
+
+  /* failover */
+  .fosec { margin-top: 24px; border-top: 1px solid var(--border-soft); padding-top: 16px; }
+  .fochain { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; }
+  .fostep { border: 1px solid var(--border); border-radius: 7px; padding: 4px 10px; background: var(--card); }
+  .foarrow { color: var(--muted); }
+
+  /* 旧基础设置（改版前基线） */
+  .old-sec { margin-bottom: 22px; }
+  .old-sec .lbl { font-size: 13.5px; font-weight: 500; margin-bottom: 3px; }
+  .old-sec .dsc { font-size: 12px; color: var(--muted); margin-bottom: 7px; line-height: 1.5; }
+  .old-box { border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .old-cb { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .old-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .strike-note { font-size: 11px; color: var(--red); border: 1px dashed var(--red); border-radius: 6px; padding: 2px 8px; opacity: .85; }
+
+  /* demo 控制条 */
+  .demo-bar { position: fixed; right: 16px; bottom: 16px; z-index: 99; }
+  .demo-bar .toggle { width: 40px; height: 40px; border-radius: 50%; background: #33302B; color: #fff; border: none; cursor: pointer; font-size: 17px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+  .demo-panel { position: absolute; right: 0; bottom: 50px; width: 250px; background: #26231E; color: #EDEAE0; border-radius: 10px; padding: 14px; box-shadow: 0 8px 24px rgba(0,0,0,.35); font-size: 12.5px; display: none; }
+  .demo-bar.open .demo-panel { display: block; }
+  .demo-panel .row { margin-bottom: 10px; }
+  .demo-panel .row:last-child { margin-bottom: 0; }
+  .demo-panel .lb { color: #9C968A; margin-bottom: 4px; font-size: 11px; }
+  .demo-panel .opt { display: flex; gap: 4px; }
+  .demo-panel .opt button { flex: 1; border: 1px solid #4A453C; background: none; color: #C9C4B8; border-radius: 6px; padding: 4px 2px; font-size: 11.5px; cursor: pointer; }
+  .demo-panel .opt button.on { background: #10B981; border-color: #10B981; color: #fff; }
+  .demo-note { color: #9C968A; font-size: 11px; line-height: 1.5; margin-top: 8px; border-top: 1px solid #3A362F; padding-top: 8px; }
+</style>
+</head>
+<body class="theme-light frame-new browser-wide">
+
+<div class="app-window">
+  <div class="titlebar">
+    <span class="dot" style="background:#EF4444"></span><span class="dot" style="background:#F5BF4F"></span><span class="dot" style="background:#10B981"></span>
+    <span style="margin-left:10px">Dogear — 设置</span>
+  </div>
+
+  <!-- 新框架：顶部横向导航 -->
+  <nav class="topnav">
+    <button data-tab="basic" class="active">基础</button>
+    <button data-tab="browser">浏览器</button>
+    <button data-tab="ability">能力</button>
+    <button data-tab="scene">场景</button>
+    <button data-tab="profiles">模型方案</button>
+    <button data-tab="ws">工作区管理</button>
+    <button data-tab="subagent">子会话派遣</button>
+    <button data-tab="shortcuts">快捷键</button>
+    <button data-tab="about">关于</button>
+  </nav>
+
+  <!-- 旧框架：左侧纵向 -->
+  <div class="shell" style="display:none" id="oldShell">
+    <nav class="sidenav">
+      <button class="active">基础设置</button><button>能力</button><button>场景</button><button>模型方案</button><button>工作区管理</button><button>子会话派遣</button><button>快捷键</button><button>关于</button>
+    </nav>
+    <div class="content-old" id="oldContent"><!-- JS 填充 --></div>
+  </div>
+
+  <div class="tabbody" id="tabBody">
+
+    <!-- ═══ 基础 tab（新）═══ -->
+    <div class="page active" data-page="basic">
+      <div class="anchor-layout">
+        <nav class="anchor-nav" id="anchorNav">
+          <button data-anchor="g-model" class="active">模型</button>
+          <button data-anchor="g-chat">对话</button>
+          <button data-anchor="g-look">外观</button>
+          <button data-anchor="g-notify">提示</button>
+          <button data-anchor="g-list">会话列表</button>
+          <div class="basic-only-narrow">
+            <button data-anchor="g-net">联网</button>
+          </div>
+        </nav>
+        <div class="anchor-content">
+
+          <div class="group" id="g-model">
+            <h3>模型</h3>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">默认模型</div>
+                <div class="desc">新建对话使用的模型</div>
+              </div>
+              <div class="ctrl" style="width:340px">
+                <div class="model-pick" style="width:340px">
+                  <div class="sel"><div class="model-select"><span>glm-4.7 <small>GLM Coding Plan</small></span><span class="caret">▾</span></div></div>
+                  <div style="width:104px"><div class="model-select"><span style="color:var(--muted);font-size:12px">力度 默认 ▾</span></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">文章解析模型</div>
+                <div class="desc">文章导入解析不过关时兜底，适合配便宜档</div>
+              </div>
+              <div class="ctrl" style="width:340px">
+                <div class="model-select"><span style="color:var(--muted)">不指定（用默认模型）</span><span class="caret">▾</span></div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">识图转派模型</div>
+                <div class="desc">模型看不了图时，转给它识图</div>
+              </div>
+              <div class="ctrl" style="width:340px">
+                <div class="model-select"><span style="color:var(--muted)">不指定（用第一个视觉模型）</span><span class="caret">▾</span></div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">模型故障转移</div>
+                <div class="desc">主模型限流/欠费时自动切到备用供应商；链随方案增删自动维护</div>
+              </div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+            <div class="sub-row" style="padding-left:0">
+              <div class="fochain">
+                <span class="fostep">1 GLM Coding Plan · glm-4.7 ▾</span><span class="foarrow">→</span>
+                <span class="fostep">2 Anthropic · claude-sonnet-4-6 ▾</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group" id="g-chat">
+            <h3>对话</h3>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">工具放行</div>
+                <div class="desc">默认：白名单内自动放行，其余问你；自动执行：全部放行，慎用</div>
+              </div>
+              <div class="ctrl">
+                <div class="segmented" data-seg><button class="on">默认</button><button>自动执行</button></div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">消息显示</div>
+                <div class="desc">工具与思考过程默认收起还是展开</div>
+              </div>
+              <div class="ctrl">
+                <div class="segmented" data-seg><button class="on">简化</button><button>详细</button></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="group" id="g-look">
+            <h3>外观</h3>
+            <div class="setting-row">
+              <div class="txt"><div class="name">主题</div></div>
+              <div class="ctrl"><div class="segmented" data-seg><button class="on">亮色</button><button>暗色</button><button>跟随系统</button></div></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">界面大小</div>
+                <div class="desc">缩放文字与间距，对所有窗口生效</div>
+              </div>
+              <div class="ctrl"><div class="segmented" data-seg><button>小</button><button class="on">中</button><button>大</button></div></div>
+            </div>
+          </div>
+
+          <div class="group" id="g-notify">
+            <h3>提示</h3>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">提示音</div>
+                <div class="desc">会话完成、等确认时播放</div>
+              </div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">仅后台时播放</div></div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">音量</div></div>
+              <div class="ctrl"><input type="range" class="vol" value="25"> <span style="color:var(--muted);font-size:11.5px">25%</span> <button class="btn">试听</button></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">需要确认时跳转焦点</div>
+                <div class="desc">出现确认卡时自动切到对应窗口</div>
+              </div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+          </div>
+
+          <div class="group" id="g-list">
+            <h3>会话列表</h3>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">活跃标记</div>
+                <div class="desc">近期有活动的会话亮一个小点</div>
+              </div>
+              <div class="ctrl"><div class="segmented" data-seg><button>不显示</button><button>30 分</button><button class="on">1 小时</button><button>4 小时</button></div></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">上滚时消息吸顶</div>
+                <div class="desc">往上翻聊天时，你最近一条消息固定在顶部</div>
+              </div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+          </div>
+
+          <!-- 窄浏览器变体：联网组回基础 -->
+          <div class="group basic-only-narrow" id="g-net">
+            <h3>联网</h3>
+            <div class="setting-row">
+              <div class="txt"><div class="name">联网搜索 API Key</div><div class="desc">GLM Coding Plan 的 Key，在智谱套餐页创建</div></div>
+              <div class="ctrl" style="width:280px"><input type="password" placeholder="API Key"></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">支付与网银拦截</div><div class="desc">这些域名 Agent 一律不访问</div></div>
+              <div class="ctrl"><button class="btn">管理列表</button></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 浏览器 tab ═══ -->
+    <div class="page" data-page="browser">
+      <div class="browser-page">
+        <div class="page-head">
+          <div><h2>浏览器</h2><p>联网搜索、浏览器扩展与网页拦截</p></div>
+        </div>
+
+        <div class="group">
+          <h3>搜索</h3>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">搜索引擎</div>
+              <div class="desc">代理可用时首选 Google，失败自动降级</div>
+            </div>
+            <div class="ctrl"><div class="segmented" data-seg><button class="on">自动</button><button>Google</button><button>Bing</button></div></div>
+          </div>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">代理地址</div>
+              <div class="desc">Google / DuckDuckGo 走代理，其余直连；留空只用 Bing</div>
+            </div>
+            <div class="ctrl" style="width:280px"><input type="text" placeholder="127.0.0.1:7890" value="127.0.0.1:7890"></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>扩展</h3>
+          <div class="setting-row" style="flex-direction:column;align-items:stretch">
+            <div class="statusline"><span class="status-dot ok"></span> 已连接 Chrome · 扩展 v1.4.2</div>
+            <p style="font-size:12px;color:var(--muted);padding-top:6px">连接后可读取当前标签页标题、网址与正文预览</p>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>任务浏览器</h3>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">断线自动拉起</div>
+              <div class="desc">扩展通道断开时自动打开内置浏览器顶上</div>
+            </div>
+            <div class="ctrl"><button class="switch" data-sw></button></div>
+          </div>
+        </div>
+
+        <!-- 宽变体专属 -->
+        <div class="group browser-only-wide">
+          <h3>联网搜索</h3>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">API Key（GLM Coding Plan）</div>
+              <div class="desc">联网搜索工具的 Key，智谱套餐页创建</div>
+            </div>
+            <div class="ctrl" style="width:280px"><input type="password" placeholder="API Key" value="••••••••••••••••"></div>
+          </div>
+        </div>
+
+        <div class="group browser-only-wide">
+          <h3>网页拦截</h3>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">支付与网银域名</div>
+              <div class="desc">列表内域名 Agent 一律不访问，内置常见支付站点</div>
+            </div>
+            <div class="ctrl"><button class="btn">管理列表</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 能力 tab ═══ -->
+    <div class="page" data-page="ability">
+      <div class="ability-page">
+        <div class="page-head">
+          <div><h2>能力</h2><p>查看能力与加载情况，启停在场景页</p></div>
+          <select class="selbox" style="width:170px">
+            <option selected>Dogear（默认工作区）</option>
+            <option>股票研究</option>
+          </select>
+        </div>
+
+        <div class="group">
+          <h3>工具包</h3>
+          <div class="cards">
+            <div class="pcard">
+              <div class="t">联网搜索 <span class="badge">工具包</span></div>
+              <div class="d">bigmodel__webSearch / webReader，走 GLM MCP</div>
+              <span class="meta">2 个工具</span>
+            </div>
+            <div class="pcard">
+              <div class="t">股票分析 <span class="badge">工具包</span></div>
+              <div class="d">行情、指标、选股、回测</div>
+              <span class="meta">18 个工具</span>
+            </div>
+            <div class="pcard">
+              <div class="t">代码工作流 <span class="badge">skill 包</span></div>
+              <div class="d">code-discipline · staged-execution 等方法论</div>
+              <span class="meta">4 个 skill</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>加载情况 <span class="cnt">· 联网搜索</span></h3>
+          <div class="mounts">
+            <div class="mrow"><span class="mk on">✓</span> 主会话</div>
+            <div class="mrow"><span class="mk on">✓</span> 子会话 · 浏览器解析</div>
+            <div class="mrow"><span class="mk off">✗</span> 子会话 · 探索</div>
+            <div class="mrow"><span class="mk on">✓</span> 任务执行会话</div>
+            <div class="mrow"><span class="mk off">✗</span> 定时自定义任务 <span class="badge">后台</span></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <h3>自定义技能</h3>
+          <div class="skill-list">
+            <div class="srow" data-skill>
+              <span class="nm">weekly-report</span>
+              <span class="ds">周报整理：读 git log 与任务清单，汇总成 markdown</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="srow" data-skill>
+              <span class="nm">ppt-outline</span>
+              <span class="ds">从文章生成演示大纲</span>
+              <span class="chev">›</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn">导入</button><button class="btn">扫描</button>
+            <span style="font-size:11.5px;color:var(--muted);align-self:center">路径 C:\Users\…\.dogear\custom\skills</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 能力二级页：自定义技能 -->
+    <div class="page" data-page="skill-detail">
+      <div class="detail-page">
+        <button class="back" data-back="ability">‹ 返回能力</button>
+        <div class="page-head"><div><h2 style="font-family:ui-monospace,Consolas,monospace">weekly-report</h2><p>自定义技能 · SKILL.md</p></div></div>
+        <div class="editor">---
+name: weekly-report
+description: 周报整理：读 git log 与任务清单，汇总成 markdown
+---
+
+# 周报整理
+
+1. 读最近 7 天 git log（按主题归组）
+2. 读任务面板的本周完成任务
+3. 输出 markdown 周报到共享区</div>
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+          <button class="btn">取消</button><button class="btn primary">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ 模型方案 tab ═══ -->
+    <div class="page" data-page="profiles">
+      <div class="profiles-layout">
+        <div class="profiles-left">
+          <div class="plist-item sel" data-prof><span class="st ok"></span> GLM Coding Plan</div>
+          <div class="plist-item" data-prof><span class="st ok"></span> Anthropic 官方</div>
+          <div class="plist-item" data-prof><span class="st no"></span> DeepSeek 官方</div>
+          <button class="btn addp" style="justify-content:center">＋ 新增方案</button>
+        </div>
+        <div class="profiles-right">
+          <div class="form-grid">
+            <div class="fitem"><label>方案名称</label><input type="text" value="GLM Coding Plan"></div>
+            <div class="fitem"><label>上游协议</label><select class="selbox"><option>openai-completions</option></select></div>
+            <div class="fitem full"><label>API Key <span class="req">*</span></label><input type="password" value="••••••••••••••••"><div class="hint">Base URL：<code>/api/coding/paas/v4</code>（套餐额度）</div></div>
+            <div class="fitem"><label>超时（毫秒）</label><input type="text" value="3000000"></div>
+            <div class="fitem"><label>自动压缩阈值</label><input type="text" value="80" style="width:90px"><div class="hint">80%（192K 窗口 ≈ 154K tokens 触发）</div></div>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <label style="font-size:12.5px;font-weight:500">模型清单 <span style="color:var(--red)">*</span></label>
+            <button class="btn">↻ 从上游拉取</button>
+          </div>
+
+          <div class="mcard-list">
+            <div class="mcard">
+              <div class="r1">
+                <input class="mid" type="text" value="glm-4.7" style="height:30px">
+                <input type="text" placeholder="显示名" value="GLM 4.7" style="width:130px;height:30px">
+                <button class="btn ghost danger" title="删除">✕</button>
+              </div>
+              <div class="r2">
+                <span class="chip manual">窗口 200K · 手动</span>
+                <span class="chip">≤32K</span>
+                <span class="chip">¥2/8/0.8</span>
+                <span class="chip vis">◉ 视觉</span>
+                <span class="chip">力度：跟随全局 ▾</span>
+              </div>
+            </div>
+            <div class="mcard">
+              <div class="r1">
+                <input class="mid" type="text" value="glm-4.7-flash" style="height:30px">
+                <input type="text" placeholder="显示名" value="" style="width:130px;height:30px">
+                <button class="btn ghost danger">✕</button>
+              </div>
+              <div class="r2">
+                <span class="chip warn">128K · 未识别</span>
+                <span class="chip">≤8K · 默认</span>
+                <span class="chip">¥ —</span>
+                <span class="chip">力度：低 ▾</span>
+              </div>
+            </div>
+            <div class="mcard">
+              <div class="r1">
+                <input class="mid" type="text" value="glm-4.6" style="height:30px">
+                <input type="text" placeholder="显示名" value="" style="width:130px;height:30px">
+                <button class="btn ghost danger">✕</button>
+              </div>
+              <div class="r2">
+                <span class="chip">200K</span>
+                <span class="chip">≤32K</span>
+                <span class="chip">¥1/4/0.4</span>
+                <span class="chip vis">◉ 视觉</span>
+                <span class="chip">力度：跟随全局 ▾</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="mline-list">
+            <div class="mline"><input class="mid" type="text" value="glm-4.7" style="height:30px"><span class="chip manual">200K·手</span><span class="chip">≤32K</span><span class="chip">¥2/8/.8</span><span class="chip vis">视觉</span><span class="chip">随全局</span><input type="text" placeholder="名" style="width:80px;height:28px"><button class="btn ghost danger">✕</button></div>
+            <div class="mline"><input class="mid" type="text" value="glm-4.7-flash" style="height:30px"><span class="chip warn">128K?</span><span class="chip">≤8K</span><span class="chip">¥—</span><span class="chip">无视觉</span><span class="chip">低</span><input type="text" placeholder="名" style="width:80px;height:28px"><button class="btn ghost danger">✕</button></div>
+          </div>
+
+          <div class="addrow">
+            <input type="text" placeholder="输入模型 ID，如 gpt-5、claude-sonnet-4-6">
+            <button class="btn">＋ 添加</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 占位 tabs -->
+    <div class="page" data-page="scene"><div class="detail-page" style="padding-top:60px;text-align:center;color:var(--muted)">场景页（本次不动）</div></div>
+    <!-- ═══ 工作区管理 tab ═══ -->
+    <div class="page" data-page="ws">
+      <div class="profiles-layout">
+        <div class="profiles-left">
+          <div class="plist-item sel" data-ws><span class="st ok"></span> Dogear <span class="badge">默认</span></div>
+          <div class="plist-item" data-ws><span class="st ok"></span> 股票研究</div>
+          <div class="plist-item" data-ws style="opacity:.55"><span class="st off"></span> 旧项目归档 <span class="badge">快照关</span></div>
+          <div style="border-top:1px solid var(--border-soft);margin-top:10px;padding-top:8px;display:flex;flex-direction:column;gap:2px">
+            <div class="plist-item" id="orphanEntry">⌕ 丢失的会话</div>
+            <button class="btn" id="wsAdd" style="justify-content:center;margin-top:4px">＋ 添加工作区</button>
+          </div>
+        </div>
+        <div class="profiles-right" id="wsDetail">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+            <h2 style="font-size:17px;font-weight:600">Dogear</h2>
+            <button class="btn danger">🗑 删除工作区</button>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:18px">C:\Users\Dreama\Documents\dogear-main</p>
+
+          <div class="group" style="margin-bottom:24px">
+            <h3>自动快照 · 此工作区</h3>
+            <div class="setting-row">
+              <div class="txt">
+                <div class="name">快照开关</div>
+                <div class="desc">编辑后的文件自动存入快照库，文件树右键「历史」可恢复 · 当前 328 条，占 46 MB</div>
+              </div>
+              <div class="ctrl"><button class="switch on" data-sw></button></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">排除目录</div><div class="desc">这些目录不进快照</div></div>
+              <div class="ctrl" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">
+                <span class="chip">node_modules ✕</span><span class="chip">dist ✕</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <h3>快照全局规则</h3>
+            <div class="setting-row">
+              <div class="txt"><div class="name">单文件阈值</div><div class="desc">超大的文件不进快照</div></div>
+              <div class="ctrl"><input type="text" value="20" style="width:70px"> <span style="font-size:12px;color:var(--muted)">MB</span></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">保留窗口</div><div class="desc">近 7 天全留，之后每天留最新一条，30 天外丢弃</div></div>
+              <div class="ctrl"><button class="btn">修改</button></div>
+            </div>
+            <div class="setting-row">
+              <div class="txt"><div class="name">存量瘦身</div><div class="desc">3 个工作区共 512 条快照，占 89 MB；重写历史释放空间</div></div>
+              <div class="ctrl"><button class="btn">立即瘦身</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="profiles-right" id="wsOrphans" style="display:none">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <h2 style="font-size:17px;font-weight:600">丢失的会话</h2>
+            <button class="btn">⌕ 扫描</button>
+            <span style="font-size:12px;color:var(--muted)">找到 2 组未关联工作区的会话</span>
+          </div>
+          <div class="mounts">
+            <div class="mrow" style="align-items:center">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500">旧 SDK 数据目录 <span style="color:var(--muted);font-weight:400">· 14 个对话</span></div>
+                <div style="font-size:11.5px;color:var(--muted)">最后更新 2025-11-30 · 「股票估值复盘」「读论文…」…</div>
+              </div>
+              <select class="selbox" style="width:150px"><option>并入：Dogear</option><option>并入：股票研究</option><option>并入：旧项目归档</option></select>
+              <button class="btn">导入</button>
+              <button class="btn danger">舍弃</button>
+            </div>
+            <div class="mrow" style="align-items:center">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500">备份恢复残留 <span style="color:var(--muted);font-weight:400">· 3 个对话</span></div>
+                <div style="font-size:11.5px;color:var(--muted)">最后更新 2025-09-12 · 「周报草稿」…</div>
+              </div>
+              <select class="selbox" style="width:150px"><option>并入：Dogear</option><option>并入：股票研究</option><option>并入：旧项目归档</option></select>
+              <button class="btn">导入</button>
+              <button class="btn danger">舍弃</button>
+            </div>
+          </div>
+          <p style="font-size:12px;color:var(--muted);margin-top:10px">导入只合并会话索引，源目录保留待人工清理；「舍弃」会删除源目录数据，需二次确认。</p>
+        </div>
+      </div>
+    </div>
+    <!-- ═══ 子会话派遣 tab ═══ -->
+    <div class="page" data-page="subagent">
+      <div class="profiles-layout">
+        <div class="profiles-left">
+          <div class="plist-item sel" data-prof2><span class="st ok"></span> 默认 <span class="badge">内置</span></div>
+          <div class="plist-item" data-prof2><span class="st ok"></span> 浏览器解析 <span class="badge">内置</span></div>
+          <div class="plist-item" data-prof2><span class="st ok"></span> 探索 <span class="badge">内置</span></div>
+          <div class="plist-item" data-prof2 style="opacity:.55"><span class="st off"></span> 股票 <span class="badge">内置</span></div>
+          <div class="plist-item" data-prof2><span class="st ok"></span> 周报助手</div>
+          <button class="btn addp" style="justify-content:center">＋ 新建 Profile</button>
+        </div>
+        <div class="profiles-right">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <input type="text" value="默认" disabled style="width:180px;opacity:.6;cursor:not-allowed">
+            <span class="badge">内置 · 文案随版本更新</span>
+            <div style="flex:1"></div>
+            <button class="btn">复制为副本</button>
+          </div>
+          <div class="fitem" style="margin-bottom:14px">
+            <label>描述</label>
+            <textarea style="width:100%;min-height:56px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--fg);padding:8px 10px;font-size:13px;opacity:.6" disabled>实施类任务：改代码、写文件、跑命令，需要动工作区时用。</textarea>
+          </div>
+          <div class="form-grid">
+            <div class="fitem"><label>模型</label><div class="model-select"><span style="color:var(--muted)">跟随主会话</span><span class="caret">▾</span></div></div>
+            <div class="fitem"><label>超时（分钟）</label><input type="text" value="30"></div>
+          </div>
+
+          <div class="fitem" style="margin-bottom:14px">
+            <label style="margin-bottom:7px">基础工具</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Read</span>
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Write</span>
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Edit</span>
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Bash</span>
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Glob</span>
+              <span class="chip" style="color:var(--accent);border-color:rgba(16,185,129,.4)">✓ Grep</span>
+            </div>
+          </div>
+
+          <div class="fitem">
+            <label style="margin-bottom:7px">能力域 <span style="color:var(--muted);font-weight:400">子会话侧独立裁决，不受工作区能力包总开关约束</span></label>
+            <div class="mounts">
+              <div class="mrow" style="align-items:center"><span class="mk on">✓</span><div style="flex:1">联网搜索</div></div>
+              <div class="mrow" style="align-items:center"><span class="mk off">✗</span><div style="flex:1">股票分析</div></div>
+              <div class="mrow" style="align-items:center"><span class="mk off">✗</span><div style="flex:1">文章解析</div></div>
+              <div class="mrow" style="align-items:center"><span class="mk off">✗</span><div style="flex:1">代码工作流 <span class="badge">0/4</span></div></div>
+              <div class="mrow" style="align-items:center"><span class="mk off">✗</span><div style="flex:1">自定义 Skill <span class="badge">0/2</span></div></div>
+              <div class="mrow" style="align-items:center;opacity:.65"><span class="mk on">✓</span><div style="flex:1">交付通信</div><span class="badge">固定启用</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="page" data-page="shortcuts"><div class="detail-page" style="padding-top:60px;text-align:center;color:var(--muted)">快捷键（本次不动）</div></div>
+    <!-- ═══ 关于 tab ═══ -->
+    <div class="page" data-page="about">
+      <div class="browser-page">
+        <div class="page-head"><div><h2>关于</h2><p>Dogear · v1.5.2 · 检查更新</p></div></div>
+        <div class="group">
+          <h3>环境依赖</h3>
+          <div class="setting-row">
+            <div class="txt">
+              <div class="name">Python 与计算依赖</div>
+              <div class="desc">股票指标、选股、回测的运行环境；未装齐不影响其他功能</div>
+            </div>
+            <div class="ctrl"><button class="btn" id="envCheck">⌕ 检查</button></div>
+          </div>
+          <div class="mounts" id="envResult" style="display:none">
+            <div class="mrow"><span class="mk on">✓</span> Python <span style="color:var(--muted);font-size:11.5px">3.11.6</span><span class="badge">必需</span></div>
+            <div class="mrow"><span class="mk off" style="color:var(--red)">✗</span> pandas <span style="color:var(--muted);font-size:11.5px">未安装</span><span class="badge">必需</span></div>
+            <div class="mrow"><span class="mk off" style="color:#B45309">!</span> lark <span style="color:var(--muted);font-size:11.5px">未安装</span><span class="badge">可选</span></div>
+            <div class="mrow" style="border-bottom:none"><button class="btn">↓ 一键安装缺失依赖</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabbody-old" id="tabBodyOld" style="display:none"></div>
+</div>
+
+<!-- demo 控制条 -->
+<div class="demo-bar" id="demoBar">
+  <button class="toggle" id="demoToggle">⚙</button>
+  <div class="demo-panel">
+    <div class="row"><div class="lb">主题</div><div class="opt" data-ctl="theme"><button data-v="theme-light" class="on">浅</button><button data-v="theme-dark">深</button></div></div>
+    <div class="row"><div class="lb">框架（D1）</div><div class="opt" data-ctl="frame"><button data-v="frame-new" class="on">顶部横向（新）</button><button data-v="frame-old">左侧纵向（改版前）</button></div></div>
+    <div class="row"><div class="lb">浏览器 tab 范围（D2）</div><div class="opt" data-ctl="browser"><button data-v="browser-wide" class="on">宽（含拦截+Key）</button><button data-v="browser-narrow">窄</button></div></div>
+    <div class="row"><div class="lb">模型行（D3）</div><div class="opt" data-ctl="modelrow"><button data-v="" class="on">两行卡片</button><button data-v="modelrow-inline">单行紧凑</button></div></div>
+    <div class="demo-note">灰色字为变体开关，不属于原型本身。基础 tab 的 checkbox→开关、文案精简、删网页 AI / agent 指令说明为已拍板项，两版共用。</div>
+  </div>
+</div>
+
+<script>
+// 旧框架内容（改版前基线，简化结构级）
+document.getElementById('oldContent').innerHTML = `
+  <h2 style="font-size:16px;font-weight:600;margin-bottom:16px">基础设置</h2>
+  <div class="old-sec"><div class="lbl">默认模型</div><div class="dsc">新建对话将使用此模型；选「不指定」时新对话需手动选择模型才能发送消息。此处的修改仅影响之后新建的对话，不会改动已存在对话的模型设置。右侧选择思考投入档位……</div><div class="model-select"><span>glm-4.7</span><span class="caret">▾</span></div></div>
+  <div class="old-sec"><div class="lbl">默认权限模式</div><div class="old-box"><label style="display:flex;gap:8px;align-items:flex-start"><input type="radio" checked class="old-cb"><span><b style="font-size:13px">默认</b><br><span style="font-size:12px;color:var(--muted)">已注册工具包自动放行；基础工具按映射决定；其余需确认（推荐）</span></span></label></div></div>
+  <div class="old-sec"><div class="old-head"><div class="lbl" style="margin:0">Dogear 提示音</div><input type="checkbox" class="old-cb" checked></div><div class="dsc">使用应用内合成音效，不调用 Windows 通知或系统提示音。主会话完成、任务完成/失败、等待授权时触发；仅应用后台时响（可关）。</div></div>
+  <div class="old-sec"><div class="old-head"><div class="lbl" style="margin:0">需要确认时跳转焦点</div><input type="checkbox" class="old-cb" checked></div></div>
+  <div class="old-sec"><div class="lbl">浏览器</div><div class="old-box">
+    <div><div class="lbl" style="font-size:13px">代理地址</div><input type="text" placeholder="127.0.0.1:7890"></div>
+    <div><div class="lbl" style="font-size:13px">默认搜索引擎</div><select class="selbox" style="width:100%"><option>auto（智能选择）</option></select></div>
+    <div><div class="lbl" style="font-size:13px">浏览器扩展</div><div class="statusline"><span class="status-dot ok"></span> 已连接</div></div>
+  </div></div>
+  <div class="old-sec"><span class="strike-note">网页 AI 站点（下架残留，已删）</span></div>
+  <div class="old-sec"><span class="strike-note">通用级 Agent 指令说明块（已删）</span></div>
+`;
+
+const body = document.body;
+// tab 切换
+document.querySelectorAll('.topnav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.topnav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.tabbody .page').forEach(p => p.classList.toggle('active', p.dataset.page === btn.dataset.tab));
+  });
+});
+// 返回
+document.querySelectorAll('[data-back]').forEach(btn => btn.addEventListener('click', () => {
+  document.querySelectorAll('.tabbody .page').forEach(p => p.classList.toggle('active', p.dataset.page === btn.dataset.back));
+  document.querySelectorAll('.topnav button').forEach(b => b.classList.toggle('active', b.dataset.tab === btn.dataset.back));
+}));
+// 锚点
+document.querySelectorAll('#anchorNav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#anchorNav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(btn.dataset.anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+// switch
+document.querySelectorAll('[data-sw]').forEach(sw => sw.addEventListener('click', () => sw.classList.toggle('on')));
+// 分段
+document.querySelectorAll('[data-seg]').forEach(seg => seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  seg.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+})));
+// 技能二级页
+document.querySelectorAll('[data-skill]').forEach(r => r.addEventListener('click', () => {
+  document.querySelectorAll('.tabbody .page').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-page="skill-detail"]').classList.add('active');
+}));
+// 方案列表选中
+document.querySelectorAll('[data-prof]').forEach(p => p.addEventListener('click', () => {
+  document.querySelectorAll('[data-prof]').forEach(x => x.classList.remove('sel')); p.classList.add('sel');
+}));
+// 工作区列表选中
+document.querySelectorAll('[data-ws]').forEach(p => p.addEventListener('click', () => {
+  document.querySelectorAll('[data-ws]').forEach(x => x.classList.remove('sel')); p.classList.add('sel');
+  document.getElementById('wsDetail').style.display = 'block';
+  document.getElementById('wsOrphans').style.display = 'none';
+  document.getElementById('orphanEntry').classList.remove('sel');
+}));
+document.getElementById('orphanEntry')?.addEventListener('click', () => {
+  document.querySelectorAll('[data-ws]').forEach(x => x.classList.remove('sel'));
+  document.getElementById('orphanEntry').classList.add('sel');
+  document.getElementById('wsDetail').style.display = 'none';
+  document.getElementById('wsOrphans').style.display = 'block';
+});
+// 子会话 Profile 列表选中
+document.querySelectorAll('[data-prof2]').forEach(p => p.addEventListener('click', () => {
+  document.querySelectorAll('[data-prof2]').forEach(x => x.classList.remove('sel')); p.classList.add('sel');
+}));
+// 环境依赖检查按钮
+document.getElementById('envCheck')?.addEventListener('click', () => {
+  const r = document.getElementById('envResult');
+  if (r) r.style.display = r.style.display === 'none' ? 'block' : 'none';
+});
+// demo 控制
+const bar = document.getElementById('demoBar');
+document.getElementById('demoToggle').addEventListener('click', () => bar.classList.toggle('open'));
+document.querySelectorAll('.demo-panel .opt').forEach(opt => {
+  const ctl = opt.dataset.ctl;
+  opt.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    opt.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    const v = b.dataset.v;
+    if (ctl === 'theme') { body.classList.toggle('theme-light', v === 'theme-light'); body.classList.toggle('theme-dark', v === 'theme-dark'); }
+    if (ctl === 'frame') {
+      body.classList.toggle('frame-new', v === 'frame-new'); body.classList.toggle('frame-old', v === 'frame-old');
+      document.getElementById('oldShell').style.display = v === 'frame-old' ? 'flex' : 'none';
+      document.getElementById('tabBody').style.display = v === 'frame-old' ? 'none' : 'block';
+    }
+    if (ctl === 'browser') { body.classList.toggle('browser-wide', v === 'browser-wide'); body.classList.toggle('browser-narrow', v === 'browser-narrow'); }
+    if (ctl === 'modelrow') { body.classList.toggle('modelrow-inline', v === 'modelrow-inline'); }
+  }));
+});
+</script>
+</body>
+</html>

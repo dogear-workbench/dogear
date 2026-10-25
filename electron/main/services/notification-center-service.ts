@@ -69,6 +69,7 @@ function generateId(): string {
 class NotificationCenterService {
   private storagePath: string | null = null;
   private writing: Promise<void> = Promise.resolve();
+  private addListeners = new Set<(entry: NotificationCenterEntry) => void>();
 
   private getFilePath(): string {
     return this.storagePath ?? path.join(getConfigDir(), 'notifications.json');
@@ -101,10 +102,28 @@ class NotificationCenterService {
     return entries.reduce((n, e) => (e.read ? n : n + 1), 0);
   }
 
+  onAdd(listener: (entry: NotificationCenterEntry) => void): () => void {
+    this.addListeners.add(listener);
+    return () => this.addListeners.delete(listener);
+  }
+
+  private emitAdded(entry: NotificationCenterEntry): void {
+    if (this.addListeners.size === 0) return;
+    const snapshot: NotificationCenterEntry = { ...entry };
+    for (const listener of this.addListeners) {
+      try {
+        listener(snapshot);
+      } catch (err) {
+        log.warn('通知 add listener 异常', err);
+      }
+    }
+  }
+
   async add(input: AddNotificationInput): Promise<void> {
     const file = await this.readFile();
     const entries = file.entries;
     const now = new Date().toISOString();
+    let added: NotificationCenterEntry;
     const target = entries.find((e) => !e.read && e.dedupeKey === input.dedupeKey);
     if (target) {
       target.title = input.title;
@@ -114,8 +133,9 @@ class NotificationCenterService {
       if (input.ownerLabel) target.ownerLabel = input.ownerLabel;
       target.createdAt = now;
       target.count += 1;
+      added = target;
     } else {
-      entries.unshift({
+      const entry: NotificationCenterEntry = {
         id: generateId(),
         type: input.type,
         dedupeKey: input.dedupeKey,
@@ -129,7 +149,9 @@ class NotificationCenterService {
         ...(input.execSessionId ? { execSessionId: input.execSessionId } : {}),
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
         ...(input.ownerLabel ? { ownerLabel: input.ownerLabel } : {}),
-      });
+      };
+      entries.unshift(entry);
+      added = entry;
     }
     if (entries.length > MAX_ENTRIES) {
       // 优先丢弃已读旧条目，仍超限再丢最旧未读（新条目在头部，尾部即最旧）
@@ -139,6 +161,7 @@ class NotificationCenterService {
       while (entries.length > MAX_ENTRIES) entries.pop();
     }
     await this.persist(entries, this.countUnread(entries));
+    this.emitAdded(added);
   }
 
   async list(): Promise<NotificationCenterEntry[]> {

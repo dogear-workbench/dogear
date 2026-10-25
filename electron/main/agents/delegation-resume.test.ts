@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import {
+  closeSessionCalls,
   convStore,
   installDelegationMocks,
   makeProfile,
@@ -8,6 +9,7 @@ import {
   sendCalls,
   sessions,
   setMockSettings,
+  setSessionRunning,
   sleep,
   startTestChild,
   updateModelSelectionCalls,
@@ -31,6 +33,7 @@ beforeEach(() => {
   });
   updateModelSelectionCalls.length = 0;
   sendCalls.length = 0;
+  closeSessionCalls.length = 0;
 });
 
 afterEach(() => {
@@ -307,6 +310,43 @@ test('SendMessage 打停机的父会话：自动调起并注入', async () => {
   expect(hit!.sessionId).toContain(`sdk-${parentConversationId}`);
   expect(hit!.text).toContain('<sender kind="agent"');
   expect(hit!.text).toContain(`session_id="${childSessionId}"`);
+});
+
+test('终态强杀：重试耗尽后 run 仍卡死（isRunning true）则 closeSession 强制销毁，复活路径不触发', async () => {
+  terminalMod.setDelegationMaxRetry(2);
+  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
+  const parentSessionId = registerParentSession(parentConversationId);
+
+  // 僵户态贯穿全程：complete 已结算但 harness run 未 settle
+  setSessionRunning(sessionId, true);
+
+  session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
+  await sleep(60);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
+  expect(closeSessionCalls).not.toContain(sessionId);
+
+  session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
+  await sleep(60);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
+  expect(closeSessionCalls).not.toContain(sessionId);
+
+  session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
+  await waitForSend(parentSessionId, '自动重试 2 次');
+
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(closeSessionCalls).toContain(sessionId);
+  expect(sessions.has(sessionId)).toBe(false);
+});
+
+test('自然完成不强杀：isRunning false 的空闲会话不触发 closeSession', async () => {
+  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
+  const parentSessionId = registerParentSession(parentConversationId);
+
+  session.emit('complete', { subtype: 'success' });
+  await waitForSend(parentSessionId, '结束但未交付');
+
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(closeSessionCalls).not.toContain(sessionId);
 });
 
 // 模拟重启：不经 startChild，直接往磁盘 conversation 存储塞一条带契约的历史记录（内存 childStates 天然无条目）

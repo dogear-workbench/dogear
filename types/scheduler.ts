@@ -75,6 +75,14 @@ export interface RunHistoryEntry {
   source?: RunHistorySource;
   taskId?: string;
   taskName?: string;
+  /** 本轮运行对应的会话 id（headless 会话链路写入；存量条目无值，正常展示无点开入口） */
+  conversationId?: string;
+  /** 文章解析记录：目标文章（面板点开阅读视图/留痕用；存量条目无值） */
+  articleId?: string;
+  /** 文章解析记录：目标工作区 */
+  workspaceId?: string;
+  /** 文章解析记录：留痕 md 相对路径（dogear/articles/.history/...，写入失败/存量条目无值） */
+  traceFile?: string;
   kind: 'task' | 'missed';
   status: RunHistoryStatus;
   triggerReason: RunTriggerReason;
@@ -91,6 +99,8 @@ export interface SchedulerRunningPlan {
   taskName: string;
   source: RunHistorySource;
   startedAt: number;
+  /** 运行会话 id（会话化执行链创建会话后回填；拉起前/非会话链路缺省） */
+  conversationId?: string;
 }
 
 export interface SchedulerActivity {

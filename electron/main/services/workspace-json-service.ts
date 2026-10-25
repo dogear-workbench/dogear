@@ -7,7 +7,6 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
-import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
 const { app } = electron;
 
@@ -105,30 +104,12 @@ async function saveWorkspacesFile(data: WorkspacesFile): Promise<void> {
 // ============================================================
 
 /**
- * personal 的内存合成条目：不注册进 workspaces.json，仅在 includePersonal 时拼入列表。
- * path 留空：设计约定 personal 无 workspacePath，文件边界为空（无文件能力）。
- */
-function personalWorkspaceData(): Workspace {
-  return {
-    id: PERSONAL_WORKSPACE_ID,
-    name: '临时会话',
-    path: '',
-    additionalPaths: [],
-    isDefault: false,
-    createdAt: new Date(0).toISOString(),
-  };
-}
-
-/**
  * 获取所有工作区
- * 默认过滤保留字 personal（即使被误注册也返回给 UI）；归档 timer 等后端场景传 includePersonal: true 拼入合成条目
  * 排序：默认工作区优先，然后按 createdAt 倒序
  */
-export async function getAll(options?: { includePersonal?: boolean }): Promise<Workspace[]> {
+export async function getAll(): Promise<Workspace[]> {
   const file = await loadWorkspacesFile();
-  let list = file.workspaces.filter((w) => w.id !== PERSONAL_WORKSPACE_ID);
-  if (options?.includePersonal) list = [...list, personalWorkspaceData()];
-  return list.sort((a, b) => {
+  return [...file.workspaces].sort((a, b) => {
     // 默认工作区优先
     if (a.isDefault !== b.isDefault) {
       return a.isDefault ? -1 : 1;
@@ -226,4 +207,22 @@ export async function update(id: string, ws: Workspace): Promise<void> {
   if (idx === -1) return;
   file.workspaces[idx] = ws;
   await saveWorkspacesFile(file);
+}
+
+/**
+ * 一次性清理临时会话遗留数据（个人聊天功能已移除）：workspaces/personal/ 目录存在即整目录删除，
+ * workspaces.json 若曾被误注册过 personal 条目也一并移除；无备份无迁移。下个大版本可移除本函数。
+ */
+export async function removeLegacyPersonalWorkspace(): Promise<void> {
+  const personalDir = path.join(getConfigDir(), 'workspaces', 'personal');
+  try {
+    await fs.rm(personalDir, { recursive: true, force: true });
+  } catch (err) {
+    console.error('[workspace] 清理临时会话遗留目录失败:', err);
+  }
+  const file = await loadWorkspacesFile();
+  if (file.workspaces.some((w) => w.id === 'personal')) {
+    file.workspaces = file.workspaces.filter((w) => w.id !== 'personal');
+    await saveWorkspacesFile(file);
+  }
 }

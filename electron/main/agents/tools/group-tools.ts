@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import * as groupSharedService from '../../services/group-shared-service.js';
 import { requireActiveGroup } from '../../services/group-service.js';
+import * as conversationService from '../../services/conversation-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 
-export function createGroupToolDefs(workspaceId: string, groupId: string): ToolDef[] {
+export function createGroupToolDefs(workspaceId: string, groupId: string, conversationId?: string): ToolDef[] {
   return [
     defineTool(
       'dogear__ListGroupFiles',
@@ -59,7 +60,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'dogear__TrackUserActions',
       '提议用户待办勾选卡',
-      '提议一组必须由用户本人完成的事项（登录/授权/线下操作/人工拍板等），会话界面会渲染成可勾选卡片。仅当事项必须用户本人完成且需要跟踪进度时调用；不要用它记录你自己要做的事（那走任务）。用户勾选后会自动记入话题状态卡「已完成」区，后续会话自然感知——无需等待用户回复，不要为同一批事项重复调用。',
+      '提议一组必须由用户本人完成的事项（登录/授权/线下操作/人工拍板等），会话界面会渲染成可勾选卡片。仅当事项必须用户本人完成且需要跟踪进度时调用；不要用它记录你自己要做的事（那走任务）。用户勾选只是界面完成标记，条目是否完成以会话对话确认为准——无需等待用户回复，不要为同一批事项重复调用。',
       z.object({
         actions: z.array(z.string().min(1)).min(1).max(10).describe('待办事项列表，每条一句话描述用户要做的事'),
       }),
@@ -71,7 +72,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
           };
         }
         return {
-          content: [{ type: 'text' as const, text: `✅ 已向用户渲染待办勾选卡（${args.actions.length} 项）：\n${args.actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n用户勾选后会自动记入话题状态卡「已完成」区，无需在回复中重复罗列，也无需等待用户回复。` }],
+          content: [{ type: 'text' as const, text: `✅ 已向用户渲染待办勾选卡（${args.actions.length} 项）：\n${args.actions.map((a, i) => `${i + 1}. ${a}`).join('\n')}\n用户勾选仅是界面完成标记，条目是否完成以对话确认为准。无需在回复中重复罗列，也无需等待用户回复。` }],
         };
       },
     ),
@@ -88,8 +89,13 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
         try {
           await requireActiveGroup(workspaceId, groupId);
           const finalPath = groupSharedService.ensureDatedRelPath(args.relPath);
-          await groupSharedService.writeNativeFile(workspaceId, groupId, finalPath, args.content);
-          const bytes = Buffer.byteLength(args.content, 'utf-8');
+          let content = args.content;
+          if (conversationId) {
+            const conv = await conversationService.getById(workspaceId, conversationId);
+            if (conv?.sessionId) content = groupSharedService.prependSourcePointer(content, conv.sessionId);
+          }
+          await groupSharedService.writeNativeFile(workspaceId, groupId, finalPath, content);
+          const bytes = Buffer.byteLength(content, 'utf-8');
           return {
             content: [{ type: 'text' as const, text: `✅ 已写入 ${finalPath}（${bytes} 字节）` }],
           };
@@ -108,5 +114,5 @@ registerToolGroup({
   server: 'dogear-group',
   label: '会话组共享区',
   create: createGroupToolDefs,
-  placeholder: ['', ''],
+  placeholder: ['', '', ''],
 });

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { History, Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -221,7 +220,7 @@ export function FileHistoryPanel() {
         <div className="flex flex-1 min-h-0">
           {/* 左侧：时间线 */}
           <div className="w-72 shrink-0 border-r flex flex-col min-h-0">
-            <ScrollArea className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               {loading && (
                 <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                   <Loader2 className="w-4 h-4 animate-spin mr-2" />
@@ -267,7 +266,7 @@ export function FileHistoryPanel() {
                   </button>
                 );
               })}
-            </ScrollArea>
+            </div>
           </div>
 
           {/* 右侧：版本详情头 + diff */}
@@ -324,7 +323,7 @@ export function FileHistoryPanel() {
                 在左侧选择一个版本查看差异
               </div>
             )}
-            <ScrollArea className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="px-4 py-3">
                 {diff.kind === 'loading' && (
                   <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
@@ -345,7 +344,7 @@ export function FileHistoryPanel() {
                 )}
                 {diff.kind === 'ok' && <HistoryDiffView key={selectedIndex ?? 'none'} sections={sections} />}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         </div>
       </DialogContent>

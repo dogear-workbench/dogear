@@ -8,7 +8,7 @@ import {
   rebuildIndex,
   checkConsistency,
 } from '../services/memory/index.js';
-import type { Topic } from '../services/memory/memory-types.js';
+import type { MemoryScope, Topic } from '../services/memory/memory-types.js';
 
 const t = tipc.create();
 
@@ -18,15 +18,21 @@ type TopicInput = Omit<Topic, 'created' | 'updated'> & {
   updated?: string;
 };
 
+// scope=global 时数据目录固定为 configDir/memory，workspaceId 仅作占位不参与寻址
+interface MemoryInputBase {
+  workspaceId: string;
+  scope?: MemoryScope;
+}
+
 export const memoryRouter = {
   /**
-   * 列出主题（index.json，按 updated 降序）
+   * 列出主题（index.json，按 updated 降序）；scope 省略时合并工作区 + 全局
    */
   listMemoryTopics: t.procedure
-    .input<{ workspaceId: string }>()
+    .input<MemoryInputBase>()
     .action(async ({ input }) => {
       try {
-        const topics = await listTopics(input.workspaceId);
+        const topics = await listTopics(input.workspaceId, input.scope);
         return { topics };
       } catch (error) {
         console.error('[memory] listMemoryTopics 失败:', error);
@@ -38,10 +44,10 @@ export const memoryRouter = {
    * 读取单个主题详情（含正文）
    */
   getMemoryTopic: t.procedure
-    .input<{ workspaceId: string; slug: string }>()
+    .input<MemoryInputBase & { slug: string }>()
     .action(async ({ input }) => {
       try {
-        const topic = await getTopic(input.workspaceId, input.slug);
+        const topic = await getTopic(input.workspaceId, input.slug, input.scope ?? 'workspace');
         return { topic };
       } catch (error) {
         console.error('[memory] getMemoryTopic 失败:', error);
@@ -53,10 +59,10 @@ export const memoryRouter = {
    * 创建或更新主题（upsert 语义）
    */
   upsertMemoryTopic: t.procedure
-    .input<{ workspaceId: string; topic: TopicInput }>()
+    .input<MemoryInputBase & { topic: TopicInput }>()
     .action(async ({ input }) => {
       try {
-        const topic = await upsertTopic(input.workspaceId, input.topic);
+        const topic = await upsertTopic(input.workspaceId, input.topic, input.scope ?? 'workspace');
         return { topic };
       } catch (error) {
         console.error('[memory] upsertMemoryTopic 失败:', error);
@@ -68,10 +74,10 @@ export const memoryRouter = {
    * 删除主题（文件 + 索引条目）
    */
   deleteMemoryTopic: t.procedure
-    .input<{ workspaceId: string; slug: string }>()
+    .input<MemoryInputBase & { slug: string }>()
     .action(async ({ input }) => {
       try {
-        await deleteTopic(input.workspaceId, input.slug);
+        await deleteTopic(input.workspaceId, input.slug, input.scope ?? 'workspace');
         return { success: true };
       } catch (error) {
         console.error('[memory] deleteMemoryTopic 失败:', error);
@@ -83,11 +89,12 @@ export const memoryRouter = {
    * 重建索引（扫描 topics/*.md 全量重写 index.json），并返回一致性报告
    */
   rebuildMemoryIndex: t.procedure
-    .input<{ workspaceId: string }>()
+    .input<MemoryInputBase>()
     .action(async ({ input }) => {
       try {
-        const index = await rebuildIndex(input.workspaceId);
-        const consistency = await checkConsistency(input.workspaceId);
+        const scope = input.scope ?? 'workspace';
+        const index = await rebuildIndex(input.workspaceId, scope);
+        const consistency = await checkConsistency(input.workspaceId, scope);
         return { index, consistency };
       } catch (error) {
         console.error('[memory] rebuildMemoryIndex 失败:', error);

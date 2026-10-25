@@ -20,11 +20,8 @@ function makeProfile(id: string): ModelProfile {
 const SEL_A: ModelSelection = { profileId: 'default', tier: 'm-a' };
 const SEL_B: ModelSelection = { profileId: 'default', tier: 'm-b' };
 
-test('effort / permissionMode / basicToolPermissions 变化各自命中', () => {
+test('permissionMode / basicToolPermissions 变化各自命中', () => {
   const prev = baseSettings();
-  const next = baseSettings();
-  next.ai.effort = 'high';
-  expect(diffSettings(prev, next).effortChanged).toBe(true);
 
   const next2 = baseSettings();
   next2.ai.permissionMode = 'autoExecute';
@@ -35,6 +32,22 @@ test('effort / permissionMode / basicToolPermissions 变化各自命中', () => 
   const next3 = baseSettings();
   next3.basicToolPermissions = { ...next3.basicToolPermissions, bash: 'allow' };
   expect(diffSettings(prev, next3).basicToolPermissionsChanged).toBe(true);
+});
+
+test('unattended 开关变化命中，缺省与 false 等价不命中', () => {
+  const prev = baseSettings();
+  const next = baseSettings();
+  next.ai.unattended = true;
+  const diff = diffSettings(prev, next);
+  expect(diff.unattendedChanged).toBe(true);
+  expect(hasSnapshotChange(diff)).toBe(true);
+
+  const back = diffSettings(next, baseSettings());
+  expect(back.unattendedChanged).toBe(true);
+
+  const prevMissing = baseSettings();
+  (prevMissing.ai as Record<string, unknown>).unattended = undefined;
+  expect(diffSettings(prevMissing, baseSettings()).unattendedChanged).toBe(false);
 });
 
 test('profile 快照域字段变化命中，name-only 不命中', () => {
@@ -80,6 +93,22 @@ test('defaultModelSelection 变化命中', () => {
   expect(diffSettings(prev, next).defaultModelSelectionChanged).toBe(true);
 });
 
+test('defaultModelSelection 仅 effort 不同时命中，缺省与 null 等价不命中', () => {
+  const prev = baseSettings();
+  prev.ai.defaultModelSelection = SEL_A;
+  const next = baseSettings();
+  next.ai.defaultModelSelection = { ...SEL_A, effort: 'high' };
+  expect(diffSettings(prev, next).defaultModelSelectionChanged).toBe(true);
+
+  const next2 = baseSettings();
+  next2.ai.defaultModelSelection = { ...SEL_A, effort: null };
+  expect(diffSettings(prev, next2).defaultModelSelectionChanged).toBe(false);
+
+  const next3 = baseSettings();
+  next3.ai.defaultModelSelection = { ...SEL_A, effort: 'high' };
+  expect(diffSettings(next, next3).defaultModelSelectionChanged).toBe(false);
+});
+
 test('subAgent.profiles：修改入 idsChanged，纯新增不入，删除入', () => {
   const prev = baseSettings();
   prev.subAgent.profiles = [createDefaultSubAgentProfile()];
@@ -116,11 +145,15 @@ test('子会话 Profile 的 timeoutMinutes 变化不标脏（派时读取）', (
   expect(diff.subAgentProfilesChanged).toBe(false);
 });
 
-test('isSessionSnapshotAffected：effort 全员命中', () => {
-  const diff = diffSettings(baseSettings(), { ...baseSettings(), ai: { ...baseSettings().ai, effort: 'low' } });
-  for (const role of ['main', 'sub'] as const) {
-    expect(isSessionSnapshotAffected(diff, { role, configModelSelection: SEL_A, currentModelSelection: SEL_A }, baseSettings())).toBe(true);
-  }
+test('piModels 条目 effort 变化经 profile 快照域标脏，生效会话命中', () => {
+  const prev = baseSettings();
+  prev.profiles.p1 = makeProfile('p1');
+  const next = baseSettings();
+  next.profiles.p1 = { ...makeProfile('p1'), piModels: [{ id: 'm-a', effort: 'high' }, { id: 'm-b' }] };
+  const diff = diffSettings(prev, next);
+  expect(diff.changedProfileIds).toEqual(['p1']);
+  const view = { role: 'main' as const, configModelSelection: null, currentModelSelection: { profileId: 'p1', tier: 'm-a' } };
+  expect(isSessionSnapshotAffected(diff, view, next)).toBe(true);
 });
 
 test('isSessionSnapshotAffected：basicToolPermissions 仅主会话命中', () => {

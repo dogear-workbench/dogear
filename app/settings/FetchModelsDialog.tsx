@@ -3,7 +3,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { formatContextLabel, lookupContextWindow } from '@/lib/pi-model-catalog';
 
 export interface UpstreamModel {
@@ -39,7 +38,7 @@ export function FetchModelsDialog({ open, profileName, models, existingIds, onCl
         <p className="text-xs text-muted-foreground">
           上游共返回 {models.length} 个模型，其中 {existingCount} 个已在清单。勾选要启用的加入清单（与手填一致，加入后仍可编辑显示名与上下文窗口）。
         </p>
-        <ScrollArea className="max-h-80 rounded-lg border">
+        <div className="max-h-80 rounded-lg border overflow-y-auto">
           <div className="p-2 space-y-0.5">
             {models.map((m) => {
               const exists = existingIds.has(m.id);
@@ -67,7 +66,7 @@ export function FetchModelsDialog({ open, profileName, models, existingIds, onCl
               );
             })}
           </div>
-        </ScrollArea>
+        </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>取消</Button>
           <Button disabled={selected.length === 0} onClick={() => onConfirm(selected)}>

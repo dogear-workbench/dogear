@@ -1,5 +1,5 @@
 import { Agent, type AgentEvent, type ThinkingLevel } from '@earendil-works/pi-agent-core';
-import type { Api, AssistantMessage, ImageContent, Model, TextContent } from '@earendil-works/pi-ai';
+import type { Api, AssistantMessage, ImageContent, Model, Message, TextContent, ToolCall } from '@earendil-works/pi-ai';
 import type { ModelProfile } from '../../services/settings-types.js';
 import { type ToolDef, toPiTools } from './tool-adapter.js';
 import { buildPiModels } from './provider.js';
@@ -10,6 +10,50 @@ export interface RunOnceUsage {
   outputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+}
+
+/** 单条消息流水行：user/assistant 文本、工具调用名与参数摘要、工具结果截断 */
+export interface RunOnceTranscriptLine {
+  role: 'user' | 'assistant' | 'toolCall' | 'toolResult';
+  /** user/assistant 文本；toolCall/toolResult 为工具名 */
+  text: string;
+  /** toolCall 参数 JSON（截断）；toolResult 结果文本（截断） */
+  detail?: string;
+  isError?: boolean;
+}
+
+const TOOL_ARG_TRACE_MAX = 400;
+const TOOL_RESULT_TRACE_MAX = 600;
+
+function toolArgsSummary(call: ToolCall): string {
+  const args = JSON.stringify(call.arguments) ?? '{}';
+  return args.length > TOOL_ARG_TRACE_MAX ? `${args.slice(0, TOOL_ARG_TRACE_MAX)}…` : args;
+}
+
+function buildTranscript(messages: Message[]): RunOnceTranscriptLine[] {
+  const lines: RunOnceTranscriptLine[] = [];
+  for (const msg of messages) {
+    if (msg.role === 'user') {
+      const text = typeof msg.content === 'string'
+        ? msg.content
+        : msg.content.filter((b): b is TextContent => b.type === 'text').map((b) => b.text).join('\n').trim();
+      if (text) lines.push({ role: 'user', text });
+    } else if (msg.role === 'assistant') {
+      for (const block of msg.content) {
+        if (block.type === 'text' && block.text.trim()) lines.push({ role: 'assistant', text: block.text.trim() });
+        else if (block.type === 'toolCall') lines.push({ role: 'toolCall', text: block.name, detail: toolArgsSummary(block) });
+      }
+    } else if (msg.role === 'toolResult') {
+      const text = msg.content.filter((b): b is TextContent => b.type === 'text').map((b) => b.text).join('\n').trim();
+      lines.push({
+        role: 'toolResult',
+        text: msg.toolName,
+        detail: text.length > TOOL_RESULT_TRACE_MAX ? `${text.slice(0, TOOL_RESULT_TRACE_MAX)}…` : text,
+        isError: msg.isError,
+      });
+    }
+  }
+  return lines;
 }
 
 function extractRunOutcome(messages: Extract<AgentEvent, { type: 'agent_end' }>['messages']): {
@@ -66,11 +110,19 @@ export async function runOnce(opts: {
   maxTurns?: number;
   revive?: ReviveOptions;
   onLog?: (msg: string) => void;
+  /** agent_end 时透出全量消息流水（排障留痕用；其他调用方零影响） */
+  collectMessages?: boolean;
 }): Promise<
-    { ok: true; lastText?: string; usage?: RunOnceUsage }
-    | { ok: false; error: string; cancelled?: boolean }
+    { ok: true; lastText?: string; usage?: RunOnceUsage; transcript?: RunOnceTranscriptLine[] }
+    | { ok: false; error: string; cancelled?: boolean; transcript?: RunOnceTranscriptLine[] }
   > {
   const { systemPrompt = '', prompt, images, tools, model, profile, thinkingLevel = 'off', signal, maxTurns = 30, onLog } = opts;
+
+  let turnCount = 0;
+  let hitTurnLimit = false;
+  let cancelled = false;
+  let outcome: { lastText?: string; usage?: RunOnceUsage } = {};
+  let transcript: RunOnceTranscriptLine[] | undefined;
 
   const piModels = buildPiModels(profile);
 
@@ -83,20 +135,18 @@ export async function runOnce(opts: {
     },
     streamFn: (m, ctx, streamOpts) =>
       piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),
+    finishTurn: async (turn) => {
+      turnCount++;
+      if (turnCount >= maxTurns) {
+        if (turn.toolResults.length > 0) hitTurnLimit = true;
+        return { action: 'end' };
+      }
+      return undefined;
+    },
   });
 
-  let turnCount = 0;
-  let abortedByLimit = false;
-  let cancelled = false;
-  let outcome: { lastText?: string; usage?: RunOnceUsage } = {};
-
   agent.subscribe((e) => {
-    if (e.type === 'turn_start') {
-      if (++turnCount > maxTurns) {
-        abortedByLimit = true;
-        agent.abort();
-      }
-    } else if (e.type === 'tool_execution_start') {
+    if (e.type === 'tool_execution_start') {
       onLog?.(`[tool] ${e.toolName}`);
     } else if (e.type === 'tool_execution_end' && e.isError) {
       const raw = typeof e.result?.content?.[0]?.text === 'string'
@@ -106,6 +156,7 @@ export async function runOnce(opts: {
     } else if (e.type === 'agent_end') {
       onLog?.(`[done] turns=${turnCount}`);
       outcome = extractRunOutcome(e.messages);
+      if (opts.collectMessages) transcript = buildTranscript(e.messages);
     }
   });
 
@@ -123,7 +174,7 @@ export async function runOnce(opts: {
     await agent.prompt(prompt, images);
     let revives = 0;
     while (
-      !cancelled && !abortedByLimit && opts.revive
+      !cancelled && !hitTurnLimit && opts.revive
       && revives < (opts.revive.maxRevives ?? 3)
       && !signal?.aborted
       && opts.revive.shouldContinue()
@@ -136,11 +187,11 @@ export async function runOnce(opts: {
       await agent.prompt(msg);
     }
   } catch (e) {
-    if (cancelled) return { ok: false, error: '已取消', cancelled: true };
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    if (cancelled) return { ok: false, error: '已取消', cancelled: true, transcript };
+    return { ok: false, error: e instanceof Error ? e.message : String(e), transcript };
   }
 
-  if (cancelled) return { ok: false, error: '已取消', cancelled: true };
-  if (abortedByLimit) return { ok: false, error: `超过最大轮次 ${maxTurns}` };
-  return { ok: true, ...outcome };
+  if (cancelled) return { ok: false, error: '已取消', cancelled: true, transcript };
+  if (hitTurnLimit) return { ok: false, error: `超过最大轮次 ${maxTurns}`, transcript };
+  return { ok: true, ...outcome, transcript };
 }

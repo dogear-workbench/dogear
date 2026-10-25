@@ -65,9 +65,9 @@ test('两侧离线各改不同顶层字段 → 两字段并存（各自取变侧
 });
 
 test('两侧改同一顶层字段（不同值）→ 本端保留 + warning', async () => {
-  const baseline = { appearance: { theme: 'light' }, webAiSites: ['a'] };
-  const local = localSettings({ appearance: { theme: 'dark' }, webAiSites: ['a'] });
-  const incoming = { appearance: { theme: 'system' }, webAiSites: ['a'] };
+  const baseline = { appearance: { theme: 'light' }, paymentBlockedHosts: ['x.com'] };
+  const local = localSettings({ appearance: { theme: 'dark' }, paymentBlockedHosts: ['x.com'] });
+  const incoming = { appearance: { theme: 'system' }, paymentBlockedHosts: ['x.com'] };
   const warnings: string[] = [];
   const m = await computeMergedSettings(incoming, {
     localSettings: local,
@@ -113,10 +113,10 @@ test('白名单字段仅一侧改 → 取变侧；两侧同基线 → 保留', a
 test('白名单字段新增/删除同样适用：单侧新增取新增侧，双侧删同字段静默收敛', async () => {
   const baseline = { paymentBlockedHosts: ['a.com'] };
   const local = localSettings({ paymentBlockedHosts: ['a.com'] });
-  const incoming = { paymentBlockedHosts: ['a.com'], webAiSites: [{ id: 'x', name: 'X', url: 'https://x' }] };
+  const incoming = { paymentBlockedHosts: ['a.com'], browserSearchEngine: 'google' };
   const m = await computeMergedSettings(incoming, { localSettings: local, baseline });
   expect(m.paymentBlockedHosts).toEqual(['a.com']);
-  expect(m.webAiSites).toEqual([{ id: 'x', name: 'X', url: 'https://x' }]);
+  expect(m.browserSearchEngine).toBe('google');
 
   const bothDeleted = await computeMergedSettings(
     {},
@@ -232,16 +232,17 @@ test('有基线时 syncOptions 节仍走 rev-LWW 特判，不被三方字段逻�
 });
 
 test('基线键序与嵌套结构不影响 deepEqual 比较（白名单字段对象/数组逐值比）', async () => {
-  const baseline = { webAiSites: [{ name: 'b', id: 'a', url: 'https://x' }], appearance: { theme: 'light' } };
-  const local = localSettings({ webAiSites: [{ id: 'a', name: 'b', url: 'https://x' }], appearance: { theme: 'light' } });
-  const incoming = { webAiSites: [{ name: 'b', id: 'a', url: 'https://x' }], appearance: { theme: 'light' } };
+  const perms = { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
+  const baseline = { basicToolPermissions: perms, appearance: { theme: 'light' } };
+  const local = localSettings({ basicToolPermissions: { Skill: 'ask', Grep: 'ask', Glob: 'ask', bash: 'ask', edit: 'ask', write: 'ask', read: 'ask' }, appearance: { theme: 'light' } });
+  const incoming = { basicToolPermissions: { write: 'ask', read: 'ask', bash: 'ask', edit: 'ask', Skill: 'ask', Grep: 'ask', Glob: 'ask' }, appearance: { theme: 'light' } };
   const warnings: string[] = [];
   const m = await computeMergedSettings(incoming, {
     localSettings: local,
     baseline,
     onWarning: (w) => warnings.push(w),
   });
-  expect(m.webAiSites).toEqual([{ id: 'a', name: 'b', url: 'https://x' }]);
+  expect(m.basicToolPermissions).toEqual(perms);
   expect(warnings).toEqual([]);
 });
 

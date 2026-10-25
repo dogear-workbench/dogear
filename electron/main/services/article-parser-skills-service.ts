@@ -8,6 +8,7 @@
 
 import path from 'path';
 import fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import electron from 'electron';
 
 const { app } = electron;
@@ -29,6 +30,40 @@ function getTemplatesDir(): string {
 /** 返回文章解析器 Skill 规则目录的绝对路径 */
 export function getArticleParserSkillsDir(): string {
   return path.join(getConfigDir(), 'article-parser');
+}
+
+export interface PlatformScriptEntry {
+  /** 平台名（文件名去 .py） */
+  name: string;
+  fileName: string;
+  size: number;
+  updatedAt: number;
+}
+
+export async function listPlatformScripts(): Promise<PlatformScriptEntry[]> {
+  const dir = path.join(getArticleParserSkillsDir(), 'platforms');
+  let dirents: Dirent[];
+  try {
+    dirents = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const entries: PlatformScriptEntry[] = [];
+  for (const d of dirents) {
+    if (!d.isFile() || !d.name.endsWith('.py')) continue;
+    try {
+      const st = await fs.stat(path.join(dir, d.name));
+      entries.push({ name: d.name.slice(0, -'.py'.length), fileName: d.name, size: st.size, updatedAt: st.mtimeMs });
+    } catch (err) {
+      console.warn('[article-parser] 脚本信息读取失败，跳过:', d.name, err);
+    }
+  }
+  return entries.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function readPlatformScript(name: string): Promise<string> {
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) throw new Error(`非法平台名: ${name}`);
+  return fs.readFile(path.join(getArticleParserSkillsDir(), 'platforms', `${name}.py`), 'utf-8');
 }
 
 /**

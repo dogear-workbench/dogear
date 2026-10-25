@@ -1,5 +1,5 @@
 /**
- * 站点档案与策略工具：site_knowledge / site_finding / site_policy（按 toolPrefix 拼全名）
+ * 站点档案与策略工具：site_knowledge / site_finding / site_policy
  *
  * 从 extension-tools 拆出。读写本地站点档案（.dogear/site-knowledge/{domain}.md）与只读站点访问策略，域名取自
  * 当前扩展通道标签页，无页面交互故不记动作流、不过站点策略（policyGate）；ownership gate 与
@@ -17,12 +17,7 @@ import {
 import { formatSitePolicySummary, getSitePolicy } from '../../services/browser/site-policy.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
-export type SiteToolPrefix = 'dogear__extension' | 'dogear__browser';
-
-const NO_URL_MESSAGES: Record<SiteToolPrefix, string> = {
-  dogear__extension: '浏览器扩展未连接，无法确定当前站点；请先在扩展弹窗连接目标标签页',
-  dogear__browser: '内嵌浏览器暂无活动标签页，请先 dogear__browser__navigate 到目标站点',
-};
+const NO_URL_MESSAGE = '浏览器扩展未连接，无法确定当前站点；请先在扩展弹窗连接目标标签页';
 
 export interface SiteToolDeps {
   conversationId?: string;
@@ -31,7 +26,6 @@ export interface SiteToolDeps {
   isErrorResult: (message: string) => ToolResult;
   textResult: (text: string) => ToolResult;
   scopeNote: string;
-  toolPrefix?: SiteToolPrefix;
 }
 
 function domainOrError(
@@ -51,45 +45,32 @@ function domainOrError(
 }
 
 /** navigate 返回尾部策略指针：命中站点策略时引导先读 site_policy；无 url/无策略返回 null */
-export function sitePolicyPointer(
-  url: string | undefined,
-  toolPrefix: SiteToolPrefix = 'dogear__extension',
-): string | null {
+export function sitePolicyPointer(url: string | undefined): string | null {
   if (!url) return null;
   if (!getSitePolicy(url)) return null;
-  return `\n\n本站有访问策略（节奏约束已自动生效），建议先调 ${toolPrefix}__site_policy 了解操作步骤与危险信号`;
+  return '\n\n本站有访问策略（节奏约束已自动生效），建议先调 dogear__extension__site_policy 了解操作步骤与危险信号';
 }
 
 /** navigate 返回尾部指针：有档案引导先读，无档案提示可沉淀（冷启动）；无 url/无域名返回 null */
-export function siteKnowledgePointer(
-  url: string | undefined,
-  toolPrefix: SiteToolPrefix = 'dogear__extension',
-): string | null {
+export function siteKnowledgePointer(url: string | undefined): string | null {
   if (!url) return null;
   const domain = normalizeDomain(url);
   if (!domain) return null;
   if (!hasSiteKnowledge(domain)) {
-    return `\n\n本站尚无站点档案，探索后可用 ${toolPrefix}__site_finding 沉淀发现`;
+    return '\n\n本站尚无站点档案，探索后可用 dogear__extension__site_finding 沉淀发现';
   }
-  return `\n\n本站有站点档案，建议先调 ${toolPrefix}__site_knowledge 获取已知地图`;
+  return '\n\n本站有站点档案，建议先调 dogear__extension__site_knowledge 获取已知地图';
 }
 
 export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
   const { conversationId, acquireGate, currentUrl, isErrorResult, textResult, scopeNote } = deps;
-  const toolPrefix = deps.toolPrefix ?? 'dogear__extension';
-  const findingTool = `${toolPrefix}__site_finding`;
-  const policyTool = `${toolPrefix}__site_policy`;
-  const policyScopeNote =
-    toolPrefix === 'dogear__browser'
-      ? '内嵌浏览器通道；本工具只读站点访问策略，不碰页面。'
-      : '扩展通道；本工具只读站点访问策略，不碰页面。';
-  const exploreNote =
-    toolPrefix === 'dogear__browser'
-      ? '可自行探索：observe_page 看可交互元素，find 按 role+name 精确查找；'
-      : '可自行探索：observe_page 看可交互元素，SPA 页面用 read_state 先看顶层概要再下钻；';
+  const findingTool = 'dogear__extension__site_finding';
+  const policyTool = 'dogear__extension__site_policy';
+  const policyScopeNote = '扩展通道；本工具只读站点访问策略，不碰页面。';
+  const exploreNote = '可自行探索：observe_page 看可交互元素，SPA 页面用 read_state 先看顶层概要再下钻；';
   return [
     defineTool(
-      `${toolPrefix}__site_knowledge`,
+      `dogear__extension__site_knowledge`,
       '获取当前站点档案（已知地图与探索发现）',
       `${scopeNote}\n` +
         '读取当前标签页所属域名的站点档案：正式地图（已验证的状态路径/直链拼法）+ 探索发现（未验证线索）。' +
@@ -99,7 +80,7 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
       async () => {
         const busy = acquireGate(null, 'site_knowledge', currentUrl());
         if (busy) return busy;
-        const resolved = domainOrError(currentUrl, isErrorResult, NO_URL_MESSAGES[toolPrefix]);
+        const resolved = domainOrError(currentUrl, isErrorResult, NO_URL_MESSAGE);
         if ('error' in resolved) return resolved.error;
         const r = readSiteKnowledge(resolved.domain);
         if (!r.exists) {
@@ -125,7 +106,7 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
       async (args) => {
         const busy = acquireGate(null, 'site_finding', currentUrl());
         if (busy) return busy;
-        const resolved = domainOrError(currentUrl, isErrorResult, NO_URL_MESSAGES[toolPrefix]);
+        const resolved = domainOrError(currentUrl, isErrorResult, NO_URL_MESSAGE);
         if ('error' in resolved) return resolved.error;
         const r = appendSiteFinding(resolved.domain, args.finding, conversationId ?? '');
         if (!r.ok) return isErrorResult(r.error ?? '写入站点档案失败');
@@ -145,7 +126,7 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
         const busy = acquireGate(null, 'site_policy', currentUrl());
         if (busy) return busy;
         const url = currentUrl();
-        if (!url) return isErrorResult(NO_URL_MESSAGES[toolPrefix]);
+        if (!url) return isErrorResult(NO_URL_MESSAGE);
         const domain = normalizeDomain(url);
         if (!domain) return isErrorResult(`无法从当前页面地址解析域名：${url}`);
         const policy = getSitePolicy(url);

@@ -280,7 +280,7 @@ export const syncRouter = {
     .input<{ requestId: string; reason?: string }>()
     .action(async ({ input }) => ({ ok: await rejectPairRequest(input.requestId, input.reason) })),
 
-  /** 同步范围用户勾选树：单层列目录（懒加载）+ .git 检测；空 path 工作区（临时会话）不可用 */
+  /** 同步范围用户勾选树：单层列目录（懒加载）+ .git 检测；空 path 工作区不可用 */
   getSyncWorkspaceDir: t.procedure
     .input<{ workspaceId: string; relPath?: string }>()
     .action(async ({ input }): Promise<SyncDirListing & { error?: string }> => {

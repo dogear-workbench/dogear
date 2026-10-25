@@ -11,7 +11,6 @@ import { useReferenceStore } from '@/stores/reference-store';
 import { guardReferenceIntoFocus, requireAnchorConversationId } from '@/lib/reference-guard';
 import { showConfirm } from '@/stores/confirm-store';
 import { Switch } from '@/components/ui/switch';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 
 interface AdditionalFilesPanelProps {
@@ -103,7 +102,7 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
         </div>
       </div>
 
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {additionalPaths.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 gap-2 text-sm text-muted-foreground">
             <Folder className="w-8 h-8 opacity-40" />
@@ -131,7 +130,7 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
             ))}
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

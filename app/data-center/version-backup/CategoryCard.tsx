@@ -46,13 +46,11 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
 
   const scopeLabel = (scope: string) => {
     if (scope === 'global') return '全局';
-    if (scope === 'personal') return '临时会话区';
     return nameById.get(scope) ?? scope;
   };
 
   const scopeTitle = (scope: string) => {
     if (scope === 'global') return '不属于任何工作区的全局数据';
-    if (scope === 'personal') return '未绑定工作区时开启的会话存放处';
     if (!nameById.has(scope)) return '应用数据目录下未注册的工作区目录';
     return nameById.get(scope)!;
   };
@@ -179,7 +177,7 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
                       <span className="truncate" title={scopeTitle(row.scope)}>
                         {scopeLabel(row.scope)}
                       </span>
-                      {row.scope !== 'global' && row.scope !== 'personal' && !nameById.has(row.scope) && (
+                      {row.scope !== 'global' && !nameById.has(row.scope) && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
                           未注册
                         </span>

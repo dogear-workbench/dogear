@@ -13,8 +13,11 @@ export interface HandoffDraftBroadcast {
   url: string;
   title: string;
   selectionText?: string;
-  textExcerpt?: string;
+  /** 无选中文字的整页移交预填默认指令（抓取入库+摘要动线）；选中内容移交保持纯内联现状 */
+  instruction?: string;
 }
+
+const PAGE_HANDOFF_INSTRUCTION = '请把这篇文章抓取入库并给我一份摘要，之后我们围绕它继续聊。';
 
 type HandoffDraftBroadcaster = (payload: HandoffDraftBroadcast) => void;
 
@@ -90,8 +93,8 @@ export async function routeBrowserHandoff(handoff: PageHandoffMessage): Promise<
     conversationId: target.conversationId,
     url: handoff.url,
     title: handoff.title,
+    ...(!handoff.selectionText ? { instruction: PAGE_HANDOFF_INSTRUCTION } : {}),
     ...(handoff.selectionText ? { selectionText: handoff.selectionText } : {}),
-    ...(handoff.textExcerpt ? { textExcerpt: handoff.textExcerpt } : {}),
   });
   await notifications.add({
     type: 'conversation',

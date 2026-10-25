@@ -8,6 +8,7 @@
 import { readIndex } from './memory-indexer.js';
 import { getTopic } from './memory-service.js';
 import type { MemoryScope, ScopedTopicIndexEntry } from './memory-types.js';
+import { recordRecallUsage } from './memory-usage.js';
 
 const HARD_LIMIT = 5;
 
@@ -90,6 +91,7 @@ export async function recall(
   if (extra > 0) {
     result.hint = `还有 ${extra} 个相关主题未返回，可缩小关键词范围或提高 limit（最大 ${HARD_LIMIT}）`;
   }
+  void recordRecallUsage(workspaceId, topics.map((t) => ({ slug: t.slug, scope: t.scope }))).catch(() => {});
   return result;
 }
 

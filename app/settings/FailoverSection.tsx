@@ -36,11 +36,11 @@ export function FailoverSection({ local, setLocal }: Props) {
   };
 
   return (
-    <div className="mt-10 space-y-3">
+    <div className="mt-3 space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold">模型故障转移</h3>
-          <p className="text-xs text-muted-foreground">费率错误（限流/余额不足）时自动切换供应商继续</p>
+          <h3 className="text-sm font-medium">模型故障转移</h3>
+          <p className="text-xs text-muted-foreground">主模型限流/欠费时自动切到备用供应商；链随方案增删自动维护</p>
         </div>
         <Switch
           checked={failover.enabled}
@@ -103,7 +103,7 @@ export function FailoverSection({ local, setLocal }: Props) {
         <p className="text-xs text-muted-foreground">至少配置两家供应商才能故障转移。</p>
       )}
       <p className="text-xs text-muted-foreground">
-        新供应商会自动追加到列表末尾；切换沿列表从上到下顺位进行，整条链走完仍失败将停止会话并报错。
+        切换沿链从上到下顺位进行；整条链都失败时停止会话并报错。
       </p>
     </div>
   );

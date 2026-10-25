@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronDown, ChevronRight, FileText, FolderOpen, Lightbulb, Link2, Trash2,
+  ChevronDown, ChevronRight, FileText, FolderOpen, Link2, Trash2,
 } from 'lucide-react';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
@@ -11,9 +11,8 @@ import { showConfirm } from '@/stores/confirm-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { requireAnchorConversationId } from '@/lib/reference-guard';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { TopicStateCardSection, type TopicStateCardView } from '@/components/TopicStateCardSection';
+import { FilterInput } from '@/components/ui/filter-input';
 import type { NativeFileEntry } from '@/types/group';
 
 export interface TopicPanelProps {
@@ -37,9 +36,16 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
 
   const [nativeFiles, setNativeFiles] = useState<NativeFileEntry[]>([]);
   const [sharedDir, setSharedDir] = useState<string>('');
-  const [stateCard, setStateCard] = useState<TopicStateCardView | null>(null);
+  const [fileFilter, setFileFilter] = useState('');
+  const normalizedFileFilter = fileFilter.trim().toLowerCase();
+  const visibleFiles = useMemo(
+    () =>
+      normalizedFileFilter
+        ? nativeFiles.filter((f) => f.relPath.toLowerCase().includes(normalizedFileFilter))
+        : nativeFiles,
+    [nativeFiles, normalizedFileFilter],
+  );
 
-  const [bgOpen, setBgOpen] = useState(true);
   const [filesOpen, setFilesOpen] = useState(true);
 
   const loadPanelData = (gid: string) => {
@@ -50,23 +56,19 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
         setSharedDir(r.sharedDir ?? '');
       }
     });
-    client.readTopicStateCard({ workspaceId, groupId: gid }).then((r) => {
-      if (r.error) toast.error('读取话题状态失败', { description: r.error });
-      else setStateCard(r.card ?? null);
-    });
   };
 
   useEffect(() => {
     const gid = groupId;
+    setFileFilter('');
     if (!gid) {
       setNativeFiles([]);
-      setStateCard(null);
       return;
     }
     loadPanelData(gid);
   }, [workspaceId, groupId]);
 
-  // 主进程广播的组数据变更（共享区文件/话题背景写点），当前展示组匹配才重拉
+  // 主进程广播的组数据变更（共享区文件写点），当前展示组匹配才重拉
   useEffect(() => {
     const unsub = rendererEvents.groupDataChanged.listen((data) => {
       if (data.workspaceId !== workspaceId || data.groupId !== groupId) return;
@@ -82,15 +84,11 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
     if (!r.ok) toast.error('打开资源管理器失败', { description: r.error });
   };
 
-  const openSharedMd = async (relPath: string) => {
+  // file 型带 groupId 打开：阅读面板按 sharedDir 读盘渲染，右键「引用到会话」可构造共享文件引用（inline 型会被一刀切禁用）
+  const openSharedMd = (relPath: string) => {
     const gid = groupId;
     if (!gid) return;
-    const r = await client.readSharedFile({ workspaceId, groupId: gid, relPath });
-    if (r.error) {
-      toast.error('读取文件失败', { description: r.error });
-      return;
-    }
-    useMarkdownPreviewStore.getState().openInline(relPath, r.content ?? '');
+    useMarkdownPreviewStore.getState().open(workspaceId, relPath, relPath.split(/[\\/]/).pop() ?? relPath, gid);
   };
 
   const handleDeleteFile = async (relPath: string) => {
@@ -120,41 +118,39 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
         )}
       </div>
 
+      {groupId && (
+        <div className="px-3 pb-2 pt-2">
+          <FilterInput value={fileFilter} onChange={setFileFilter} placeholder="筛选共享文件" />
+        </div>
+      )}
+
       {/* 主体 */}
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {!groupId ? (
           <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
             选中一个会话以查看其话题
           </div>
         ) : (
           <div className="p-2 space-y-1">
-            {/* 话题背景 */}
-            <Section
-              icon={<Lightbulb className="w-3.5 h-3.5 text-amber-500" />}
-              title="话题背景"
-              open={bgOpen}
-              onToggle={() => setBgOpen((v) => !v)}
-            >
-              <TopicStateCardSection workspaceId={workspaceId} groupId={groupId} card={stateCard} />
-            </Section>
-
             {/* 共享文件 */}
             <Section
               icon={<FileText className="w-3.5 h-3.5 text-muted-foreground" />}
-              title={`共享文件${nativeFiles.length ? ` · ${nativeFiles.length}` : ''}`}
+              title={`共享文件${visibleFiles.length ? ` · ${visibleFiles.length}` : ''}`}
               open={filesOpen}
               onToggle={() => setFilesOpen((v) => !v)}
             >
-              {nativeFiles.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-muted-foreground">暂无共享文件</div>
+              {visibleFiles.length === 0 ? (
+                <div className="px-2 py-3 text-xs text-muted-foreground">
+                  {normalizedFileFilter ? '没有匹配的文件' : '暂无共享文件'}
+                </div>
               ) : (
-                nativeFiles.map((f) => (
+                visibleFiles.map((f) => (
                   <SharedFileRow
                     key={f.relPath}
                     file={f}
                     onClick={() => {
                       const ext = f.relPath.split('.').pop()?.toLowerCase() ?? '';
-                      if (ext === 'md') void openSharedMd(f.relPath);
+                      if (ext === 'md') openSharedMd(f.relPath);
                       else toast.info('仅 .md 文件可预览，可用右上角按钮在资源管理器中查看');
                     }}
                     onDelete={() => handleDeleteFile(f.relPath)}
@@ -178,7 +174,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
             </Section>
           </div>
         )}
-      </ScrollArea>
+      </div>
     </div>
   );
 }

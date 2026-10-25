@@ -6,8 +6,9 @@ export const SYNC_APP_ID = 'dogear';
 export const DEFAULT_SYNC_PORT = 47210;
 // v2：同步范围可配置化（excludes 对称过滤，shadow-git 与 .conflict-* 默认不再同步）
 // v3：墓碑删除传播（/manifest 双向携墓碑 + DELETE /file 删除端点）
-// v4：工作区外部数据进同步（__ws-external__/{wsid}/ 虚拟路径：tasks.json + 文章库 + 用户勾选子树）；
-//     与旧版对端同步时双向过滤虚拟路径条目（防旧端把虚拟路径当普通路径落到 configDir 下成垃圾目录）
+// v4：工作区外部数据进同步（__ws-external__/{wsid}/ 虚拟路径：用户勾选子树；tasks/articles 后已归位 workspaces/{wsid}/ 实路径）；
+//     与旧版对端同步时双向过滤虚拟路径条目（防旧端把虚拟路径当普通路径落到 configDir 下成垃圾目录），
+//     旧固定声明的 __ws-external__/{wsid}/.dogear/{tasks.json,articles} 条目由本端退役防线拦截过渡
 export const SYNC_PROTOCOL_VERSION = 4;
 
 export const FileEntrySchema = z.object({

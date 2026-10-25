@@ -10,6 +10,15 @@ import * as groupSharedService from '../services/group-shared-service.js';
 
 const t = tipc.create();
 
+// docs/ 旧链接读侧兼容：工作区 docs/ 已改名 dogear/，旧前缀路径不存在时回退新位置（只做读侧，不改用户数据）
+function legacyDocsTwinPath(p: string): string | null {
+  const norm = p.split('\\').join('/');
+  const rest = norm === 'docs' ? '' : norm.startsWith('docs/') ? norm.slice('docs/'.length) : null;
+  if (rest !== null) return rest === '' ? 'dogear' : `dogear/${rest}`;
+  const idx = norm.indexOf('/docs/');
+  return idx > 0 ? `dogear/${norm.slice(idx + '/docs/'.length)}` : null;
+}
+
 export const explorerRouter = {
   createFolder: t.procedure
     .input<{ workspaceId: string; parentPath: string; name: string }>()
@@ -18,12 +27,7 @@ export const explorerRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        const isArticleFolder = input.parentPath.startsWith('.dogear/articles');
-        if (isArticleFolder) {
-          await articleService.createArticleFolder(workspace.path, input.parentPath, input.name);
-        } else {
-          await workspaceFsService.createFolder(workspace.path, input.parentPath, input.name, input.workspaceId);
-        }
+        await workspaceFsService.createFolder(workspace.path, input.parentPath, input.name, input.workspaceId);
         return { success: true };
       } catch (error) {
         console.error('创建文件夹失败:', error);
@@ -38,10 +42,14 @@ export const explorerRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        const isArticlePath = input.itemPath.startsWith('.dogear/articles');
-        if (isArticlePath) {
-          await articleService.renameArticleFolder(workspace.path, input.itemPath, input.newName);
-        } else {
+        // 文章 md 文件需伴随 raw.html 同步改名，其余走通用文件操作
+        const handledAsArticle = await articleService.renameArticleFileWithCompanion(
+          input.workspaceId,
+          workspace.path,
+          input.itemPath,
+          input.newName,
+        );
+        if (!handledAsArticle) {
           await workspaceFsService.renameItem(workspace.path, input.itemPath, input.newName, input.workspaceId);
         }
         return { success: true };
@@ -52,16 +60,20 @@ export const explorerRouter = {
     }),
 
   moveItem: t.procedure
-    .input<{ workspaceId: string; sourcePath: string; targetPath: string; targetIndex?: number }>()
+    .input<{ workspaceId: string; sourcePath: string; targetPath: string }>()
     .action(async ({ input }) => {
       try {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        const isArticlePath = input.sourcePath.startsWith('.dogear/articles');
-        if (isArticlePath) {
-          await articleService.moveArticleItem(workspace.path, input.sourcePath, input.targetPath, input.targetIndex);
-        } else {
+        // 文章 md 文件需伴随 raw.html 跟随移动，其余走通用文件操作
+        const handledAsArticle = await articleService.moveArticleFileWithCompanion(
+          input.workspaceId,
+          workspace.path,
+          input.sourcePath,
+          input.targetPath,
+        );
+        if (!handledAsArticle) {
           await workspaceFsService.moveItem(workspace.path, input.sourcePath, input.targetPath, input.workspaceId);
         }
         return { success: true };
@@ -93,10 +105,13 @@ export const explorerRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        const isArticlePath = input.itemPath.startsWith('.dogear/articles');
-        if (isArticlePath) {
-          await articleService.deleteArticleFolder(workspace.path, input.itemPath);
-        } else {
+        // 文章 md 文件需伴随 raw.html 一并删除，其余（目录等）走通用文件操作
+        const handledAsArticle = await articleService.deleteArticleFileByRelPath(
+          input.workspaceId,
+          workspace.path,
+          input.itemPath,
+        );
+        if (!handledAsArticle) {
           await workspaceFsService.deleteItem(workspace.path, input.itemPath, input.workspaceId);
         }
         return { success: true };
@@ -129,6 +144,15 @@ export const explorerRouter = {
       if (!workspace) throw new Error('工作区不存在');
       const roots = getEnabledRoots(workspace);
       if (input.groupId) roots.push(await groupSharedService.getSharedDir(input.workspaceId, input.groupId));
+      const twin = legacyDocsTwinPath(input.path);
+      if (twin) {
+        try {
+          const content = await workspaceFsService.readWorkspaceTextFile(roots, twin);
+          return { content };
+        } catch {
+          // dogear/ 下也无此文件 → 落回原路径的报错语义
+        }
+      }
       const content = await workspaceFsService.readWorkspaceTextFile(roots, input.path);
       return { content };
     }),
@@ -141,6 +165,11 @@ export const explorerRouter = {
       const roots = getEnabledRoots(workspace);
       if (input.groupId) roots.push(await groupSharedService.getSharedDir(input.workspaceId, input.groupId));
       const exists = await workspaceFsService.checkPathsExist(roots, input.paths);
+      for (const p of input.paths) {
+        if (exists[p]) continue;
+        const twin = legacyDocsTwinPath(p);
+        if (twin && (await workspaceFsService.checkPathsExist(roots, [twin]))[twin]) exists[p] = true;
+      }
       return { exists };
     }),
 };

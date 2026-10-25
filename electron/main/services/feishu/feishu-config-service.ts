@@ -15,6 +15,9 @@ export interface FeishuConfig {
   appSecret: string;
   botName?: string;
   connectedAt?: string;
+  userOpenId?: string;
+  topicChatId?: string;
+  notifyPush?: boolean;
 }
 
 export interface FeishuTestResult {
@@ -116,19 +119,18 @@ class FeishuConfigService {
 
     try {
       const client = new Client({ appId, appSecret, domain: Domain.Feishu });
-      const res = await client.request<{ data: BotInfoResponse }>(
+      const res = await client.request<BotInfoResponse>(
         { url: '/open-apis/bot/v3/info', method: 'GET' },
         withTenantToken(accessToken),
       );
-      const body = res.data;
-      if (body.code !== 0 || !body.bot) {
+      if (res.code !== 0 || !res.bot) {
         return {
           ok: false,
           stage: 'bot_info',
-          error: `无法获取机器人信息（${body.msg || `code=${body.code}`}），请在飞书开放平台「添加应用能力」中开启机器人，并创建版本发布后重试`,
+          error: `无法获取机器人信息（${res.msg || `code=${res.code}`}），请在飞书开放平台「添加应用能力」中开启机器人，并创建版本发布后重试`,
         };
       }
-      return { ok: true, botName: body.bot.app_name || '飞书 Bot' };
+      return { ok: true, botName: res.bot.app_name || '飞书 Bot' };
     } catch (err) {
       return {
         ok: false,

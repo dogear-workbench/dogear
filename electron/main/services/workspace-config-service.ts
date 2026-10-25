@@ -1,7 +1,8 @@
 import path from 'path';
 import { app } from 'electron';
 import { safeJsonRead, safeJsonWrite } from './safe-json.js';
-import { PERSONAL_WORKSPACE_ID } from '../types.js';
+import { ABILITY_PACKS } from '../agents/ability-registry.js';
+import { OPTIONAL_TOOL_PACKS } from './tool-packs.js';
 import type { SceneOverrideKey } from '../agents/ability-registry.js';
 
 export interface WorkspaceConfig {
@@ -46,38 +47,13 @@ export function getDefaultWorkspaceConfig(): WorkspaceConfig {
   return { enabledToolPacks: [], enabledSkills: [] };
 }
 
-/**
- * personal 临时会话的最小能力包默认集：显式关掉全部项目上下文/协作类包，只保留联网搜索。
- * 经 stored.abilityOverrides 可逐包覆盖（数据驱动，resolveAbilities 无需感知 personal）。
- */
-const PERSONAL_DEFAULT_CONFIG: WorkspaceConfig = {
-  enabledToolPacks: ['web-mcp'],
-  enabledSkills: [],
-  abilityOverrides: {
-    'workspace-rules': false,
-    'global-rules': false,
-    'memory': false,
-    'notes': false,
-    'group-context': false,
-    'agent-collab': false,
-    'stock': false,
-    'article': false,
-    'browser': false,
-    'browser-extension': false,
-    'browser-methodology': false,
-    'web-mcp': true,
-    'code-workflow': false,
-  },
-};
-
-/** 拆包迁移：browser 开启的开关层把扩展/方法论两包补齐为开启（缺键才写，显式 false 不覆盖），内存态生效，UI 下次写回自然落盘 */
+/** 拆包迁移：存量 browser 开启的开关层把扩展包补齐为开启（缺键才写，显式 false 不覆盖）；browser/methodology 键已下线由注册表静默忽略 */
 function migrateBrowserPackSplit(overrides: Record<string, boolean> | undefined): Record<string, boolean> | undefined {
   if (!overrides || overrides.browser !== true) return overrides;
-  if ('browser-extension' in overrides && 'browser-methodology' in overrides) return overrides;
+  if ('browser-extension' in overrides) return overrides;
   return {
     ...overrides,
-    'browser-extension': overrides['browser-extension'] ?? true,
-    'browser-methodology': overrides['browser-methodology'] ?? true,
+    'browser-extension': true,
   };
 }
 
@@ -95,20 +71,37 @@ function migrateWorkspaceConfig(stored: WorkspaceConfig): WorkspaceConfig {
   return { ...stored, abilityOverrides, sceneOverrides };
 }
 
+/**
+ * skill 型包默认开启时的子开关视图回填：子开关列表（enabledToolPacks/enabledSkills）只在用户显式拨动时写入，
+ * 包默认值翻转后未拨过的工作区列表里没有成员会挡住挂载；无显式 override 时按注册表默认补齐视图（不落盘），
+ * 用户显式拨过（有 override）则列表即真值。只补可选工具包 name，常驻 server 名不入此列表。
+ */
+function withDefaultOnPackSubSwitches(config: WorkspaceConfig): WorkspaceConfig {
+  let toolPacks = config.enabledToolPacks;
+  let skills = config.enabledSkills;
+  for (const pack of ABILITY_PACKS) {
+    if (pack.type !== 'skill-packs' || !pack.defaultEnabled) continue;
+    if (config.abilityOverrides?.[pack.key] !== undefined) continue;
+    const optionalPackNames = (pack.toolGroups ?? []).filter((id) =>
+      OPTIONAL_TOOL_PACKS.some((p) => p.name === id)
+    );
+    const missingPacks = optionalPackNames.filter((n) => !toolPacks.includes(n));
+    if (missingPacks.length > 0) toolPacks = [...toolPacks, ...missingPacks];
+    const missingSkills = (pack.skills ?? []).filter((s) => !skills.includes(s));
+    if (missingSkills.length > 0) skills = [...skills, ...missingSkills];
+  }
+  return toolPacks === config.enabledToolPacks && skills === config.enabledSkills
+    ? config
+    : { ...config, enabledToolPacks: toolPacks, enabledSkills: skills };
+}
+
 export async function getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig> {
   const filePath = getWorkspaceConfigPath(workspaceId);
   const raw = await safeJsonRead<WorkspaceConfig>(filePath, getDefaultWorkspaceConfig());
   const stored = migrateWorkspaceConfig(raw);
   const sceneOverrides = normalizeSceneOverrides(stored.sceneOverrides);
-  if (workspaceId !== PERSONAL_WORKSPACE_ID) {
-    return sceneOverrides ? { ...stored, sceneOverrides } : stored;
-  }
-  return {
-    enabledToolPacks: stored.enabledToolPacks.length > 0 ? stored.enabledToolPacks : PERSONAL_DEFAULT_CONFIG.enabledToolPacks,
-    enabledSkills: stored.enabledSkills,
-    abilityOverrides: { ...PERSONAL_DEFAULT_CONFIG.abilityOverrides, ...stored.abilityOverrides },
-    sceneOverrides,
-  };
+  const effective = sceneOverrides ? { ...stored, sceneOverrides } : stored;
+  return withDefaultOnPackSubSwitches(effective);
 }
 
 export async function updateWorkspaceConfig(

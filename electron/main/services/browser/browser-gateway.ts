@@ -120,23 +120,6 @@ export function setNotConnectedGate(fn: NotConnectedGate | null): void {
   notConnectedGate = fn;
 }
 
-/** 一键移交过的 tabId 豁免集合：会话收尾清理时保留不关，随 gateway 生命周期（跨扩展重连），FIFO 限容 */
-const HANDOFF_EXEMPT_MAX = 100;
-const handoffExemptTabIds = new Set<number>();
-
-function recordHandoffExemptTab(tabId: number): void {
-  handoffExemptTabIds.delete(tabId);
-  handoffExemptTabIds.add(tabId);
-  if (handoffExemptTabIds.size > HANDOFF_EXEMPT_MAX) {
-    const oldest = handoffExemptTabIds.values().next().value;
-    if (oldest !== undefined) handoffExemptTabIds.delete(oldest);
-  }
-}
-
-export function getHandoffExemptTabIds(): number[] {
-  return [...handoffExemptTabIds];
-}
-
 type HandoffHandler = (handoff: PageHandoffMessage) => void;
 
 let handoffHandler: HandoffHandler | null = null;
@@ -269,8 +252,8 @@ function applyCloseTabResult(data: unknown): void {
   setStatus({ ...currentStatus, ...removeClosedTab(currentStatus, d.closedTabId, d.focusedTabId) });
 }
 
-/** 收尾清理回包：剔除已关 tab；焦点 tab 被清则重置为无焦点态（剩余豁免 tab 仍在 tabs 数组，等待下次 list_tabs 同步） */
-function applyCloseGroupTabsResult(data: unknown): void {
+/** 收尾关窗回包：剔除已关 tab；焦点 tab 被关则重置为无焦点态（窗口已 remove，剩余 tabs 理论为空，保守保留同步） */
+function applyCloseAgentWindowResult(data: unknown): void {
   if (currentStatus.status !== 'connected') return;
   const d = (data ?? {}) as { closedTabIds?: unknown };
   if (!Array.isArray(d.closedTabIds)) return;
@@ -328,7 +311,7 @@ function handleCommandResult(message: NmMessage): void {
     else if (pending.kind === 'open_tab') applyOpenTabResult(message.data);
     else if (pending.kind === 'click') applyClickResult(message.data);
     else if (pending.kind === 'close_tab') applyCloseTabResult(message.data);
-    else if (pending.kind === 'close_group_tabs') applyCloseGroupTabsResult(message.data);
+    else if (pending.kind === 'close_agent_window') applyCloseAgentWindowResult(message.data);
     else if (pending.kind === 'list_tabs') applyListTabsResult(message.data);
     pending.resolve({
       requestId,
@@ -356,19 +339,24 @@ function applyHandoff(message: NmMessage): void {
     logger.warn('page_handoff 缺少 url，已忽略');
     return;
   }
-  if (typeof message.tabId === 'number') recordHandoffExemptTab(message.tabId);
+  const title = typeof message.title === 'string' ? message.title : '';
+  const tabId = typeof message.tabId === 'number' ? message.tabId : null;
+  if (tabId !== null) {
+    if (currentStatus.status === 'connected') {
+      // 移交即转移操作目标：主进程焦点切到移交页，agent 后续 observe_page 无参默认作用于它
+      setStatus({ ...currentStatus, ...adoptFocusedTab(currentStatus, tabId, { url, title }) });
+    }
+  }
   if (!handoffHandler) {
     logger.warn('page_handoff 无处理器，已忽略:', url);
     return;
   }
   const selectionText = typeof message.selectionText === 'string' ? message.selectionText : '';
-  const textExcerpt = typeof message.textExcerpt === 'string' ? message.textExcerpt : '';
   handoffHandler({
     type: 'page_handoff',
     url,
-    title: typeof message.title === 'string' ? message.title : '',
+    title,
     ...(selectionText.length > 0 ? { selectionText } : {}),
-    ...(textExcerpt.length > 0 ? { textExcerpt } : {}),
   });
 }
 

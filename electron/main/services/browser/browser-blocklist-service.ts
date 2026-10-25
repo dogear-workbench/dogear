@@ -1,6 +1,5 @@
 import path from 'node:path';
-import { registeredDomain } from './browser-data-service.js';
-import { normalizeDomain } from './site-knowledge-service.js';
+import { normalizeDomain, registeredDomain } from './site-knowledge-service.js';
 import { getConfigDir } from '../settings-service.js';
 import { safeJsonRead, safeJsonWrite } from '../safe-json.js';
 

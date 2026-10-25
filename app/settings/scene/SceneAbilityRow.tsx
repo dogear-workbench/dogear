@@ -8,7 +8,7 @@ interface SceneAbilityRowProps {
   cell: ScenePackCell;
   /** 状态徽标文案（父层算好）：开关开着但最终没装配时提示 */
   badge: string | null;
-  /** 行开关联动素材；缺省（联动表未就绪）时行开关禁用 */
+  /** 包行开关联动素材；缺省（联动表未就绪或 skill 动态行）时包行走禁用态，skill 行不受限 */
   links: PackToggleLinks | undefined;
   /** skill 子开关写回素材就绪（skillToPacks 可用） */
   skillReady: boolean;
@@ -30,7 +30,8 @@ export function SceneAbilityRow({
 }: SceneAbilityRowProps) {
   const subToggles = cell.state === 'switchable' ? cell.subToggles : undefined;
   const expandable = !!subToggles && subToggles.skills.length > 0;
-  const canToggle = cell.state === 'switchable' && !!links;
+  // skill 动态行无包映射（links 恒缺省），开关写 enabledSkills 不依赖联动表
+  const canToggle = cell.state === 'switchable' && (!!links || !!cell.skillName);
 
   return (
     <div className={cn('rounded-md border bg-background', cell.state === 'excluded' && 'opacity-60')}>
@@ -75,12 +76,15 @@ export function SceneAbilityRow({
             <span className={cn('text-sm font-medium', cell.state === 'excluded' && 'text-muted-foreground')}>
               {cell.label}
             </span>
+            {(cell.deferredToolGroups?.length ?? 0) > 0 && (
+              <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-muted text-muted-foreground">按需</span>
+            )}
             {badge && (
               <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-muted text-muted-foreground">{badge}</span>
             )}
             {expandable && <span className="text-xs text-muted-foreground/70">Skill {subToggles!.skills.length}</span>}
           </div>
-          <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{cell.reason}</p>
+          {cell.reason && <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{cell.reason}</p>}
         </div>
       </div>
 

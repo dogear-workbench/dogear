@@ -4,6 +4,7 @@ import type { ModelProfile } from '../../services/settings-types.js';
 import type { PiModelResult } from '../pi/provider.js';
 import type { ThinkingLevel } from '@earendil-works/pi-agent-core';
 import type { TaskHandlerContext } from './task-context.js';
+import { writeParseTrace } from './parse-trace.js';
 
 /**
  * 文章解析任务（pi runOnce 驱动）
@@ -16,11 +17,11 @@ import type { TaskHandlerContext } from './task-context.js';
  * 产出：
  * - 若有改进：通过 dogear__SaveParsedArticle 覆盖 meta.json / content.md
  * - 若发现新平台脚本模式：通过 dogear__UpdatePlatformScript 更新 platforms/<platform>.py
- * - history.jsonl 追加一行解析记录
+ * - history.jsonl 追加一行解析记录（共用 parse-ai-fallback 的统一入口）
  */
 export async function handleParseArticleTask(task: AgentTask, taskLogger: any, ctx: TaskHandlerContext): Promise<any> {
   const payload = task.payload as import('../task-types.js').ParseArticlePayload;
-  const { articleId, articleDir, workspacePath, url, skillsDir } = payload;
+  const { articleId, articlePath, workspaceId, workspacePath, url, skillsDir } = payload;
   const platform = payload.platform ?? null;
   const trigger = payload.trigger ?? 'parse_failed';
   const scriptError = payload.scriptError;
@@ -32,13 +33,13 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
 
   // 进入 AI 解析中状态 → 回写 meta.json + 广播事件
   const { updateArticleParseStatus } = await import('../../services/article-service.js');
-  await updateArticleParseStatus(workspacePath, articleId, 'ai_parsing').catch((err) => {
+  await updateArticleParseStatus(workspaceId, workspacePath, articleId, 'ai_parsing').catch((err) => {
     taskLogger.warn('写入 ai_parsing 状态失败:', err);
   });
   ctx.sendMessage({
     type: 'articleParseStatusChanged',
     articleId,
-    workspacePath,
+    workspaceId,
     parseStatus: 'ai_parsing',
   });
 
@@ -63,8 +64,8 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
     const error = e instanceof Error ? e.message : String(e);
     taskLogger.error('文章解析任务终止（模型解析失败）:', error);
     const errorStatus = 'failed' as const;
-    await updateArticleParseStatus(workspacePath, articleId, errorStatus).catch(() => {});
-    ctx.sendMessage({ type: 'articleParseStatusChanged', articleId, workspacePath, parseStatus: errorStatus });
+    await updateArticleParseStatus(workspaceId, workspacePath, articleId, errorStatus, failureTitleFromUrl(url)).catch(() => {});
+    ctx.sendMessage({ type: 'articleParseStatusChanged', articleId, workspaceId, parseStatus: errorStatus });
     return { articleId, articleSaved: false, parseStatus: errorStatus, error };
   }
 
@@ -103,7 +104,7 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
   // 构建 prompt
   const prompt = buildV2ParsePrompt({
     articleId,
-    articleDir,
+    articlePath,
     url,
     platform,
     skillsDir,
@@ -130,6 +131,7 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       thinkingLevel,
       signal: abortController.signal,
       maxTurns: 30,
+      collectMessages: true,
       onLog: (m) => {
         if (m.startsWith('[tool-error]')) taskLogger.warn(m);
         else taskLogger.info(m);
@@ -146,8 +148,30 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       taskLogger.info('AI 解析完成');
     }
 
-    // 追加历史记录
-    await appendParseHistory(skillsDir, {
+    // 留痕 md 写入失败不影响任务（writeParseTrace 内部吞错，null 时仅告警）
+    const traceFile = await writeParseTrace(
+      {
+        articleId,
+        workspacePath,
+        url,
+        platform,
+        trigger,
+        durationMs: Date.now() - startedAt,
+        articleSaved,
+        scriptUpdated,
+        statusLabel: !result.ok
+          ? result.cancelled ? '已取消' : `失败：${result.error}`
+          : articleSaved ? '成功（文章已保存）' : '完成（未保存文章，质量警告）',
+        error: result.ok ? undefined : result.error,
+        model: model.id,
+      },
+      result.transcript,
+    );
+    if (!traceFile) taskLogger.warn('解析留痕写入失败:', articleId);
+
+    // 追加历史记录（与管线层共用统一追加入口）
+    const { appendParseHistoryEntry } = await import('../../services/article/parse-ai-fallback.js');
+    await appendParseHistoryEntry({
       timestamp: new Date().toISOString(),
       articleId,
       url,
@@ -159,20 +183,26 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       articleSaved,
       parseStatus: articleSaved ? 'ai_enhanced' : 'quality_warning',
       durationMs: Date.now() - startedAt,
-    });
+    }, { skillsDir });
 
     // 判定最终状态：若 AI 成功 save → ai_enhanced；否则 → quality_warning（AI 也无法解析）
     const finalStatus = articleSaved
       ? 'ai_enhanced' as const
       : 'quality_warning' as const;
 
-    await updateArticleParseStatus(workspacePath, articleId, finalStatus).catch((err) => {
+    await updateArticleParseStatus(
+      workspaceId,
+      workspacePath,
+      articleId,
+      finalStatus,
+      finalStatus === 'quality_warning' ? failureTitleFromUrl(url) : undefined,
+    ).catch((err) => {
       taskLogger.warn('写入最终状态失败:', err);
     });
     ctx.sendMessage({
       type: 'articleParseStatusChanged',
       articleId,
-      workspacePath,
+      workspaceId,
       parseStatus: finalStatus,
     });
 
@@ -183,13 +213,33 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       articleSaved,
       scriptUpdated,
       parseStatus: finalStatus,
+      traceFile,
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     taskLogger.error('文章解析任务失败:', errorMsg);
 
+    const traceFile = await writeParseTrace(
+      {
+        articleId,
+        workspacePath,
+        url,
+        platform,
+        trigger,
+        durationMs: Date.now() - startedAt,
+        articleSaved,
+        scriptUpdated: null,
+        statusLabel: `失败：${errorMsg}`,
+        error: errorMsg,
+        model: model.id,
+      },
+      undefined,
+    );
+    if (!traceFile) taskLogger.warn('解析留痕写入失败:', articleId);
+
     // 记录失败历史
-    await appendParseHistory(skillsDir, {
+    const { appendParseHistoryEntry } = await import('../../services/article/parse-ai-fallback.js');
+    await appendParseHistoryEntry({
       timestamp: new Date().toISOString(),
       articleId,
       url,
@@ -202,14 +252,14 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       parseStatus: 'failed',
       durationMs: Date.now() - startedAt,
       error: errorMsg,
-    }).catch(() => { /* 历史记录失败不影响主流程 */ });
+    }, { skillsDir }).catch(() => { /* 历史记录失败不影响主流程 */ });
 
     const errorStatus = 'failed' as const;
-    await updateArticleParseStatus(workspacePath, articleId, errorStatus).catch(() => { /* ignore */ });
+    await updateArticleParseStatus(workspaceId, workspacePath, articleId, errorStatus, failureTitleFromUrl(url)).catch(() => {});
     ctx.sendMessage({
       type: 'articleParseStatusChanged',
       articleId,
-      workspacePath,
+      workspaceId,
       parseStatus: errorStatus,
     });
 
@@ -218,15 +268,35 @@ export async function handleParseArticleTask(task: AgentTask, taskLogger: any, c
       articleSaved: false,
       parseStatus: errorStatus,
       error: errorMsg,
+      traceFile,
     };
   } finally {
     ctx.setAbortController(null);
   }
 }
 
+function decodeUriSafe(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+function failureTitleFromUrl(url: string): string {
+  let tail = url;
+  try {
+    const parsed = new URL(url);
+    tail = parsed.pathname.split('/').filter(Boolean).pop() ?? parsed.hostname;
+  } catch {
+    tail = url;
+  }
+  return `(解析失败) ${decodeUriSafe(tail).slice(0, 40)}`;
+}
+
 interface V2PromptParams {
   articleId: string;
-  articleDir: string;
+  articlePath: string;
   url: string;
   platform: string | null;
   skillsDir: string;
@@ -264,7 +334,7 @@ export async function readArticleParseSkillMd(skillsDir: string): Promise<string
 function buildV2ParsePrompt(p: V2PromptParams): string {
   return `**任务上下文：**
 - articleId: ${p.articleId}
-- articleDir: ${p.articleDir}
+- articlePath: ${p.articlePath}
 - url: ${p.url}
 - platform: ${p.platform || '(未识别)'}
 - skillsDir: ${p.skillsDir}
@@ -276,32 +346,6 @@ ${p.readabilityError ? `- Readability 错误：${p.readabilityError}` : ''}
 所有工具参数路径都要传入完整绝对路径。`;
 }
 
-interface ParseHistoryEntry {
-  timestamp: string;
-  articleId: string;
-  url: string;
-  platform?: string | null;
-  trigger?: string;
-  triggeredAi?: boolean;
-  layer?: 'script' | 'readability' | 'browser' | 'ai';
-  scriptUpdated: string | null;
-  articleSaved: boolean;
-  parseStatus: string;
-  durationMs: number;
-  error?: string;
-}
 
-/**
- * 追加一行解析历史到 history.jsonl。
- * 并发场景下依赖 safe-json.ts 的文件锁（withFileLock）保证原子性。
- */
-async function appendParseHistory(skillsDir: string, entry: ParseHistoryEntry): Promise<void> {
-  const { default: path } = await import('path');
-  const fs = await import('fs/promises');
-  const { withFileLock } = await import('../../services/safe-json.js');
-  const historyPath = path.join(skillsDir, 'history.jsonl');
 
-  await withFileLock(historyPath, async () => {
-    await fs.appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8');
-  });
-}
+

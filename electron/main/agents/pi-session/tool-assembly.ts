@@ -1,16 +1,17 @@
 import path from 'path';
-import type { ToolDef } from '../pi/tool-adapter.js';
+import type { ExecutionEnv } from '@earendil-works/pi-durable/env';
+import { deferToolDefs, type ToolDef } from '../pi/tool-adapter.js';
 import { createSkillTool, type SkillEntry } from './skill-loader.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { isBasicToolName } from './permission-rules.js';
-import { TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
+import { SKILL_PACK_MAP, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
-import { PERSONAL_WORKSPACE_ID } from '../../types.js';
 import type { SubAgentProfile } from '../../services/settings-types.js';
 import type { PiSessionConfig } from './pi-session-config.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
+import { createSkillToolDefs } from '../tools/skill-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
-import { createBrowserToolDefs } from '../tools/browser-tools.js';
+import { createArticleParseToolDefs } from '../tools/article-parse-tools.js';
 import { createExtensionToolDefs } from '../tools/extension-tools.js';
 import { createStockToolDefs } from '../tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
@@ -21,20 +22,20 @@ import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
-import { createGitToolDefs } from '../tools/git-tools.js';
-import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
+import { createSchedulerToolDefs } from '../tools/scheduler-tools.js';
+import { createGitToolDefs, createSnapshotToolDefs } from '../tools/git-tools.js';
+import { createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 
 /**
  * 子会话按 Profile 过滤 skill entries。
  * builtin 段：article-parser 仅当 article===true，stock-analysis/stock-picking 仅当 stock===true，
- * 其余按 skills[] 匹配（browser-exploration 归方法论包，与通道解耦，走通用 skills 细选）；
- * custom 段：仅保留 skills[] 中列出的；
- * user 段：仅保留 customSkills[] 中列出的。
+ * 其余按 skills[] 匹配（通用 skills 细选）；
+ * custom 段（custom/skills）：按 customSkills[] 匹配（派遣页「自定义 Skill」组勾选，与 UI 写回字段一致）。
  */
 export function filterSkillsForSubAgent(
   entries: SkillEntry[],
   profile: SubAgentProfile,
-  scanDirs: { builtin: string; custom: string; user: string },
+  scanDirs: { builtin: string; custom: string },
 ): SkillEntry[] {
   const ab = profile.enabledAbilities;
   const isUnder = (filePath: string, dir: string): boolean => {
@@ -48,8 +49,9 @@ export function filterSkillsForSubAgent(
       if (entry.name === 'stock-analysis' || entry.name === 'stock-picking') return ab.stock === true;
       return ab.skills?.includes(entry.name) ?? false;
     }
-    if (isUnder(fp, scanDirs.custom)) return ab.skills?.includes(entry.name) ?? false;
-    if (isUnder(fp, scanDirs.user)) return ab.customSkills?.includes(entry.name) ?? false;
+    if (isUnder(fp, scanDirs.custom)) {
+      return ab.customSkills?.includes(entry.name) ?? false;
+    }
     return false;
   });
 }
@@ -87,6 +89,30 @@ export function computeSubAgentActiveTools(profile: SubAgentProfile, toolDefs: T
   return [...names];
 }
 
+/**
+ * skill→配套工具名映射动态反查：SKILL_PACK_MAP（skill→包）经 toolPackMap（工具→包）反转过滤，
+ * 只收已转 deferred 的工具（常驻包不联动 add）；无包映射或包未注册的 skill 不出键
+ */
+function buildSkillLinkedTools(
+  skillEntries: SkillEntry[],
+  toolPackMap: ReadonlyMap<string, string>,
+  deferredToolNames: ReadonlySet<string>,
+): Record<string, string[]> {
+  const deferredPackToTools = new Map<string, string[]>();
+  for (const [toolName, packName] of toolPackMap) {
+    if (!deferredToolNames.has(toolName)) continue;
+    const list = deferredPackToTools.get(packName);
+    if (list) list.push(toolName);
+    else deferredPackToTools.set(packName, [toolName]);
+  }
+  const linked: Record<string, string[]> = {};
+  for (const entry of skillEntries) {
+    const toolNames = (SKILL_PACK_MAP[entry.name] ?? []).flatMap((pack) => deferredPackToTools.get(pack) ?? []);
+    if (toolNames.length > 0) linked[entry.name] = toolNames;
+  }
+  return linked;
+}
+
 /** 工具包注册辅助：校验并记录工具名→工具包标识映射，供权限批量免确认判定使用 */
 export function registerPack(toolPackMap: Map<string, string>, packName: string, defs: ToolDef[]): ToolDef[] {
   for (const def of defs) {
@@ -103,13 +129,14 @@ export function registerPack(toolPackMap: Map<string, string>, packName: string,
 
 /**
  * 主会话工具构建：
- * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总开关生效）
+ * Skill 工具（stock/article 五包 deferred，命中 skill 时经 control.addTools 联动挂载配套工具） + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + dogear-skill（自定义 skill 管理，随 skill-admin 包闸） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总开关生效；stock/article 五包 deferred 按需拉起）
  * + extension（随 browser-extension 包总闸：enabledToolPacks 残留 extension 静默忽略）
- * + 组状态卡组（dogear-group-context，属组且会话组包生效）
  * + 协作三组（dogear-group/delegation/sibling，属组且 agent-collab 包生效）
  * + dogear-notes（工作区且 notes 包生效）
- * + dogear-tasks（工作区且 notes 包生效；任务执行会话派单保底不受开关约束）
- * + dogear-git（工作区且 workspace-git 包生效）
+ * + dogear-tasks（工作区且 notes 包生效，六件 deferred 按需拉起；任务执行会话派单保底不受开关约束且保持常驻）
+ * + dogear-scheduler（定时任务管理六件，工作区且 scheduler 包生效且非任务执行会话，deferred 按需拉起；管理动作归主会话）
+ * + dogear-snapshot（工作区且 workspace-snapshot 包生效）
+ * + dogear-git（工作区且 workspace-git 包生效；装配侧探测 hasUserGitRepo 传入 resolveAbilities）
  * + dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
  */
 export function buildMainAgentToolDefs(
@@ -118,15 +145,18 @@ export function buildMainAgentToolDefs(
   skillEntries: SkillEntry[],
   activeAbilities: Set<string>,
   basePaths: string[],
+  env: ExecutionEnv,
 ): ToolDef[] {
-  const toolDefs: ToolDef[] = [
-    createSkillTool(skillEntries),
-    ...createSearchToolDefs(basePaths),
-  ];
+  const toolDefs: ToolDef[] = [...createSearchToolDefs(basePaths, env)];
 
   // 无工作区会话现状即注册 memory 工具，而 memory 包触发条件含 hasWorkspace，直接查包会吞掉该场景，需维持现状
   if (!config.workspacePath || activeAbilities.has('memory')) {
     toolDefs.push(...registerPack(toolPackMap, 'dogear-memory', createMemoryToolDefs(config.workspaceId)));
+  }
+
+  // 自定义 skill 管理四工具：随 skill-admin 包闸控制「是否可用」，deferred 转「按需拉起」（低频元能力，不占常驻工具面）
+  if (activeAbilities.has('skill-admin')) {
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-skill', deferToolDefs(createSkillToolDefs(config.workspaceId))));
   }
 
   for (const pack of OPTIONAL_TOOL_PACKS) {
@@ -137,30 +167,24 @@ export function buildMainAgentToolDefs(
     switch (pack.name) {
       case 'article':
         if (config.workspacePath) {
-          toolDefs.push(...registerPack(toolPackMap, pack.name, createArticleToolDefs(config.workspacePath)));
+          toolDefs.push(...registerPack(toolPackMap, pack.name, deferToolDefs(createArticleToolDefs(config.workspaceId, config.workspacePath))));
         }
         break;
-      case 'browser':
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createBrowserToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath, workspaceId: config.workspaceId })));
-        break;
       case 'stock-quote':
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createStockToolDefs()));
+        toolDefs.push(...registerPack(toolPackMap, pack.name, deferToolDefs(createStockToolDefs())));
         break;
       case 'stock-analysis':
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createStockAnalysisToolDefs()));
+        toolDefs.push(...registerPack(toolPackMap, pack.name, deferToolDefs(createStockAnalysisToolDefs())));
         break;
       case 'stock-announcement':
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createAnnouncementToolDefs()));
+        toolDefs.push(...registerPack(toolPackMap, pack.name, deferToolDefs(createAnnouncementToolDefs())));
         break;
       case 'stock-picking':
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createStockPickingToolDefs()));
+        toolDefs.push(...registerPack(toolPackMap, pack.name, deferToolDefs(createStockPickingToolDefs())));
         break;
-      case 'web-mcp': {
-        // hasBrowser 必须与实际挂载一致：browser 子开关残留时主会话不会真挂 browser 工具，只判总开关会复现死链
-        const hasBrowser = activeAbilities.has('browser') && config.enabledToolPacks.includes('browser');
-        toolDefs.push(...registerPack(toolPackMap, pack.name, createWebMcpToolDefs({ fallbackHint: hasBrowser ? 'browser-tools' : 'browser-subagent' })));
+      case 'web-mcp':
+        toolDefs.push(...registerPack(toolPackMap, pack.name, createWebMcpToolDefs({ fallbackHint: 'browser-subagent' })));
         break;
-      }
       default:
         break;
     }
@@ -168,19 +192,11 @@ export function buildMainAgentToolDefs(
 
   // extension：只看 browser-extension 包总闸，enabledToolPacks 残留 extension 静默忽略
   if (activeAbilities.has('browser-extension')) {
-    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
-  }
-
-  if (config.groupId && activeAbilities.has('group-context')) {
-    toolDefs.push(...registerPack(toolPackMap, 'dogear-group-context', createGroupContextToolDefs({
-      workspaceId: config.workspaceId,
-      groupId: config.groupId,
-      selfConversationId: config.conversationId,
-    })));
+    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspaceId: config.workspaceId })));
   }
 
   if (config.groupId && activeAbilities.has('agent-collab')) {
-    toolDefs.push(...registerPack(toolPackMap, 'dogear-group', createGroupToolDefs(config.workspaceId, config.groupId)));
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-group', createGroupToolDefs(config.workspaceId, config.groupId, config.conversationId)));
     const delegationOpts: DelegationToolsOpts = {
       role: 'main',
       workspaceId: config.workspaceId,
@@ -202,7 +218,13 @@ export function buildMainAgentToolDefs(
     })));
   }
 
-  // workspace-git 包生效即注册（主/子会话同条件，无 Profile 子开关）
+  // 两包生效即注册（主/子会话同条件，无 Profile 子开关）：快照安全网对任意绑定工作区生效，git 组还要路径下有 .git（探测在 pi-session 装配侧）
+  if (config.workspacePath && activeAbilities.has('workspace-snapshot')) {
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-snapshot', createSnapshotToolDefs({
+      workspaceId: config.workspaceId,
+      workspacePath: config.workspacePath,
+    })));
+  }
   if (config.workspacePath && activeAbilities.has('workspace-git')) {
     toolDefs.push(...registerPack(toolPackMap, 'dogear-git', createGitToolDefs({
       workspaceId: config.workspaceId,
@@ -210,18 +232,27 @@ export function buildMainAgentToolDefs(
     })));
   }
 
-  // dogear-tasks 归 notes 包，任务执行会话的申报工具（ReportTaskResult 所在组）派单保底注册；
-  // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
+  // dogear-tasks 归 notes 包：主会话 notes 场景六件转按需（低频不占常驻工具面）；executor 无人值守派单保底保持常驻（搜索一跳是纯风险）
   if (config.workspacePath && (activeAbilities.has('notes') || config.executor)) {
-    toolDefs.push(...registerPack(toolPackMap, 'dogear-tasks', createTaskToolDefs(config.workspacePath, {
+    const taskDefs = createTaskToolDefs(config.workspaceId, config.workspacePath, {
       workspaceId: config.workspaceId,
       conversationId: config.conversationId,
-    })));
+    });
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-tasks', config.executor ? taskDefs : deferToolDefs(taskDefs)));
   }
-  // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施；personal 临时工作区放行（只读话题工具辅助归置建议）
-  if (config.workspacePath || config.workspaceId === PERSONAL_WORKSPACE_ID) {
+  // 定时任务管理六件：executor 不挂（无人值守无管理场景），deferred 按需拉起
+  if (config.workspacePath && !config.executor && activeAbilities.has('scheduler')) {
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-scheduler', deferToolDefs(createSchedulerToolDefs(config.workspaceId))));
+  }
+
+  // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
+  if (config.workspacePath) {
     toolDefs.push(...registerPack(toolPackMap, 'dogear-history', createHistorySearchToolDefs(config.workspaceId)));
   }
+
+  // Skill 工具最后装配：联动映射依赖装配完的全量 toolPackMap 与 deferred 状态
+  const deferredToolNames = new Set(toolDefs.filter((d) => d.deferred).map((d) => d.name));
+  toolDefs.unshift(createSkillTool(skillEntries, buildSkillLinkedTools(skillEntries, toolPackMap, deferredToolNames)));
 
   return toolDefs;
 }
@@ -231,13 +262,14 @@ export function buildMainAgentToolDefs(
  * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
  * - Skill 工具：有 ≥1 skill 勾选时创建
  * - dogear-memory：memory 包生效（含 Profile 的 memory===true 子开关，由 resolveAbilities 并集）
- * - stock/article/browser/browser-extension 工具包：对应能力包生效（Profile 子开关并入包解析）
+ * - dogear-skill（自定义 skill 管理）：元能力（主会话随 skill-admin 包闸，子会话 Profile 独立体系不查包），两侧均 deferred 按需拉起
+ * - stock/article/browser-extension 工具包：对应能力包生效（Profile 子开关并入包解析）
  * - extension 工具组：browser-extension 包生效且 Profile extension===true 双闸
  * - web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
  * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 子开关——通用检索是基础设施）
+ * - dogear-snapshot：workspace-snapshot 包生效即注册（无 Profile 子开关，任意绑定工作区）
  * - dogear-git：workspace-git 包生效即注册（无 Profile 子开关，子会话查历史/落提交与主会话同能力）
  * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
- * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 子开关）
  * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 子开关）
  */
 export function buildSubAgentToolDefs(
@@ -247,12 +279,13 @@ export function buildSubAgentToolDefs(
   skillEntries: SkillEntry[],
   activeAbilities: Set<string>,
   basePaths: string[],
+  env: ExecutionEnv,
 ): ToolDef[] {
   const ab = profile.enabledAbilities;
   const toolDefs: ToolDef[] = [];
 
   // Grep/Glob：始终创建（基础工具，activeToolNames 控制可见性）
-  toolDefs.push(...createSearchToolDefs(basePaths));
+  toolDefs.push(...createSearchToolDefs(basePaths, env));
 
   // Skill 工具：有 ≥1 skill 勾选时创建
   if (skillEntries.length > 0) {
@@ -264,6 +297,9 @@ export function buildSubAgentToolDefs(
     toolDefs.push(...registerPack(toolPackMap, 'dogear-memory', createMemoryToolDefs(config.workspaceId)));
   }
 
+  // 自定义 skill 管理四工具：元能力常驻（Profile 独立体系不查包），deferred 转「按需拉起」
+  toolDefs.push(...registerPack(toolPackMap, 'dogear-skill', deferToolDefs(createSkillToolDefs(config.workspaceId))));
+
   // stock 工具包：stock 包生效
   if (activeAbilities.has('stock')) {
     toolDefs.push(...registerPack(toolPackMap, 'stock-quote', createStockToolDefs()));
@@ -274,22 +310,19 @@ export function buildSubAgentToolDefs(
 
   // article 工具包：article 包生效
   if (activeAbilities.has('article') && config.workspacePath) {
-    toolDefs.push(...registerPack(toolPackMap, 'article', createArticleToolDefs(config.workspacePath)));
-  }
-
-  // browser 工具包：browser 包生效（Profile 级独立生效，不受 enabledToolPacks 约束）
-  if (activeAbilities.has('browser')) {
-    toolDefs.push(...registerPack(toolPackMap, 'browser', createBrowserToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath, workspaceId: config.workspaceId })));
+    toolDefs.push(...registerPack(toolPackMap, 'article', createArticleToolDefs(config.workspaceId, config.workspacePath)));
+    // 自进化解析工具集：装配层直接拼装（不走 registerPack 也不进主会话工具面），子会话 autoExecute 已放行权限，路径由入参定位
+    toolDefs.push(...createArticleParseToolDefs());
   }
 
   // extension：双闸——browser-extension 包生效（Profile 子开关已并入 resolveAbilities）+ extension===true
   if (activeAbilities.has('browser-extension') && ab.extension === true) {
-    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
+    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspaceId: config.workspaceId })));
   }
 
   // web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
   if (activeAbilities.has('web-mcp')) {
-    toolDefs.push(...registerPack(toolPackMap, 'web-mcp', createWebMcpToolDefs({ fallbackHint: activeAbilities.has('browser') ? 'browser-tools' : 'none' })));
+    toolDefs.push(...registerPack(toolPackMap, 'web-mcp', createWebMcpToolDefs({ fallbackHint: 'none' })));
   }
 
   // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 子开关
@@ -297,7 +330,13 @@ export function buildSubAgentToolDefs(
     toolDefs.push(...registerPack(toolPackMap, 'dogear-history', createHistorySearchToolDefs(config.workspaceId)));
   }
 
-  // dogear-git：workspace-git 包生效即注册（无 Profile 子开关，与 agent-collab 同模式：子会话查历史/落提交是基础设施能力）
+  // dogear-snapshot / dogear-git：两包生效即注册（无 Profile 子开关，与主会话同条件；探测同链路）
+  if (config.workspacePath && activeAbilities.has('workspace-snapshot')) {
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-snapshot', createSnapshotToolDefs({
+      workspaceId: config.workspaceId,
+      workspacePath: config.workspacePath,
+    })));
+  }
   if (config.workspacePath && activeAbilities.has('workspace-git')) {
     toolDefs.push(...registerPack(toolPackMap, 'dogear-git', createGitToolDefs({
       workspaceId: config.workspaceId,
@@ -305,9 +344,9 @@ export function buildSubAgentToolDefs(
     })));
   }
 
-  // dogear-group / dogear-delegation / dogear-group-context / dogear-sibling
+  // dogear-group / dogear-delegation / dogear-sibling
   if (config.groupId) {
-    toolDefs.push(...registerPack(toolPackMap, 'dogear-group', createGroupToolDefs(config.workspaceId, config.groupId)));
+    toolDefs.push(...registerPack(toolPackMap, 'dogear-group', createGroupToolDefs(config.workspaceId, config.groupId, config.conversationId)));
 
     // dogear-delegation：始终注册（固定）
     const delegationOpts: DelegationToolsOpts = {
@@ -319,22 +358,12 @@ export function buildSubAgentToolDefs(
     };
     toolDefs.push(...registerPack(toolPackMap, 'dogear-delegation', createDelegationToolDefs(delegationOpts)));
 
-    // dogear-group-context：随会话组包（reference 子开关已退役）
-    if (activeAbilities.has('group-context')) {
-      toolDefs.push(...registerPack(toolPackMap, 'dogear-group-context', createGroupContextToolDefs({
-        workspaceId: config.workspaceId,
-        groupId: config.groupId,
-        selfConversationId: config.conversationId,
-      })));
-    }
-
     // dogear-sibling：随协作包（子会话强制生效）
     if (activeAbilities.has('agent-collab')) {
       toolDefs.push(...registerPack(toolPackMap, 'dogear-sibling', createSiblingToolDefs({
         workspaceId: config.workspaceId,
         groupId: config.groupId,
         parentConversationId: config.parentConversationId,
-        selfConversationId: config.conversationId,
       })));
     }
   }

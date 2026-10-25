@@ -9,9 +9,8 @@
  * 保证同一条消息在"历史展示"和"组摘要引用"两条链路里 id 一致。
  */
 import fs from 'node:fs/promises';
-import type { MessageEntry, SessionTreeEntry } from '@earendil-works/pi-agent-core';
-import type { TextContent, UserMessage, AssistantMessage } from '@earendil-works/pi-ai';
-import { readSessionBranchEntries } from './session-history-reader.js';
+import type { TextContent, UserMessage, AssistantMessage, ToolCall, ToolResultMessage } from '@earendil-works/pi-ai';
+import { readSessionBranchEntries, type SessionBranchEntry } from './session-history-reader.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
 const SYS_TAG_RE = /<(system-reminder|command-name|command-message|command-args|local-command-stdout|user-prompt-submit-hook)>[\s\S]*?<\/\1>/g;
@@ -40,6 +39,39 @@ function toolSkeleton(name: string, input: any): string {
   return `[${name}]`;
 }
 
+export type TranscriptDetail = 'clean' | 'full';
+
+const FULL_RESULT_CLIP = 300;
+const FULL_OUTPUT_MAX = 60_000;
+
+function collectToolResults(entries: SessionBranchEntry[]): Map<string, ToolResultMessage> {
+  const map = new Map<string, ToolResultMessage>();
+  for (const entry of entries) {
+    if (entry.type !== 'message') continue;
+    const message = entry.message as { role: string };
+    if (message.role !== 'toolResult') continue;
+    const tr = message as unknown as ToolResultMessage;
+    map.set(tr.toolCallId, tr);
+  }
+  return map;
+}
+
+function fullToolCallLine(block: ToolCall, toolResults: Map<string, ToolResultMessage>): string {
+  const args = JSON.stringify(block.arguments) ?? '{}';
+  let line = `[${block.name} ${args}]`;
+  if (block.argumentsError) line += `\n→ [arguments 无效] ${block.argumentsError}`;
+  const result = toolResults.get(block.id);
+  if (result) {
+    const text = result.content
+      .filter((b): b is TextContent => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+    const clipped = text.length > FULL_RESULT_CLIP ? text.slice(0, FULL_RESULT_CLIP) + '…' : text;
+    line += `\n→ [result${result.isError ? ' · isError' : ''}] ${clipped}`;
+  }
+  return line;
+}
+
 function extractUserText(content: UserMessage['content']): string {
   if (typeof content === 'string') return content;
   return content
@@ -57,19 +89,21 @@ export interface CleanedMessage {
 
 /**
  * 纯函数：Harness branch entries → 去噪后消息数组，保留顺序。
- * 只处理 type='message' 的 user/assistant；toolResult 角色跳过（同旧行为，
- * toolSkeleton 只基于 toolCall.arguments 生成骨架，不含执行结果）；
- * compaction/model_change/label 等非消息 entry 也跳过。
+ * 只处理 type='message' 的 user/assistant；toolResult 角色不单独成条（切片/tail 计数在两种 detail 下一致）：
+ * detail='clean'（默认）时完全跳过，toolCall 用 toolSkeleton 生成骨架不含执行结果；
+ * detail='full' 时 toolCall 保留完整 arguments，并把 toolCallId 关联的 toolResult 文本（截 300 字/条）附在同一条 assistant 消息里。
+ * compaction/branch_summary/custom 等非消息 entry 也跳过。
  * Harness 没有 SDK CLI 的 isSidechain/isMeta 概念（子会话是独立 session 文件，不会内嵌到同一份 entries 里），
  * 因此不需要对应的过滤条件。
  */
-export function cleanMessagesFromEntries(entries: SessionTreeEntry[]): CleanedMessage[] {
+export function cleanMessagesFromEntries(entries: SessionBranchEntry[], detail: TranscriptDetail = 'clean'): CleanedMessage[] {
   const out: CleanedMessage[] = [];
+  const toolResults = detail === 'full' ? collectToolResults(entries) : null;
   for (const entry of entries) {
     if (entry.type !== 'message') continue;
-    const messageEntry = entry as MessageEntry;
-    const message = messageEntry.message as { role: string };
+    const message = entry.message as { role: string };
     if (message.role === 'toolResult') continue;
+    const timestamp = new Date(entry.timestamp).toISOString();
 
     if (message.role === 'user') {
       const um = message as unknown as UserMessage;
@@ -77,28 +111,30 @@ export function cleanMessagesFromEntries(entries: SessionTreeEntry[]): CleanedMe
       if (!stripped) continue;
       out.push({
         role: 'user',
-        timestamp: entry.timestamp,
-        uuid: messageEntry.id,
-        formatted: `## [user · ${entry.timestamp} · ${messageEntry.id}] ${stripped}`,
+        timestamp,
+        uuid: entry.id,
+        formatted: `## [user · ${timestamp} · ${entry.id}] ${stripped}`,
       });
       continue;
     }
 
     const am = message as unknown as AssistantMessage;
     const parts: string[] = [];
-    const skeletons: string[] = [];
+    const toolLines: string[] = [];
     for (const block of am.content) {
       if (block.type === 'text' && block.text?.trim()) parts.push(block.text.trim());
-      else if (block.type === 'toolCall') skeletons.push(toolSkeleton(block.name, block.arguments));
+      else if (block.type === 'toolCall') {
+        toolLines.push(toolResults ? fullToolCallLine(block, toolResults) : toolSkeleton(block.name, block.arguments));
+      }
     }
-    if (!parts.length && !skeletons.length) continue;
+    if (!parts.length && !toolLines.length) continue;
     const head = parts.join('\n');
     out.push({
       role: 'assistant',
-      timestamp: entry.timestamp,
-      uuid: messageEntry.id,
-      formatted: `## [assistant · ${entry.timestamp} · ${messageEntry.id}] ${head}` +
-        (skeletons.length ? '\n' + skeletons.join('\n') : ''),
+      timestamp,
+      uuid: entry.id,
+      formatted: `## [assistant · ${timestamp} · ${entry.id}] ${head}` +
+        (toolLines.length ? '\n' + toolLines.join('\n') : ''),
     });
   }
   return out;
@@ -115,6 +151,8 @@ export interface ReadCleanTranscriptOptions {
   uuid?: string;
   /** uuid 模式下的前后 context 条数，默认 5 */
   uuidContext?: number;
+  /** 输出保真度：clean 只含文本与工具骨架（默认）；full 保留完整工具参数与结果摘要 */
+  detail?: TranscriptDetail;
 }
 
 export type ReadCleanTranscriptResult =
@@ -141,7 +179,7 @@ export async function readCleanTranscript(
   sessionId: string,
   options?: ReadCleanTranscriptOptions,
 ): Promise<ReadCleanTranscriptResult> {
-  let entries: SessionTreeEntry[];
+  let entries: SessionBranchEntry[];
   let originalBytes = 0;
   let sourceMtime = 0;
   try {
@@ -155,7 +193,7 @@ export async function readCleanTranscript(
     return { ok: false, error: `会话不存在或读取失败: ${sessionId}（${err instanceof Error ? err.message : String(err)}）` };
   }
 
-  const messages = cleanMessagesFromEntries(entries);
+  const messages = cleanMessagesFromEntries(entries, options?.detail);
   const totalCount = messages.length;
 
   let sliced: CleanedMessage[];
@@ -177,7 +215,11 @@ export async function readCleanTranscript(
     sliced = messages;
   }
 
-  const text = sliced.map((m) => m.formatted).join('\n\n');
+  const fullText = sliced.map((m) => m.formatted).join('\n\n');
+  let text = fullText;
+  if (options?.detail === 'full' && fullText.length > FULL_OUTPUT_MAX) {
+    text = fullText.slice(0, FULL_OUTPUT_MAX) + '\n\n[full 输出超过 60K 字符已截断；可用 rangeStart/rangeEnd 或 tail 按消息分段读取]';
+  }
   return {
     ok: true,
     text,
@@ -186,6 +228,6 @@ export async function readCleanTranscript(
     lastTimestamp: messages.length ? (messages[messages.length - 1].timestamp || '') : '',
     originalBytes,
     sourceMtime,
-    ratio: text.length ? originalBytes / text.length : 0,
+    ratio: fullText.length ? originalBytes / fullText.length : 0,
   };
 }

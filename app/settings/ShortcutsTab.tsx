@@ -1,5 +1,10 @@
 import { useMemo } from 'react';
 import { listHotkeys } from '@/lib/hotkey-registry';
+import type { SettingsSearchEntry } from './search-index';
+
+export const SHORTCUTS_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '快捷键清单', description: '应用内置快捷键一览，只读，随对应组件挂载生效' },
+];
 
 export function ShortcutsTab() {
   const groups = useMemo(() => {

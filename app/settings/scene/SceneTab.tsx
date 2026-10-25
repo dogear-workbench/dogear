@@ -5,9 +5,7 @@ import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { showConfirm } from '@/stores/confirm-store';
-import { useUIStore } from '@/stores/ui-store';
-import { useSessionStore } from '@/stores/session-store';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
+import { TASKS_TAB_ID, useSessionStore } from '@/stores/session-store';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView } from '../../../electron/main/tipc/ability';
 import type {
@@ -30,6 +28,17 @@ import {
 import { CATEGORY_FALLBACK } from '../ability/pack-meta';
 import { SceneAbilityRow } from './SceneAbilityRow';
 import { ScenePromptsPanel } from './ScenePromptsPanel';
+import type { SettingsSearchEntry } from '../search-index';
+
+export const SCENE_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '场景能力总览', description: '控制每种会话加载哪些能力，全部能力启停唯一入口' },
+  { label: '主会话能力', description: '主会话加载的能力包开关', keywords: ['主会话'] },
+  { label: '子会话能力', description: '子会话派遣加载的能力包开关', keywords: ['派遣'] },
+  { label: '任务执行会话能力', description: '协作任务执行会话的能力包开关' },
+  { label: '定时任务能力', description: '定时任务运行会话的基础能力开关', keywords: ['scheduler'] },
+  { label: '文章解析', description: '文章导入解析任务的固定提示词查看' },
+  { label: '执行提示词模板', description: '任务执行会话的通用执行提示词' },
+];
 
 type OverviewResult = Exclude<Awaited<ReturnType<typeof client.getSceneOverview>>, { error: string }>;
 
@@ -38,7 +47,7 @@ function statusBadge(cell: ScenePackCell): string | null {
   return cell.state === 'switchable' && cell.enabled && !cell.loaded ? '没装上' : null;
 }
 
-/** matrix 行 id → sceneOverrides 场景键；main/personal 走各自 config 真源，不在此列 */
+/** matrix 行 id → sceneOverrides 场景键；main 走 config 真源，不在此列 */
 const SCENE_OVERRIDE_BY_ROW: Partial<Record<SceneOverviewId, SceneOverrideKey>> = {
   sub: 'sub',
   executor: 'executor',
@@ -50,24 +59,21 @@ interface SceneTabProps {
 }
 
 export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
-  const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
-  const closeSettings = useUIStore((s) => s.closeSettings);
+  const switchTab = useSessionStore((s) => s.switchTab);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [overview, setOverview] = useState<OverviewResult | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [wsConfig, setWsConfig] = useState<WorkspaceConfig>(EMPTY_CONFIG);
-  const [personalConfig, setPersonalConfig] = useState<WorkspaceConfig>(EMPTY_CONFIG);
   const [packs, setPacks] = useState<AbilityPackView[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState<SceneOverviewId>('main');
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
 
   const loadScene = useCallback(async (wsId: string) => {
-    const [ovRes, cfgRes, pcRes] = await Promise.all([
+    const [ovRes, cfgRes] = await Promise.all([
       client.getSceneOverview({ workspaceId: wsId }),
       client.getWorkspaceConfig({ workspaceId: wsId }),
-      client.getWorkspaceConfig({ workspaceId: PERSONAL_WORKSPACE_ID }),
     ]);
     if ('rows' in ovRes) {
       setOverview(ovRes);
@@ -77,7 +83,6 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
       setOverviewError(ovRes.error);
     }
     if (cfgRes && 'config' in cfgRes) setWsConfig(cfgRes.config ?? EMPTY_CONFIG);
-    if (pcRes && 'config' in pcRes) setPersonalConfig(pcRes.config ?? EMPTY_CONFIG);
   }, []);
 
   useEffect(() => {
@@ -107,7 +112,7 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
     };
   }, [loadScene]);
 
-  // 写回成功/失败都重拉真源：overview 反映装配结果，config 消除 personal 空数组回落（['web-mcp']）造成的本地漂移
+  // 写回成功/失败都重拉真源：overview 反映装配结果，config 消除本地漂移
   const reloadAfterWrite = useCallback(async () => {
     if (!workspaceId) return;
     await loadScene(workspaceId);
@@ -122,27 +127,6 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
         onSaved: () => void reloadAfterWrite(),
       }),
     [workspaceId, reloadAfterWrite],
-  );
-
-  const personalPersister = useMemo(
-    () =>
-      createConfigPersister({
-        workspaceId: PERSONAL_WORKSPACE_ID,
-        applyLocal: (patch) => setPersonalConfig((prev) => ({ ...prev, ...patch })),
-        rollback: () => void reloadAfterWrite(),
-        onSaved: () => void reloadAfterWrite(),
-      }),
-    [reloadAfterWrite],
-  );
-
-  const persisterOf = useCallback(
-    (rowId: SceneOverviewId) => (rowId === 'personal' ? personalPersister : wsPersister),
-    [personalPersister, wsPersister],
-  );
-
-  const configOf = useCallback(
-    (rowId: SceneOverviewId) => (rowId === 'personal' ? personalConfig : wsConfig),
-    [personalConfig, wsConfig],
   );
 
   const linksByKey = useMemo(() => {
@@ -173,27 +157,21 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
       await wsPersister(applyScenePackToggle(wsConfig, scene, cell.key, enable));
       return;
     }
-    await persisterOf(row.id)(applyPackToggle(configOf(row.id), cell.key, linksByKey.get(cell.key), enable));
+    await wsPersister(applyPackToggle(wsConfig, cell.key, linksByKey.get(cell.key), enable));
   };
 
   const handleSkillToggle = async (row: SceneOverviewRow, name: string, enable: boolean) => {
-    await persisterOf(row.id)(applySkillToggles(configOf(row.id), skillToPacks, [name], enable));
+    await wsPersister(applySkillToggles(wsConfig, skillToPacks, [name], enable));
   };
 
-  const goToScheduler = () => {
-    openDataCenterTab();
-    closeSettings();
+  const goToTasksPanel = () => {
+    switchTab(TASKS_TAB_ID);
   };
 
   const handleReset = async (row: SceneOverviewRow) => {
     if (row.id === 'main') {
       const ok = await showConfirm('恢复默认', `清空${row.label}行的全部手动开关，回到各包默认值。`);
       if (ok) await wsPersister({ abilityOverrides: {} });
-      return;
-    }
-    if (row.id === 'personal') {
-      const ok = await showConfirm('恢复默认', `清空${row.label}的全部开关，回到最小能力集（只开联网搜索）。`);
-      if (ok) await personalPersister({ enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} });
       return;
     }
     const scene = SCENE_OVERRIDE_BY_ROW[row.id];
@@ -220,7 +198,9 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
         skillReady={packs.length > 0}
         expanded={expandedKeys.has(expandKey)}
         onToggleExpanded={() => toggleExpanded(expandKey)}
-        onPackToggle={(enable) => void handlePackToggle(row, cell, enable)}
+        onPackToggle={(enable) =>
+          cell.skillName ? void handleSkillToggle(row, cell.skillName, enable) : void handlePackToggle(row, cell, enable)
+        }
         onSkillToggle={(name, enable) => void handleSkillToggle(row, name, enable)}
       />
     );
@@ -303,9 +283,17 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
                     <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{selectedRow.description}</p>
                   </div>
                   {selectedRow.kind === 'matrix' && (
-                    <Button variant="outline" size="sm" className="shrink-0" onClick={() => void handleReset(selectedRow)}>
-                      恢复默认
-                    </Button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {(selectedRow.id === 'executor' || selectedRow.id === 'scheduler-custom') && (
+                        <Button variant="outline" size="sm" onClick={goToTasksPanel}>
+                          前往任务面板
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => void handleReset(selectedRow)}>
+                        恢复默认
+                      </Button>
+                    </div>
                   )}
                 </div>
 
@@ -319,15 +307,15 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
                       {categories.map((cat) => {
                         const cells = selectedRow.packs.filter((p) => p.category === cat.key);
                         const groupNote = selectedRow.groupNotes?.[cat.key];
-                        if (cells.length === 0 && !groupNote) return null;
+                        // 动态 skill 行只落 main，空态提示不进 sub/executor 行
+                        const emptyCustomSkills =
+                          cat.key === 'custom-skills' &&
+                          cells.length === 0 &&
+                          selectedRow.id === 'main';
+                        if (cells.length === 0 && !groupNote && !emptyCustomSkills) return null;
                         return (
                           <section key={cat.key} className="space-y-2">
-                            <div>
-                              <h4 className="text-sm font-semibold">{cat.label}</h4>
-                              {cat.description && (
-                                <p className="text-xs text-muted-foreground mt-0.5">{cat.description}</p>
-                              )}
-                            </div>
+                            <h4 className="text-sm font-semibold">{cat.label}</h4>
                             {groupNote && (
                               <p className="text-xs text-muted-foreground leading-relaxed rounded-md border bg-muted/20 px-3 py-2 flex items-center gap-1 flex-wrap">
                                 {groupNote}
@@ -341,20 +329,15 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
                                     <ArrowRight className="w-3 h-3" />
                                   </button>
                                 )}
-                                {selectedRow.id === 'scheduler-custom' && (
-                                  <button
-                                    type="button"
-                                    onClick={goToScheduler}
-                                    className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                                  >
-                                    前往定时计划
-                                    <ArrowRight className="w-3 h-3" />
-                                  </button>
-                                )}
                               </p>
                             )}
                             {cells.length > 0 && (
                               <div className="space-y-1.5">{cells.map((cell) => renderRow(selectedRow, cell))}</div>
+                            )}
+                            {emptyCustomSkills && (
+                              <p className="text-xs text-muted-foreground leading-relaxed rounded-md border border-dashed px-3 py-2">
+                                暂无自定义 skill，可在能力页导入或让 AI 制作
+                              </p>
                             )}
                           </section>
                         );

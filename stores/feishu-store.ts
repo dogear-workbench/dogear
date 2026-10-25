@@ -1,29 +1,16 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import type { FeishuConnectionState, FeishuTestResult } from '@/types/feishu';
-
-export interface FeishuBotStatus {
-  status: {
-    workspaceId: string | null;
-    workspaceName: string | null;
-    conversationId: string | null;
-    conversationTitle: string | null;
-    debugMode: boolean;
-  };
-  conversations: Array<{
-    index: number;
-    id: string;
-    title: string;
-    updatedAt: string;
-  }>;
-}
+import type { FeishuBotStatus, FeishuConnectionState, FeishuTestResult } from '@/types/feishu';
 
 interface FeishuConfigInfo {
   configured: boolean;
   appId?: string;
   botName?: string;
   connectedAt?: string;
+  userOpenId?: string;
+  topicChatId?: string;
+  notifyPush?: boolean;
 }
 
 interface FeishuActionResult {
@@ -37,16 +24,21 @@ interface FeishuState {
   connectionState: FeishuConnectionState;
   connectionError: string | null;
   botStatus: FeishuBotStatus | null;
+  topicChatId: string | null;
+  notifyPush: boolean;
 
   initialize: () => Promise<void>;
   loadConfig: () => Promise<void>;
   loadConnectionStatus: () => Promise<void>;
   loadBotStatus: () => Promise<void>;
+  refreshBotStatus: () => Promise<void>;
   testConnection: (appId: string, appSecret: string) => Promise<FeishuTestResult>;
   saveAndConnect: (appId: string, appSecret: string) => Promise<FeishuActionResult>;
   reconnect: () => Promise<FeishuActionResult>;
   disconnect: () => Promise<void>;
-  botUseConversation: (index: number) => Promise<FeishuActionResult>;
+  createTopicChat: () => Promise<FeishuActionResult>;
+  resetTopicChat: () => Promise<FeishuActionResult>;
+  setNotifyPush: (enabled: boolean) => Promise<FeishuActionResult>;
   resetConfig: () => Promise<void>;
 }
 
@@ -56,6 +48,8 @@ export const useFeishuStore = create<FeishuState>((set, get) => ({
   connectionState: 'disconnected',
   connectionError: null,
   botStatus: null,
+  topicChatId: null,
+  notifyPush: true,
 
   initialize: async () => {
     await Promise.all([
@@ -71,7 +65,12 @@ export const useFeishuStore = create<FeishuState>((set, get) => ({
       if ('error' in res && res.error) return;
       if ('data' in res) {
         const cfg = res.data as FeishuConfigInfo;
-        set({ configExists: !!cfg.configured, botName: cfg.botName || null });
+        set({
+          configExists: !!cfg.configured,
+          botName: cfg.botName || null,
+          topicChatId: cfg.topicChatId || null,
+          notifyPush: cfg.notifyPush !== false,
+        });
       }
     } catch { /* 忽略 */ }
   },
@@ -97,6 +96,8 @@ export const useFeishuStore = create<FeishuState>((set, get) => ({
       set({ botStatus: data });
     } catch { /* 忽略 */ }
   },
+
+  refreshBotStatus: () => get().loadBotStatus(),
 
   testConnection: async (appId, appSecret) => {
     try {
@@ -161,19 +162,48 @@ export const useFeishuStore = create<FeishuState>((set, get) => ({
         connectionState: 'disconnected',
         connectionError: null,
         botStatus: null,
+        topicChatId: null,
       });
     } catch (error) {
       toast.error('断开失败', { description: String(error) });
     }
   },
 
-  botUseConversation: async (index) => {
+  createTopicChat: async () => {
     try {
-      const result = await client['feishu:botUseConversation']({ index });
-      if (result.success) {
-        await get().loadBotStatus();
+      const res = await client['feishu:createTopicChat'](undefined);
+      if ('error' in res && res.error) {
+        return { success: false, error: res.error };
       }
-      return result;
+      await get().loadConfig();
+      void get().refreshBotStatus();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  },
+
+  resetTopicChat: async () => {
+    try {
+      const res = await client['feishu:resetTopicChat'](undefined);
+      if ('error' in res && res.error) {
+        return { success: false, error: res.error };
+      }
+      void get().refreshBotStatus();
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  },
+
+  setNotifyPush: async (enabled) => {
+    try {
+      const res = await client['feishu:setNotifyPush']({ enabled });
+      if ('error' in res && res.error) {
+        return { success: false, error: res.error };
+      }
+      set({ notifyPush: enabled });
+      return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -193,6 +223,7 @@ export const useFeishuStore = create<FeishuState>((set, get) => ({
         connectionState: 'disconnected',
         connectionError: null,
         botStatus: null,
+        topicChatId: null,
       });
     } catch (error) {
       toast.error('清除凭证失败', { description: String(error) });

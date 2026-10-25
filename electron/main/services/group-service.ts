@@ -18,6 +18,16 @@ function getGroupsPath(workspaceId: string): string {
   return path.join(getConfigDir(), 'workspaces', workspaceId, 'groups.json');
 }
 
+/** 工作区所有组共用的父目录：<wsData>/groups/ */
+export function getGroupsRootDir(workspaceId: string): string {
+  return path.join(getConfigDir(), 'workspaces', workspaceId, 'groups');
+}
+
+/** 单个组的目录：<wsData>/groups/<groupId>/ */
+export function getGroupDir(workspaceId: string, groupId: string): string {
+  return path.join(getGroupsRootDir(workspaceId), groupId);
+}
+
 interface GroupsFile {
   version: number;
   groups: Group[];
@@ -35,13 +45,13 @@ function normalizeGroup(value: unknown): Group | null {
     updatedAt: raw.updatedAt,
   };
   if (typeof raw.title === 'string') group.title = raw.title;
-  if (typeof raw.autoTitle === 'boolean') group.autoTitle = raw.autoTitle;
   if (typeof raw.lastBackgroundActivityAt === 'number' && Number.isFinite(raw.lastBackgroundActivityAt)) {
     group.lastBackgroundActivityAt = raw.lastBackgroundActivityAt;
   }
   if (typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt)) {
     group.archivedAt = raw.archivedAt;
   }
+  if (raw.hidden === true) group.hidden = true;
   return group;
 }
 
@@ -78,14 +88,21 @@ export async function listActiveGroups(workspaceId: string): Promise<Group[]> {
 }
 
 export async function listArchivedGroups(workspaceId: string): Promise<Group[]> {
+  // hidden 承载组不参与归档生命周期：不显示也不被批量清理；豁免自动归档只防未来，这里兼顾存量（旧版无豁免）
   return (await listGroups(workspaceId))
-    .filter((group) => group.archivedAt !== undefined)
+    .filter((group) => group.archivedAt !== undefined && group.hidden !== true)
     .sort((a, b) => b.archivedAt! - a.archivedAt!);
 }
 
 export async function getGroup(workspaceId: string, groupId: string): Promise<Group | null> {
   const file = await loadGroups(workspaceId);
   return file.groups.find((group) => group.id === groupId) ?? null;
+}
+
+export async function getGroupByTitle(workspaceId: string, title: string): Promise<Group | null> {
+  const file = await loadGroups(workspaceId);
+  // 只复用未归档同名话题：conversationService.create 走 requireActiveGroup，归档话题挂新对话会抛错；hidden 承载话题不对用户分流开放
+  return file.groups.find((group) => group.title === title && group.archivedAt === undefined && group.hidden !== true) ?? null;
 }
 
 export async function requireActiveGroup(workspaceId: string, groupId: string): Promise<Group> {
@@ -95,12 +112,39 @@ export async function requireActiveGroup(workspaceId: string, groupId: string): 
   return group;
 }
 
+function localMinuteTitle(now: number): string {
+  const d = new Date(now);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 export async function createGroup(workspaceId: string, init?: { title?: string }): Promise<Group> {
   const file = await loadGroups(workspaceId);
   const now = Date.now();
   const group: Group = {
     id: `group_${uuidv4()}`,
-    title: init?.title,
+    title: init?.title?.trim() || localMinuteTitle(now),
+    createdAt: now,
+    updatedAt: now,
+  };
+  file.groups.push(group);
+  await saveGroups(workspaceId, file);
+  broadcastConversationListChanged(workspaceId);
+  return group;
+}
+
+/** 按标题取或建承载话题（hidden=true，活跃态）：任务执行/定时运行会话的落点，已存在则复用 */
+export async function getOrCreateHiddenGroup(workspaceId: string, title: string): Promise<Group> {
+  const file = await loadGroups(workspaceId);
+  const existing = file.groups.find(
+    (group) => group.hidden === true && group.title === title && group.archivedAt === undefined,
+  );
+  if (existing) return existing;
+  const now = Date.now();
+  const group: Group = {
+    id: `group_${uuidv4()}`,
+    title,
+    hidden: true,
     createdAt: now,
     updatedAt: now,
   };
@@ -113,17 +157,13 @@ export async function createGroup(workspaceId: string, init?: { title?: string }
 export async function updateGroup(
   workspaceId: string,
   groupId: string,
-  patch: Partial<Pick<Group, 'title' | 'autoTitle'>>,
+  patch: Partial<Pick<Group, 'title'>>,
 ): Promise<Group> {
   const file = await loadGroups(workspaceId);
   const group = file.groups.find((item) => item.id === groupId);
   if (!group) throw new Error(`Group not found: ${groupId}`);
 
   if (patch.title !== undefined) group.title = patch.title;
-  if (patch.autoTitle !== undefined) {
-    if (patch.autoTitle) group.autoTitle = true;
-    else delete group.autoTitle;
-  }
 
   await saveGroups(workspaceId, file);
   broadcastConversationListChanged(workspaceId);

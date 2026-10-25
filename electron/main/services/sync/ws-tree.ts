@@ -3,8 +3,12 @@
  * 子树规模统计（提醒误勾巨型目录）+ .git 检测（git 区提示）。
  * 读盘严格限在工作区根内（防渲染层构造穿越路径读盘），与 manifest 层 isCleanRelSegs 同规则。
  */
+import { execFile } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { promisify } from 'node:util';
+
+const execFileP = promisify(execFile);
 
 export interface SyncTreeNode {
   name: string;
@@ -15,10 +19,21 @@ export interface SyncTreeNode {
   size?: number;
 }
 
+/**
+ * git 归类全集（根请求一次性拉取，随根响应返回）：managed 与 ignored 互斥且合起来覆盖工作区全部文件。
+ * managed = tracked + untracked 未 ignore（git 会管的）；ignored = 未跟踪且被忽略（git 不管，目录已折叠）
+ */
+export interface SyncGitClassify {
+  managed: string[];
+  ignored: string[];
+}
+
 export interface SyncDirListing {
   /** 工作区根下存在 .git（目录或 worktree 指针文件） */
   hasGit: boolean;
   entries: SyncTreeNode[];
+  /** 仅根请求且归类全集可用时返回；缺失 = 不分组（非 git / git 命令失败 / 超上限） */
+  git?: SyncGitClassify;
 }
 
 export interface SyncDirStats {
@@ -31,7 +46,11 @@ export interface SyncDirStats {
 /** 子树规模统计的文件数上限：超过即截断，避免对 node_modules 类目录全量遍历 */
 const MAX_STAT_FILES = 20_000;
 
-/** 树中不展示的顶层名：.git 有专属提示组；.dogear 是应用数据区（走同步项开关）；其余 dotfile 非用户文件 */
+/** 归类全集条目上限：超大仓库放弃分组（UI 退化为单列表），防巨量路径序列化拖垮 IPC */
+const MAX_GIT_CLASSIFY_ENTRIES = 100_000;
+const GIT_CLASSIFY_TIMEOUT_MS = 15_000;
+
+/** 树中不展示的顶层名：.git 有专属提示组；.dogear 是应用旧数据区（非用户文件）；其余 dotfile 非用户文件 */
 const TREE_SKIP_NAMES = new Set(['.git', '.dogear']);
 
 /**
@@ -48,7 +67,38 @@ function resolveWithinWorkspace(workspacePath: string, relPath: string): string 
 export async function listWorkspaceDirForSync(workspacePath: string, relPath: string): Promise<SyncDirListing> {
   const absDir = resolveWithinWorkspace(workspacePath, relPath);
   const [hasGit, entries] = await Promise.all([hasGitDir(workspacePath), listDir(absDir, relPath)]);
-  return { hasGit, entries };
+  if (relPath !== '' || !hasGit) return { hasGit, entries };
+  const git = await loadGitClassify(workspacePath);
+  return git ? { hasGit, entries, git } : { hasGit, entries };
+}
+
+/**
+ * 根请求时在工作区根一次拉取 git 归类全集；任何失败（未装 git / 超时 / 输出超限）都静默退化为不分组。
+ * 两条 ls-files 互补互斥：--cached --others --exclude-standard = 会管的文件级全集；
+ * --others --ignored --exclude-standard --directory = 被忽略的条目（整目录忽略时折叠为一条，尾斜杠归一化去掉）
+ */
+async function loadGitClassify(workspacePath: string): Promise<SyncGitClassify | undefined> {
+  try {
+    const [managed, ignoredRaw] = await Promise.all([
+      runGitLsFiles(workspacePath, ['--cached', '--others', '--exclude-standard']),
+      runGitLsFiles(workspacePath, ['--others', '--ignored', '--exclude-standard', '--directory']),
+    ]);
+    const ignored = ignoredRaw.map((p) => (p.endsWith('/') ? p.slice(0, -1) : p)).filter((p) => p !== '');
+    if (managed.length + ignored.length > MAX_GIT_CLASSIFY_ENTRIES) return undefined;
+    return { managed, ignored };
+  } catch {
+    return undefined;
+  }
+}
+
+async function runGitLsFiles(cwd: string, args: string[]): Promise<string[]> {
+  const { stdout } = await execFileP('git', ['ls-files', '-z', ...args], {
+    cwd,
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: GIT_CLASSIFY_TIMEOUT_MS,
+    windowsHide: true,
+  });
+  return stdout.split('\0').filter(Boolean);
 }
 
 export async function statWorkspaceDirForSync(workspacePath: string, relPath: string): Promise<SyncDirStats> {

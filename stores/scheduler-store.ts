@@ -2,26 +2,16 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type {
-  RunHistoryEntry,
-  RunHistorySource,
   ScheduledTask,
   ScheduledTaskWithNextRun,
   SchedulerActivity,
 } from '@/types/scheduler';
-
-const HISTORY_PAGE_SIZE = 50;
 
 interface SchedulerStore {
   tasks: ScheduledTaskWithNextRun[];
   loading: boolean;
   loadingError: string | null;
   activity: SchedulerActivity | null;
-  history: RunHistoryEntry[];
-  historySource: RunHistorySource | undefined;
-  historyCursor: number | undefined;
-  historyLoading: boolean;
-  historyError: string | null;
-  loadingMore: boolean;
   loadTasks: () => Promise<void>;
   saveTask: (task: ScheduledTask) => Promise<boolean>;
   deleteTask: (taskId: string) => Promise<void>;
@@ -29,24 +19,14 @@ interface SchedulerStore {
   runTaskNow: (taskId: string) => Promise<void>;
   stopTask: (taskId: string) => Promise<void>;
   refreshActivity: () => Promise<void>;
-  loadHistory: (filter?: { source?: RunHistorySource }) => Promise<void>;
-  loadMoreHistory: () => Promise<void>;
   reset: () => void;
 }
-
-let historySeq = 0;
 
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   tasks: [],
   loading: false,
   loadingError: null,
   activity: null,
-  history: [],
-  historySource: undefined,
-  historyCursor: undefined,
-  historyLoading: false,
-  historyError: null,
-  loadingMore: false,
 
   loadTasks: async () => {
     set({ loading: true, loadingError: null });
@@ -147,68 +127,12 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     }
   },
 
-  loadHistory: async (filter) => {
-    const seq = ++historySeq;
-    set({
-      historyLoading: true,
-      historyError: null,
-      historySource: filter?.source,
-      historyCursor: undefined,
-      loadingMore: false,
-    });
-    try {
-      const r = await client.listRunHistory({ source: filter?.source, limit: HISTORY_PAGE_SIZE });
-      if (seq !== historySeq) return;
-      if ('error' in r) {
-        set({ historyLoading: false, historyError: r.error, history: [] });
-        return;
-      }
-      set({ history: r.entries, historyCursor: r.nextCursor, historyLoading: false });
-    } catch (e) {
-      if (seq !== historySeq) return;
-      set({ historyLoading: false, historyError: String(e), history: [] });
-    }
-  },
-
-  loadMoreHistory: async () => {
-    const { historyCursor, historySource, historyLoading, loadingMore } = get();
-    if (historyLoading || loadingMore || historyCursor === undefined) return;
-    set({ loadingMore: true });
-    try {
-      const r = await client.listRunHistory({
-        source: historySource,
-        cursor: historyCursor,
-        limit: HISTORY_PAGE_SIZE,
-      });
-      if ('error' in r) {
-        set({ loadingMore: false });
-        toast.error('加载更多历史失败', { description: r.error });
-        return;
-      }
-      set({
-        history: [...get().history, ...r.entries],
-        historyCursor: r.nextCursor,
-        loadingMore: false,
-      });
-    } catch (e) {
-      set({ loadingMore: false });
-      toast.error('加载更多历史失败', { description: String(e) });
-    }
-  },
-
   reset: () => {
-    historySeq++;
     set({
       tasks: [],
       loading: false,
       loadingError: null,
       activity: null,
-      history: [],
-      historySource: undefined,
-      historyCursor: undefined,
-      historyLoading: false,
-      historyError: null,
-      loadingMore: false,
     });
   },
 }));

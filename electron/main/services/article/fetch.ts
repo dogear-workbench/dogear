@@ -6,22 +6,25 @@ import path from 'path';
 
 /**
  * 根据 URL 检测平台名称，用于选择对应的 Python 平台脚本。
+ * 只认实际存在脚本的平台（当前仅 wechat，脚本缺失由 tryPlatformScript 前置检查兜底）；
+ * 新平台不在 TS 预登记，由 AI 兜底任务按 SKILL.md 流程自产脚本。
  * 返回 null 表示未识别的平台，走 Readability 兜底。
  */
 export function detectPlatform(url: string): string | null {
   try {
     const host = new URL(url).hostname;
     if (host === 'mp.weixin.qq.com') return 'wechat';
-    if (host.endsWith('.zhihu.com')) return 'zhihu';
-    if (host.endsWith('.juejin.cn') || host === 'juejin.cn') return 'juejin';
-    if (host.endsWith('.bilibili.com') || host === 'bilibili.com') return 'bilibili';
     return null;
   } catch {
     return null;
   }
 }
 
-/** fetch 失败的结构化错误：白名单分流只认 status / code 字段，不解析错误字符串 */
+/** 桌面端抓取统一 UA（搜索快档与文章抓取共用，避免多处漂移） */
+export const DESKTOP_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/** fetch 失败的结构化错误：status / code 字段供调用方归类与展示 */
 export class FetchError extends Error {
   readonly status?: number;
   readonly code?: string;
@@ -34,27 +37,6 @@ export class FetchError extends Error {
   }
 }
 
-/** 命中即可尝试浏览器层救活的 HTTP 状态（轻反爬挑战 / 限流） */
-const BROWSER_RETRY_HTTP_STATUS = new Set([403, 429, 503]);
-
-/** 命中即可尝试浏览器层救活的网络错误码（超时类 / 连接重置） */
-const BROWSER_RETRY_NET_CODES = new Set([
-  'ECONNRESET',
-  'ETIMEDOUT',
-  'ECONNABORTED',
-  'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_HEADERS_TIMEOUT',
-  'UND_ERR_BODY_TIMEOUT',
-]);
-
-/** 判断 fetch 失败是否应分流进浏览器层重试（只认 FetchError 结构化字段） */
-export function isBrowserRetryableFetchError(err: unknown): boolean {
-  if (!(err instanceof FetchError)) return false;
-  if (err.status !== undefined) return BROWSER_RETRY_HTTP_STATUS.has(err.status);
-  if (err.code !== undefined) return BROWSER_RETRY_NET_CODES.has(err.code);
-  return false;
-}
-
 function toFetchError(err: unknown): FetchError {
   const message = err instanceof Error ? err.message : String(err);
   const cause = (err as { cause?: { code?: string } }).cause;
@@ -63,17 +45,43 @@ function toFetchError(err: unknown): FetchError {
   });
 }
 
+/** 非网页资源错误码（FetchError.code），调用方据此给出精确文案 */
+export const NON_HTML_RESOURCE_CODE = 'NON_HTML_RESOURCE';
+
+const NON_HTML_EXTENSIONS = [
+  'js', 'mjs', 'css', 'json', 'map',
+  'png', 'jpg', 'jpeg', 'gif', 'svg', 'webp',
+  'woff', 'woff2', 'ttf', 'ico',
+  'zip', 'gz', 'mp4', 'mp3', 'pdf',
+];
+
+function hasNonHtmlExtension(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    const lastSegment = pathname.split('/').pop() ?? '';
+    const dot = lastSegment.lastIndexOf('.');
+    if (dot <= 0) return false;
+    return NON_HTML_EXTENSIONS.includes(lastSegment.slice(dot + 1).toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 /**
  * 仅抓取 URL 的原始 HTML，不做解析。
  * 供主流程在尝试平台脚本前预取，避免后续 Readability 重复抓取。
- * 失败抛 FetchError（HTTP 非 2xx 带 status，网络异常带 code）。
+ * 资源防线：扩展名黑名单直接拒绝；响应体不含 <html / <!doctype 判定非 HTML。
+ * 失败抛 FetchError（HTTP 非 2xx 带 status，网络异常带 code，非网页资源带 NON_HTML_RESOURCE_CODE）。
  */
 export async function fetchRawHtml(url: string): Promise<string> {
+  if (hasNonHtmlExtension(url)) {
+    throw new FetchError('非网页资源，不入库', { code: NON_HTML_RESOURCE_CODE });
+  }
   let response: Response;
   try {
     response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': DESKTOP_USER_AGENT,
       },
     });
   } catch (err) {
@@ -84,11 +92,18 @@ export async function fetchRawHtml(url: string): Promise<string> {
       status: response.status,
     });
   }
+  let text: string;
   try {
-    return await response.text();
+    text = await response.text();
   } catch (err) {
     throw toFetchError(err);
   }
+  const withoutBom = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const lower = withoutBom.toLowerCase();
+  if (!lower.includes('<html') && !lower.includes('<!doctype')) {
+    throw new FetchError('非网页资源，不入库', { code: NON_HTML_RESOURCE_CODE });
+  }
+  return text;
 }
 
 /** tryPlatformScript 的返回值类型 */

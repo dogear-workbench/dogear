@@ -8,7 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeJsonWrite, safeJsonRead } from '../safe-json.js';
 import type { MemoryIndex, MemoryScope, TopicIndexEntry } from './memory-types.js';
-import { getTopicsDir, readTopicFrontmatter, resolveIndexPath, resolveTopicsDir } from './memory-fs.js';
+import { readTopicFrontmatter, resolveIndexPath, resolveTopicsDir } from './memory-fs.js';
 
 const EMPTY_INDEX: MemoryIndex = {
   version: 1,
@@ -117,12 +117,15 @@ export async function rebuildIndex(
  * 一致性检查：索引声明的文件是否都存在；返回孤儿 slug 和 index 里缺失的 slug。
  * 只报告，不自动修复。
  */
-export async function checkConsistency(workspaceId: string): Promise<{
+export async function checkConsistency(
+  workspaceId: string,
+  scope: MemoryScope = 'workspace'
+): Promise<{
   orphansInIndex: string[];
   orphansOnDisk: string[];
 }> {
-  const index = await readIndex(workspaceId);
-  const topicsDir = getTopicsDir(workspaceId);
+  const index = await readIndex(workspaceId, scope);
+  const topicsDir = resolveTopicsDir(scope, workspaceId);
 
   let diskSlugs: string[] = [];
   try {

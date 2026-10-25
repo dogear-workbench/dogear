@@ -3,9 +3,9 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 
 export interface PackEntry {
-  /** zip 内条目路径（posix 相对，相对 configDir 或 __ws-external__ 虚拟前缀） */
+  /** zip 内条目路径（posix 相对，相对 configDir） */
   entryPath: string;
-  /** 磁盘真实读取路径（外部锚点已反解） */
+  /** 磁盘真实读取路径 */
   readPath: string;
   isDir: boolean;
 }

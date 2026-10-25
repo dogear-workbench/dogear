@@ -232,12 +232,6 @@ export async function collectWorkspaceMeta(dataDir: string): Promise<WorkspaceMe
     seen.add(ws.id);
     items.push({ wsid: ws.id, ...(typeof ws.name === 'string' && ws.name ? { name: ws.name } : {}) });
   }
-  // personal 为内存合成条目不注册进 workspaces.json，但 workspaces/personal/ 目录真实存在，
-  // 可能出现在对端待映射清单——补一条概要便于展示
-  if (!seen.has('personal')) {
-    items.push({ wsid: 'personal', name: '临时会话' });
-    seen.add('personal');
-  }
   await Promise.all(items.map(async (item) => {
     const file = await safeJsonRead<{ conversations?: Record<string, { updatedAt?: string; createdAt?: string }> } | null>(
       path.join(dataDir, 'workspaces', item.wsid, 'conversations.json'),

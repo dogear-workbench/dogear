@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useMemo, useEffect, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -6,8 +6,9 @@ import { useReferenceStore } from '@/stores/reference-store';
 import { useHandoffDraftStore } from '@/stores/handoff-draft-store';
 import { useSlashCommandStore } from '@/stores/slash-command-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
-import { useSessionStore } from '@/stores/session-store';
+import { useSessionStore, DRAFT_VIEW_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useDraftStore } from '@/stores/draft-store';
 import { sameSelection } from '@/lib/model-selection';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
@@ -15,6 +16,12 @@ import type { Message, ContentBlock } from '../types';
 import { generateLocalMessageId } from '../transformers';
 import type { UseTranscriptStateResult } from './useTranscriptState';
 import type { PendingImage } from './useImageAttachment';
+
+/** 自动发送载荷：草稿首条消息消费时绕过 input state 直接指定文本与图片 */
+export interface ManualSendPayload {
+  text: string;
+  images: PendingImage[];
+}
 
 interface UseSendMessageParams {
   sessionId: string | null;
@@ -45,9 +52,9 @@ export function useSendMessage(params: UseSendMessageParams) {
     getMessages,
     transcript,
     setIsLoading,
-    setPermissionMode: _setPermissionMode,
+    setPermissionMode,
     conversationId,
-    pendingImages,
+    pendingImages: pendingImagesProp,
     setPendingImages,
     currentSelection,
     readOnly,
@@ -65,7 +72,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     pendingActions,
   } = transcript;
 
-  const [input, setInput] = useState('');
+  const [inputState, setInput] = useState('');
   const [lastAppliedSelection, setLastAppliedSelection] = useState<ModelSelection | null>(null);
 
   // 从 conversation-store 获取 actions
@@ -74,12 +81,12 @@ export function useSendMessage(params: UseSendMessageParams) {
   const triggerSessionRestart = useConversationStore((s) => s.triggerSessionRestart);
 
   // 从 reference-store 获取引用数据和清理方法，只取/只清锚定本会话的项
-  const allReferencedArticles = useReferenceStore((s) => s.referencedArticles);
   const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
-  const clearReferencedArticlesFor = useReferenceStore((s) => s.clearReferencedArticlesFor);
   const clearQuotedSnippetsFor = useReferenceStore((s) => s.clearQuotedSnippetsFor);
   const allMessageSnippets = useReferenceStore((s) => s.messageSnippets);
   const clearMessageSnippetsFor = useReferenceStore((s) => s.clearMessageSnippetsFor);
+  const allFileSnippets = useReferenceStore((s) => s.fileSnippets);
+  const clearFileSnippetsFor = useReferenceStore((s) => s.clearFileSnippetsFor);
   const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
   const clearReferencedFilesFor = useReferenceStore((s) => s.clearReferencedFilesFor);
   const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
@@ -94,10 +101,6 @@ export function useSendMessage(params: UseSendMessageParams) {
     () => (conversationId ? allHandoffDrafts[conversationId] ?? [] : []),
     [allHandoffDrafts, conversationId]
   );
-  const referencedArticles = useMemo(
-    () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
-    [allReferencedArticles, conversationId]
-  );
   const quotedSnippets = useMemo(
     () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allQuotedSnippets, conversationId]
@@ -105,6 +108,10 @@ export function useSendMessage(params: UseSendMessageParams) {
   const messageSnippets = useMemo(
     () => allMessageSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allMessageSnippets, conversationId]
+  );
+  const fileSnippets = useMemo(
+    () => allFileSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allFileSnippets, conversationId]
   );
   const referencedFiles = useMemo(
     () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
@@ -199,8 +206,14 @@ export function useSendMessage(params: UseSendMessageParams) {
         } catch (e) {
           console.warn('关闭旧会话失败:', e);
         }
-        // 通过 store 触发新对话创建
-        useConversationStore.getState().newConversation();
+        // 清空后落草稿：语境沿用当前 tab 所属工作区（含 personal）
+        const wsId = (conversationId
+          ? useSessionStore.getState().getTab(conversationId)?.workspaceId
+          : undefined) ?? useWorkspaceStore.getState().workspace?.id;
+        if (wsId) {
+          useDraftStore.getState().enterDraft(wsId);
+          useSessionStore.getState().switchTab(DRAFT_VIEW_ID);
+        }
         return true;
       }
 
@@ -258,25 +271,27 @@ export function useSendMessage(params: UseSendMessageParams) {
         return false;
       }
     }
-  }, [sessionId, setInput, loadHistory, insertLocalBlock, pushLocalUser, pushLiveAssistant, setIsLoading]);
+  }, [sessionId, conversationId, setInput, loadHistory, insertLocalBlock, pushLocalUser, pushLiveAssistant, setIsLoading]);
 
-  // 发送消息
-  const handleSend = useCallback(async () => {
+  // 发送消息；override 供草稿首条消息自动发送（绕过 input state 与斜杠拦截，失败回填见 catch）
+  const handleSend = useCallback(async (override?: ManualSendPayload) => {
     if (readOnly) return;
+    const input = override ? override.text : inputState;
+    const pendingImages = override ? override.images : pendingImagesProp;
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
     if (!hasText && !hasImages && handoffDrafts.length === 0) return;
 
     if (!sessionId || !isSessionReady) return;
 
-    // 斜杠命令拦截
-    if (hasText && !hasImages && await handleSlashCommand(input)) {
+    // 斜杠命令拦截（override 已在草稿侧做过命令防护）
+    if (hasText && !hasImages && !override && await handleSlashCommand(input)) {
       return;
     }
 
     const userMessage = input;
     const imagesToSend = [...pendingImages];
-    setInput('');
+    if (!override) setInput('');
     setPendingImages([]);
 
     // 发送新消息时强制折叠 compact 历史段，让旧 DOM 立即卸载
@@ -290,16 +305,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     // 清理文本中的换行符
     const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
 
-    // 整篇文章引用：独立 block，agent 通过 dogear__ReadArticle tool 读取
-    if (referencedArticles.length > 0) {
-      const refLines = referencedArticles.map(a =>
-        `  <article title="${sanitize(a.title)}" articleId="${a.id}"${a.siteName ? ` site="${sanitize(a.siteName)}"` : ''} />`
-      ).join('\n');
-      textBlocks.push({
-        text: `<referenced_articles>\n${refLines}\n</referenced_articles>`
-      });
-      clearReferencedArticlesFor(conversationId!);
-    }
+    // 文章引用不再单列：树右键/阅读面板入口直接进 referencedFiles 池，随 <referenced_files> block 携带路径发送
 
     // 文字片段引用：独立 block，直接内联内容
     if (quotedSnippets.length > 0) {
@@ -319,6 +325,16 @@ export function useSendMessage(params: UseSendMessageParams) {
         });
       }
       clearMessageSnippetsFor(conversationId!);
+    }
+
+    // 文件内容片段（阅读面板选字）：沿用 quoted_snippet（source=文件: 名），渲染端零改动
+    if (fileSnippets.length > 0) {
+      for (const s of fileSnippets) {
+        textBlocks.push({
+          text: `<quoted_snippet source="文件: ${sanitize(s.fileName)}">\n${sanitize(s.text)}\n</quoted_snippet>`
+        });
+      }
+      clearFileSnippetsFor(conversationId!);
     }
 
     // 文件/文件夹引用：独立 block，agent 通过 Read 工具读取内容
@@ -374,7 +390,16 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearReferencedNotesFor(conversationId!);
     }
 
-    // 浏览器移交草稿：每条独立 block，固定拼在用户文本之前，格式沿用主进程旧直发模板
+    // 指针类引用提示：四类任一存在时追加一句引导先读再答；quoted_snippet 内容已内联，不在其列
+    const pointerRefCount = referencedFiles.length
+      + referencedConversations.length + referencedSharedFiles.length + referencedNotes.length;
+    if (pointerRefCount > 0) {
+      textBlocks.push({
+        text: '（引用提示：以上引用由用户主动选定作为本轮上下文，标签仅含元数据、内容不可见；除非与问题明确无关，回答前应先读取相关引用，勿仅凭标题判断跳过）'
+      });
+    }
+
+    // 浏览器移交草稿：每条独立 block，固定拼在用户文本之前；移交即转移操作焦点，固定提示告知 agent 直接操作页面
     for (const d of handoffDrafts) {
       const lines = [
         '来自浏览器一键移交：',
@@ -382,7 +407,8 @@ export function useSendMessage(params: UseSendMessageParams) {
         `URL：${d.url}`,
       ];
       if (d.selectionText) lines.push(`选中内容：\n${d.selectionText}`);
-      if (d.textExcerpt) lines.push(`正文快照：\n${d.textExcerpt}`);
+      if (d.instruction) lines.push(d.instruction);
+      lines.push('该页面已设为 agent 操作焦点，发送后可直接 observe_page 读取与操作。');
       textBlocks.push({ text: lines.join('\n') });
     }
     if (handoffDrafts.length > 0) clearHandoffDraftsFor(conversationId!);
@@ -402,7 +428,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('  Session ID:', sessionId?.substring(0, 8));
     console.log('  消息长度:', messageToSend.length, '字符');
-    console.log('  引用文章数:', referencedArticles.length);
+    console.log('  引用条目数:', referencedFiles.length);
     console.log('  用户消息:', userMessage);
     console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('');
@@ -537,15 +563,21 @@ export function useSendMessage(params: UseSendMessageParams) {
           timestamp: Date.now()
         }]
       });
+      if (override) {
+        // 草稿首条消息发送失败：文本与图片回填该会话输入框，用户手动重发
+        toast.error('首条消息发送失败，已回填输入框');
+        setInput(userMessage);
+        setPendingImages(imagesToSend);
+      }
       setIsLoading(false);
     }
   }, [
-    readOnly, input, pendingImages, sessionId, isSessionReady, handleSlashCommand,
+    readOnly, inputState, pendingImagesProp, sessionId, isSessionReady, handleSlashCommand,
     setInput, setPendingImages, conversationId, currentSelection, isLoading,
     lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
     setIsLoading, updateConversationTitle, getMessages,
-    triggerSessionRestart, referencedArticles, clearReferencedArticlesFor,
-    quotedSnippets, clearQuotedSnippetsFor, messageSnippets, clearMessageSnippetsFor,
+    triggerSessionRestart, quotedSnippets, clearQuotedSnippetsFor, messageSnippets, clearMessageSnippetsFor,
+    fileSnippets, clearFileSnippetsFor,
     referencedFiles, clearReferencedFilesFor,
     referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
     clearReferencedSharedFilesFor, referencedNotes, clearReferencedNotesFor, forkConversation,
@@ -560,8 +592,46 @@ export function useSendMessage(params: UseSendMessageParams) {
     }
   }, [handleSend]);
 
+  // 草稿首条消息消费：新会话就绪（session ready + 模型明确）后自动发送；
+  // consume 原子取出保证只发一次，模型未就绪时等 conversation 加载/用户选择后再触发。
+  // 草稿选过权限模式时先应用到新会话（IPC + 本地 state）再发送，失败仅 toast 不阻断发送
+  useEffect(() => {
+    if (!isSessionReady || !conversationId || !currentSelection || !sessionId) return;
+    const draft = useDraftStore.getState();
+    const pending = draft.pendingFirstMessage;
+    if (!pending || pending.conversationId !== conversationId) return;
+    const consumed = draft.consumePendingFirstMessage();
+    if (!consumed) return;
+    void (async () => {
+      if (consumed.permissionMode) {
+        try {
+          const result = await client.setPermissionMode({ sessionId, mode: consumed.permissionMode });
+          if ('error' in result) {
+            toast.error('权限模式应用失败', { description: result.error });
+          } else {
+            setPermissionMode(consumed.permissionMode);
+          }
+        } catch {
+          toast.error('权限模式应用失败', { description: '会话将以全局默认权限模式运行' });
+        }
+      }
+      await handleSend({
+        text: consumed.text,
+        images: consumed.images.map((img) => {
+          const bytes = Uint8Array.from(atob(img.data), (c) => c.charCodeAt(0));
+          return {
+            file: new File([bytes], 'image', { type: img.media_type }),
+            preview: `data:${img.media_type};base64,${img.data}`,
+            base64: img.data,
+            mediaType: img.media_type,
+          };
+        }),
+      });
+    })();
+  }, [isSessionReady, conversationId, currentSelection, handleSend, sessionId, setPermissionMode]);
+
   return {
-    input,
+    input: inputState,
     setInput,
     handleSend,
     handleKeyPress,

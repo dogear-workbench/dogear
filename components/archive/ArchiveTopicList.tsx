@@ -5,7 +5,6 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
-import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useGroupStore } from '@/stores/group-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { deriveGroupTitle } from '@/components/group-list/utils';
@@ -80,11 +79,11 @@ function ArchiveTopicCard({
   onToggleExpand: (topicId: string) => void;
   onSelect: (selection: ArchiveSelection) => void;
 }) {
-  const { group, tree, isPersonal } = topic;
+  const { group, tree } = topic;
   const totalCount = useMemo(() => countTreeConversations(tree), [tree]);
 
   const handleRestore = async () => {
-    const ok = await useGroupStore.getState().restoreTopic(group.id, isPersonal ? PERSONAL_WORKSPACE_ID : undefined);
+    const ok = await useGroupStore.getState().restoreTopic(group.id);
     if (ok) {
       toast.success('话题已恢复');
     }
@@ -96,7 +95,7 @@ function ArchiveTopicCard({
       `将永久删除话题内 ${totalCount} 个对话及共享区。此操作不可恢复。`,
     );
     if (!confirmed) return;
-    await useGroupStore.getState().deleteTopic(group.id, isPersonal ? PERSONAL_WORKSPACE_ID : undefined);
+    await useGroupStore.getState().deleteTopic(group.id);
   };
 
   return (
@@ -116,11 +115,6 @@ function ArchiveTopicCard({
               <span className="text-[15px] text-foreground font-semibold truncate" title={deriveGroupTitle(group)}>
                 {deriveGroupTitle(group)}
               </span>
-              {isPersonal && (
-                <span className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                  临时
-                </span>
-              )}
             </div>
             <span className="text-xs text-muted-foreground flex-shrink-0">{totalCount}</span>
           </div>

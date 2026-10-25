@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import {
+  ABILITY_CATEGORIES,
   ABILITY_PACKS,
   SUB_AUTONOMOUS_SKILLS,
   TOOL_PACK_TO_ABILITY,
@@ -21,27 +22,26 @@ function profileWith(ab: SubAgentProfile['enabledAbilities'], extra?: Partial<Su
 }
 
 describe('resolveAbilities 子会话 Profile 过滤', () => {
-  test('stock/article/browser/browser-extension 子开关为 true 才生效（双字段独立）；memory 归场景层不再受 Profile 闸约束；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
-    // 自治四包总开关在 abilityOverrides 全开，判定纯由子开关决定；
+  test('stock/article/browser-extension 子开关为 true 才生效（双字段独立）；memory 归场景层不再受 Profile 闸约束；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
+    // 自治包总开关在 abilityOverrides 全开，判定纯由子开关决定；
     // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），不在包级
     const keys = [
       ['stock', 'stock'],
       ['article', 'article'],
-      ['browser', 'browser'],
       ['browser-extension', 'extension'],
     ] as const;
     const cases: SubAgentProfile['enabledAbilities'][] = [
       {},
       { memory: true },
       { stock: true, article: true },
-      { browser: true, skills: ['brainstorming', 'staged-impl'] },
+      { skills: ['brainstorming', 'staged-impl'] },
       { extension: true },
-      { memory: true, stock: true, article: true, browser: true, extension: true, skills: ['doc-sync'] },
+      { memory: true, stock: true, article: true, extension: true, skills: ['doc-sync'] },
     ];
     const config: WorkspaceConfig = {
       enabledToolPacks: [],
       enabledSkills: [],
-      abilityOverrides: { memory: true, stock: true, article: true, browser: true, 'browser-extension': true, 'code-workflow': true },
+      abilityOverrides: { memory: true, stock: true, article: true, 'browser-extension': true, 'code-workflow': true },
     };
     for (const ab of cases) {
       const active = resolveAbilities(config, {
@@ -74,14 +74,15 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     expect(active.has('memory')).toBe(true);
   });
 
-  test('内置浏览器解析 Profile 默认 browser/extension 生效、默认 Profile 不生效', () => {
-    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true, 'browser-extension': true } };
+  test('内置浏览器解析 Profile 默认 extension 生效、默认 Profile 不生效；内嵌 browser 包已下线永不生效', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { 'browser-extension': true } };
     const parseActive = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() });
-    expect(parseActive.has('browser')).toBe(true);
     expect(parseActive.has('browser-extension')).toBe(true);
     const defaultActive = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() });
-    expect(defaultActive.has('browser')).toBe(false);
     expect(defaultActive.has('browser-extension')).toBe(false);
+    const staleBrowserConfig: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true } };
+    expect(resolveAbilities(staleBrowserConfig, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) }).has('browser')).toBe(false);
+    expect(resolveAbilities(staleBrowserConfig, { role: 'main', hasWorkspace: true, groupId: null }).has('browser')).toBe(false);
   });
 });
 
@@ -130,13 +131,13 @@ describe('sceneOverrides 场景三级回退', () => {
 });
 
 describe('自治包四象限（main/sub × 工作区开关/Profile 子开关）', () => {
-  const AUTONOMOUS_KEYS = ['stock', 'article', 'browser', 'browser-extension', 'web-mcp'] as const;
+  const AUTONOMOUS_KEYS = ['stock', 'article', 'browser-extension', 'web-mcp'] as const;
   const wsOverrides = (on: boolean) => ({
     enabledToolPacks: [],
     enabledSkills: [],
     abilityOverrides: Object.fromEntries(AUTONOMOUS_KEYS.map((key) => [key, on])),
   });
-  const profileAllOn = profileWith({ stock: true, article: true, browser: true, extension: true, web: true });
+  const profileAllOn = profileWith({ stock: true, article: true, extension: true, web: true });
 
   test('工作区关 + Profile 开：sub 生效（Profile 独裁），main 不生效（纯主会话开关）', () => {
     const config: WorkspaceConfig = wsOverrides(false);
@@ -162,7 +163,7 @@ describe('自治包四象限（main/sub × 工作区开关/Profile 子开关）'
     }
   });
 
-  test('自治标记与 skill 全集：五包置位且 SUB_AUTONOMOUS_SKILLS 恰含三 skill（方法论不随通道包自治）', () => {
+  test('自治标记与 skill 全集：四包置位且 SUB_AUTONOMOUS_SKILLS 恰含三 skill（方法论随包下线）', () => {
     expect(ABILITY_PACKS.filter((p) => p.subAutonomous).map((p) => p.key)).toEqual([...AUTONOMOUS_KEYS]);
     expect([...SUB_AUTONOMOUS_SKILLS].sort()).toEqual(
       ['article-parser', 'stock-analysis', 'stock-picking'].sort(),
@@ -191,45 +192,32 @@ describe('TOOL_PACK_TO_ABILITY 挂载反查', () => {
 });
 
 describe('工具归属修正（双通道拆包 / reference 拆组 / 系统行为收缩）', () => {
-  test('双通道拆包归属：browser 收窄内嵌、扩展通道反查 browser-extension、方法论为纯 skill 包', () => {
-    expect(packOf('browser').toolGroups).toEqual(['browser']);
-    expect(packOf('browser').skills).toBeUndefined();
+  test('双通道拆包归属（内嵌下线后）：扩展通道反查 browser-extension，内嵌与方法论包不再注册', () => {
+    const findPack = (key: string) => ABILITY_PACKS.find((p) => p.key === key);
     expect(packOf('browser-extension').toolGroups).toEqual(['dogear-extension']);
     expect(packOf('browser-extension').skills).toBeUndefined();
     expect(TOOL_PACK_TO_ABILITY.get('dogear-extension')).toBe('browser-extension');
-    expect(TOOL_PACK_TO_ABILITY.get('browser')).toBe('browser');
-    expect(packOf('browser-methodology').skills).toEqual(['browser-exploration']);
-    expect(packOf('browser-methodology').toolGroups).toBeUndefined();
-    expect(TOOL_PACK_TO_ABILITY.has('browser-methodology')).toBe(false);
+    expect(findPack('browser')).toBeUndefined();
+    expect(findPack('browser-methodology')).toBeUndefined();
+    expect(TOOL_PACK_TO_ABILITY.has('browser')).toBe(false);
   });
 
-  test('方法论包不随通道闸：工作区闸决定包开关，Profile 通道子开关不影响', () => {
-    const wsOn: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { 'browser-methodology': true } };
-    expect(resolveAbilities(wsOn, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) }).has('browser-methodology')).toBe(true);
-    expect(resolveAbilities(wsOn, { role: 'main', hasWorkspace: true, groupId: null }).has('browser-methodology')).toBe(true);
-    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [] };
-    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ browser: true, extension: true }) }).has('browser-methodology')).toBe(false);
-  });
-
-  test('SYSTEM_BEHAVIORS 已退役（组上下文归会话组包、契约段归协作包展示）', () => {
-    expect(packOf('group-context').segmentKeys).toEqual(['group-context']);
+  test('SYSTEM_BEHAVIORS 已退役；group-context 包随共识文档链退役', () => {
+    expect(ABILITY_PACKS.some((p) => p.key === 'group-context')).toBe(false);
     expect(packOf('agent-collab').segmentKeys).toEqual(['main-agent-delegation', 'sub-agent-contract']);
   });
 
-  test('归属重划：会话组包挂组状态卡组、协作包挂三组且去 reference、笔记包含任务组', () => {
-    expect(packOf('group-context').toolGroups).toEqual(['dogear-group-context']);
+  test('归属重划：协作包挂三组且去 reference、笔记包含任务组', () => {
     expect(packOf('agent-collab').toolGroups).toEqual(['dogear-delegation', 'dogear-group', 'dogear-sibling']);
     expect(packOf('notes').toolGroups).toEqual(['dogear-notes', 'dogear-tasks']);
   });
 
-  test('触发条件：会话组包与协作包属组即生效，无组不生效', () => {
+  test('触发条件：协作包属组即生效，无组不生效', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} };
     const withGroup = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: 'g1' });
-    expect(withGroup.has('group-context')).toBe(true);
     expect(withGroup.has('agent-collab')).toBe(true);
 
     const noGroup = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null });
-    expect(noGroup.has('group-context')).toBe(false);
     expect(noGroup.has('agent-collab')).toBe(false);
   });
 
@@ -242,7 +230,113 @@ describe('工具归属修正（双通道拆包 / reference 拆组 / 系统行为
       groupId: 'g1',
       profile,
     });
-    expect(active.has('group-context')).toBe(true);
     expect(active.has('agent-collab')).toBe(true);
+  });
+});
+
+describe('git 纪律包拆分（workspace-git 仓库闸 / workspace-snapshot 安全网）', () => {
+  const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [] };
+
+  test('workspace-git 条件：绑定工作区且有 .git 才生效，hasUserGitRepo 缺省视为 false', () => {
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null, hasUserGitRepo: true }).has('workspace-git')).toBe(true);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null }).has('workspace-git')).toBe(false);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null, hasUserGitRepo: false }).has('workspace-git')).toBe(false);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: false, groupId: null, hasUserGitRepo: true }).has('workspace-git')).toBe(false);
+  });
+
+  test('workspace-snapshot 只看 hasWorkspace，与 hasUserGitRepo 无关（无 git 仓库也有安全网），主/子会话同条件', () => {
+    const noRepo = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null });
+    expect(noRepo.has('workspace-snapshot')).toBe(true);
+    expect(noRepo.has('workspace-git')).toBe(false);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null, hasUserGitRepo: true }).has('workspace-snapshot')).toBe(true);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: false, groupId: null, hasUserGitRepo: true }).has('workspace-snapshot')).toBe(false);
+    const subActive = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: null, hasUserGitRepo: true });
+    expect(subActive.has('workspace-git')).toBe(true);
+    expect(subActive.has('workspace-snapshot')).toBe(true);
+  });
+
+  test('包开关仍然生效：显式关闭任一包则不生效（旧 abilityOverrides 记录零迁移继承）', () => {
+    const off: WorkspaceConfig = {
+      enabledToolPacks: [],
+      enabledSkills: [],
+      abilityOverrides: { 'workspace-git': false, 'workspace-snapshot': false },
+    };
+    const active = resolveAbilities(off, { role: 'main', hasWorkspace: true, groupId: null, hasUserGitRepo: true });
+    expect(active.has('workspace-git')).toBe(false);
+    expect(active.has('workspace-snapshot')).toBe(false);
+  });
+
+  test('两包结构：key/segmentKeys/toolGroups 与 server 名一一对应，均为 segment-tools 不进 TOOL_PACK_TO_ABILITY', () => {
+    expect(packOf('workspace-git')).toMatchObject({
+      label: 'git 历史与提交',
+      category: 'context-memory',
+      type: 'segment-tools',
+      segmentKeys: ['git-history-guidance'],
+      toolGroups: ['dogear-git'],
+      defaultEnabled: true,
+    });
+    expect(packOf('workspace-snapshot')).toMatchObject({
+      label: '快照安全网',
+      category: 'system',
+      type: 'segment-tools',
+      segmentKeys: ['snapshot-safety-guidance'],
+      toolGroups: ['dogear-snapshot'],
+      defaultEnabled: true,
+    });
+    expect(TOOL_PACK_TO_ABILITY.has('dogear-git')).toBe(false);
+    expect(TOOL_PACK_TO_ABILITY.has('dogear-snapshot')).toBe(false);
+  });
+});
+
+describe('skill-admin 包（Skill 管理：自定义 skill 管理工具，系统分类）', () => {
+  const configWith = (overrides: Record<string, boolean> = {}): WorkspaceConfig => ({
+    enabledToolPacks: [],
+    enabledSkills: [],
+    abilityOverrides: overrides,
+  });
+
+  test('包结构：system / segment-tools / mainOnly / 默认关，dogear-skill 不进挂载反查表；ABILITY_CATEGORIES 含自定义 Skill 第四类（无描述）', () => {
+    expect(packOf('skill-admin')).toMatchObject({
+      label: 'Skill 管理',
+      category: 'system',
+      type: 'segment-tools',
+      toolGroups: ['dogear-skill'],
+      mainOnly: true,
+      defaultEnabled: false,
+    });
+    expect(TOOL_PACK_TO_ABILITY.has('dogear-skill')).toBe(false);
+    expect(ABILITY_CATEGORIES.find((c) => c.key === 'custom-skills')).toMatchObject({ label: '自定义 Skill' });
+    expect(ABILITY_CATEGORIES.find((c) => c.key === 'custom-skills')?.description).toBeUndefined();
+  });
+
+  test('默认关；abilityOverrides 开 → main 生效；无工作区同受包闸', () => {
+    expect(resolveAbilities(configWith(), { role: 'main', hasWorkspace: true, groupId: null }).has('skill-admin')).toBe(false);
+    expect(resolveAbilities(configWith({ 'skill-admin': true }), { role: 'main', hasWorkspace: true, groupId: null }).has('skill-admin')).toBe(true);
+    expect(resolveAbilities(configWith(), { role: 'main', hasWorkspace: false, groupId: null }).has('skill-admin')).toBe(false);
+    expect(resolveAbilities(configWith({ 'skill-admin': true }), { role: 'main', hasWorkspace: false, groupId: null }).has('skill-admin')).toBe(true);
+  });
+
+  test('存量 custom-skills key 残留静默忽略：不迁移不生效', () => {
+    expect(resolveAbilities(configWith({ 'custom-skills': true }), { role: 'main', hasWorkspace: true, groupId: null }).has('skill-admin')).toBe(false);
+  });
+
+  test('mainOnly：sub 角色即使包开也不生效（子会话装配不查包，四工具常驻不受影响）', () => {
+    expect(resolveAbilities(configWith({ 'skill-admin': true }), { role: 'sub', hasWorkspace: true, groupId: null, profile: null }).has('skill-admin')).toBe(false);
+    expect(resolveAbilities(configWith({ 'skill-admin': true }), {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: 'g1',
+      profile: profileWith({}),
+    }).has('skill-admin')).toBe(false);
+  });
+
+  test('场景三级回退：无覆盖回退工作区总闸→默认关；executor/scheduler 场景覆盖可独立开启', () => {
+    const wsOn = configWith({ 'skill-admin': true });
+    expect(resolveAbilities(wsOn, { role: 'main', hasWorkspace: true, groupId: null, sceneOverride: 'executor' }).has('skill-admin')).toBe(true);
+    expect(resolveAbilities(wsOn, { role: 'main', hasWorkspace: true, groupId: null, sceneOverride: 'scheduler' }).has('skill-admin')).toBe(true);
+    expect(resolveAbilities(configWith(), { role: 'main', hasWorkspace: true, groupId: null, sceneOverride: 'executor' }).has('skill-admin')).toBe(false);
+
+    const sceneOn: WorkspaceConfig = { ...configWith(), sceneOverrides: { executor: { 'skill-admin': true } } };
+    expect(resolveAbilities(sceneOn, { role: 'main', hasWorkspace: true, groupId: null, sceneOverride: 'executor' }).has('skill-admin')).toBe(true);
   });
 });

@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  ChevronDown, ChevronRight, GitBranch, ListTodo, MessagesSquare, MoreHorizontal, Network,
+  ChevronDown, ChevronRight, CornerUpRight, GitBranch, ListTodo, MessagesSquare, MoreHorizontal, Network,
 } from 'lucide-react';
+import { toast } from 'sonner';
+import { client } from '@/lib/client';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
@@ -27,8 +29,6 @@ export interface ConversationRowProps {
   childCount?: number;
   childRunning?: boolean;
   expandToggle?: ConversationRowExpandToggle;
-  /** 会话行操作（重命名/删除）路由的工作区；缺省当前工作区，personal 分区传 PERSONAL_WORKSPACE_ID */
-  workspaceId?: string;
 }
 
 const STATUS_META = {
@@ -49,10 +49,10 @@ export function ConversationRow({
   childCount,
   childRunning,
   expandToggle,
-  workspaceId,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
+  const setConversationHold = useConversationStore((s) => s.setConversationHold);
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const aliveIds = useConversationStore((s) => s.aliveConversationIds);
@@ -69,8 +69,11 @@ export function ConversationRow({
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isAlive = aliveIds.has(conv.id);
+  const isPinned = !!conv.pinnedAt;
   const isChildRunning = childSnapshot?.status === 'running';
   const isDisplayRunning = isRunning || isChildRunning;
+  // 自动亮（非 running 恒亮）同钉住走「关闭」，与侧轨三态按钮同款动作映射
+  const holdClear = isPinned || (isAlive && !isDisplayRunning);
   const hasChildren = !!expandToggle;
 
   const status: RowStatus = isDisplayRunning
@@ -92,14 +95,30 @@ export function ConversationRow({
 
   const saveTitle = useCallback(() => {
     const trimmed = editTitle.trim();
-    void updateConversationTitle(conv.id, trimmed || getConversationTitle(conv), workspaceId);
+    void updateConversationTitle(conv.id, trimmed || getConversationTitle(conv));
     setIsEditing(false);
-  }, [conv, editTitle, updateConversationTitle, workspaceId]);
+  }, [conv, editTitle, updateConversationTitle]);
 
   const handleClick = useCallback(() => {
     if (onClick) onClick();
     else openOrFocusConversation(conv, nodeId);
   }, [conv, nodeId, onClick]);
+
+  const continueToNewConversation = useCallback(async () => {
+    try {
+      const r = await client.continueConversation({ sourceConversationId: conv.id });
+      if (!r.ok || !r.conversationId) {
+        toast.error('延续失败', { description: r.error ?? undefined });
+        return;
+      }
+      toast.success(`已延续到「${r.title ?? '新会话'}」`, { description: r.warning ?? undefined });
+      void useConversationStore.getState().focusConversationFromLink(
+        `dogear://conversation/${r.conversationId}?ws=${encodeURIComponent(conv.workspaceId)}`,
+      );
+    } catch (err) {
+      toast.error('延续失败', { description: err instanceof Error ? err.message : String(err) });
+    }
+  }, [conv]);
 
   const isTaskExecution = getConversationTitle(conv).startsWith('任务: ');
   const typeIcon = isTaskExecution
@@ -110,8 +129,32 @@ export function ConversationRow({
       ? <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600 dark:text-purple-300' : 'text-purple-400')} />
       : <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground')} />;
 
+  const statusDot = status === 'running' || status === 'pending' ? (
+    <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
+      <span
+        className={cn(
+          'rounded-full',
+          status === 'running' ? 'w-2.5 h-2.5' : 'w-2 h-2',
+          STATUS_META[status].dot,
+          STATUS_META[status].pulse && 'animate-pulse',
+        )}
+        title={STATUS_META[status].label}
+      />
+    </span>
+  ) : null;
+  const unreadDot = isUnread ? (
+    <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
+      <span
+        className={cn('w-2 h-2 rounded-full', conv.unread === 'error' ? 'bg-red-500' : 'bg-emerald-500')}
+        title={conv.unread === 'error' ? '执行失败' : '未读'}
+      />
+    </span>
+  ) : null;
+  const iconSlot = statusDot ?? unreadDot ?? typeIcon;
+
   const row = (
     <div
+      data-node-id={nodeId}
       className={cn(
         'relative flex items-center gap-2 py-2 pr-3 cursor-pointer transition-colors group rounded-sm mx-1',
         isSelected ? 'bg-blue-100 dark:bg-blue-900/30'
@@ -121,13 +164,13 @@ export function ConversationRow({
       style={{ paddingLeft: `${indent}px` }}
       onClick={handleClick}
     >
-      {(isDisplayRunning || isAlive) && (
+      {(isDisplayRunning || isAlive || isPinned) && (
         <span
           className={cn(
-            'absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full',
+            'absolute left-0 top-1.5 bottom-1.5 w-1 rounded-full',
             isPending ? 'bg-blue-500' : isDisplayRunning ? 'bg-orange-500' : 'bg-emerald-500',
           )}
-          title={isDisplayRunning ? undefined : '会话存活中'}
+          title={isDisplayRunning ? undefined : isPinned ? '稍后继续' : '最近活跃'}
         />
       )}
       {hasChildren ? (
@@ -142,9 +185,9 @@ export function ConversationRow({
           {expandToggle.expanded
             ? <ChevronDown className="absolute w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
             : <ChevronRight className="absolute w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />}
-          <span className="group-hover:opacity-0 transition-opacity">{typeIcon}</span>
+          <span className="group-hover:opacity-0 transition-opacity">{iconSlot}</span>
         </span>
-      ) : typeIcon}
+      ) : iconSlot}
       <div className="flex-1 min-w-0">
         {isEditing ? (
           <input
@@ -161,19 +204,16 @@ export function ConversationRow({
             className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
           />
         ) : (
-          <div className="flex items-center gap-1">
-            {isUnread && <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="未读" />}
-            <div
-              className={cn(
-                'text-sm truncate',
-                isSelected ? 'text-blue-700 dark:text-blue-300 font-medium'
-                  : isUnread ? 'font-medium text-foreground'
-                  : 'text-foreground',
-              )}
-              title={getConversationTitle(conv)}
-            >
-              {getConversationTitle(conv)}
-            </div>
+          <div
+            className={cn(
+              'text-sm truncate',
+              isSelected ? 'text-blue-700 dark:text-blue-300 font-medium'
+                : isUnread ? 'font-medium text-foreground'
+                : 'text-foreground',
+            )}
+            title={getConversationTitle(conv)}
+          >
+            {getConversationTitle(conv)}
           </div>
         )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
@@ -235,6 +275,9 @@ export function ConversationRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>{row}</ContextMenuTrigger>
       <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
+        <ContextMenuItem onClick={() => void setConversationHold(conv.id, holdClear ? 'clear' : 'pin')}>
+          {holdClear ? '关闭' : '稍后继续'}
+        </ContextMenuItem>
         <ContextMenuItem onClick={startEditing}>重命名</ContextMenuItem>
         <ContextMenuItem onClick={() => {
           const anchorId = requireAnchorConversationId();
@@ -248,8 +291,12 @@ export function ConversationRow({
         }}>
           引用到当前对话
         </ContextMenuItem>
+        <ContextMenuItem onClick={() => void continueToNewConversation()}>
+          <CornerUpRight className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+          延续到新会话
+        </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem className="text-destructive" onClick={() => void deleteConversation(conv.id, workspaceId)}>
+        <ContextMenuItem className="text-destructive" onClick={() => void deleteConversation(conv.id)}>
           删除对话
         </ContextMenuItem>
       </ContextMenuContent>

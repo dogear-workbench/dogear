@@ -16,11 +16,36 @@ import { broadcastAliveConversations } from '../../services/renderer-broadcast.j
 import { PiSession, type PiSessionConfig, type PiSessionTurnResult } from './pi-session.js';
 import { isSessionSnapshotAffected, type SettingsSnapshotDiff } from '../../services/settings-diff.js';
 import type { AppSettings } from '../../services/settings-types.js';
+import { loadSettings } from '../../services/settings-service.js';
+import { resolveAllPendingInterventionsUnattended } from '../../services/browser/human-intervention.js';
 import { appendContext as appendUsageContext, appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker, readNextTurnIndex } from '../../services/usage/usage-service.js';
-import { applyUsageSummary } from '../../services/conversation-service.js';
+import { applyUsageSummary, getByIdGlobal, setPinnedAt } from '../../services/conversation-service.js';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 import type { CompactMarker, ContextSnapshot, ConversationUsageEntry } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
+
+export const ORPHAN_GRACE_MS = 10 * 60_000;
+
+/** 绿线保活窗档位 → 毫秒；'off'=0 表示非 running 一律不亮 */
+const ALIVE_WINDOW_MS: Record<string, number> = {
+  off: 0,
+  '30m': 30 * 60_000,
+  '1h': 60 * 60_000,
+  '4h': 4 * 60 * 60_000,
+};
+const ALIVE_WINDOW_DEFAULT_MS = 60 * 60_000;
+const ALIVE_SCAN_INTERVAL_MS = 60_000;
+
+let effectiveOrphanGraceMs = ORPHAN_GRACE_MS;
+
+/** 测试注入用：把孤儿复核间隔临时调小以验证超龄强杀，生产路径不调用 */
+export function setOrphanGraceMs(ms: number): void {
+  effectiveOrphanGraceMs = ms;
+}
+
+export function getOrphanGraceMs(): number {
+  return effectiveOrphanGraceMs;
+}
 
 function broadcastUsageEntryAdded(conversationId: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -36,7 +61,7 @@ function broadcastUsageEntryAdded(conversationId: string): void {
 /** 广播函数类型：将 session 事件（message/complete/error/permissionRequest 等）发给所有渲染层窗口 */
 type PiSessionBroadcaster = (
   sessionId: string,
-  event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'permissionModeChanged' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed',
+  event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'permissionModeChanged' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed' | 'compactionFailure',
   payload: unknown,
 ) => void;
 
@@ -55,6 +80,23 @@ export class PiSessionManager extends EventEmitter {
   private logger = mainLogger.child('pi-session-manager');
   // 上次广播的存活集合快照（sorted join），避免无变化的重复广播
   private lastAliveKey = '';
+  // 绿线「最近活跃」记录：conversationId → 最后一次收尾（sessionStateChanged running→false）时刻；
+  // session 销毁时故意不清（session 释放后窗内绿线仍要亮），由 60s 扫描顺手清理过窗条目
+  private lastActivityAt: Map<string, number> = new Map();
+  // aliveWindow 档位缓存（毫秒，'off'=0）；null=未加载，invalidateAliveWindowCache 失效
+  private aliveWindowMs: number | null = null;
+  private aliveScanTimer: NodeJS.Timeout;
+  // 孤儿保活超龄复核 timer：保活赌注「卡死会话终会 settle」若有漏网，超龄宁可遗弃强杀也不无限滞留内存
+  private orphanTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  constructor() {
+    super();
+    this.aliveScanTimer = setInterval(() => {
+      this.pruneExpiredActivity();
+      void this.broadcastAliveSet();
+    }, ALIVE_SCAN_INTERVAL_MS);
+    this.aliveScanTimer.unref();
+  }
 
   setBroadcaster(fn: PiSessionBroadcaster): void {
     this.broadcaster = fn;
@@ -105,7 +147,11 @@ export class PiSessionManager extends EventEmitter {
     session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean; paused: boolean }) => {
       this.emit('sessionStateChanged', sessionId, data);
       this.broadcaster?.(sessionId, 'sessionStateChanged', data);
-      this.broadcastAliveSet();
+      if (!data.running) {
+        this.lastActivityAt.set(data.conversationId, Date.now());
+        this.redeemConversationPin(data.conversationId);
+      }
+      void this.broadcastAliveSet();
     });
 
     // 会话关闭（Step 5）：前端清 running/pendingAction Set 的原子信号
@@ -114,9 +160,15 @@ export class PiSessionManager extends EventEmitter {
       this.broadcaster?.(sessionId, 'sessionClosed', data);
     });
 
-    // orphan 保活收集（B1）：settled 时会话已自然跑完，如果 refCount 仍为 0 则回收
+    // 压缩失败持续态翻转（会话创建后主动对账 + durable 事件推导翻转），前端据此显隐会话告警横幅
+    session.on('compactionFailure', (data: { conversationId: string; failed: boolean }) => {
+      this.broadcaster?.(sessionId, 'compactionFailure', data);
+    });
+
+    // orphan 保活收集（B1）：settled 即保活赌注兑现，先撤防超龄复核再尝试回收
     session.on('settled', () => {
-      this.broadcastAliveSet();
+      this.clearOrphanTimer(sessionId);
+      void this.broadcastAliveSet();
       this.maybeCollectOrphan(sessionId).catch((error) => {
         this.logger.warn(`maybeCollectOrphan(${sessionId.substring(0, 8)}) 失败（已忽略）:`, error);
       });
@@ -147,6 +199,12 @@ export class PiSessionManager extends EventEmitter {
     this.sessions.set(sessionId, session);
     this.refCounts.set(sessionId, 1);
 
+    // 无人值守开着时新建 main 会话直接 autoExecute（记录值 = 当前设置的模式，供关闭恢复）
+    if (config.role === 'main') {
+      const appSettings = await loadSettings();
+      if (appSettings.ai.unattended) session.takeOverForUnattended();
+    }
+
     return session;
   }
 
@@ -159,6 +217,7 @@ export class PiSessionManager extends EventEmitter {
     if (count === undefined) return 0;
     const next = count + 1;
     this.refCounts.set(sessionId, next);
+    this.clearOrphanTimer(sessionId);
     this.logger.info(`retain pi session ${sessionId.substring(0, 8)}: refCount=${next}`);
     return next;
   }
@@ -179,6 +238,7 @@ export class PiSessionManager extends EventEmitter {
       const session = this.sessions.get(sessionId);
       if (session?.isRunning()) {
         this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
+        this.armOrphanTimer(sessionId);
       } else if (this.isHeld(sessionId)) {
         this.logger.info(`pi session ${sessionId.substring(0, 8)} 被 hold（子会话运行中），进入保活`);
       } else {
@@ -193,8 +253,9 @@ export class PiSessionManager extends EventEmitter {
     if (!this.sessions.has(sessionId)) return false;
     const next = (this.holds.get(sessionId) ?? 0) + 1;
     this.holds.set(sessionId, next);
+    this.clearOrphanTimer(sessionId);
     this.logger.info(`hold pi session ${sessionId.substring(0, 8)}: holdCount=${next}`);
-    this.broadcastAliveSet();
+    void this.broadcastAliveSet();
     return true;
   }
 
@@ -209,11 +270,12 @@ export class PiSessionManager extends EventEmitter {
     if (next > 0) this.holds.set(sessionId, next);
     else this.holds.delete(sessionId);
     this.logger.info(`release hold pi session ${sessionId.substring(0, 8)}: holdCount ${count} -> ${next}`);
-    this.broadcastAliveSet();
+    void this.broadcastAliveSet();
     if (next === 0 && this.refCounts.get(sessionId) === 0) {
       const session = this.sessions.get(sessionId);
       if (session?.isRunning()) {
         this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
+        this.armOrphanTimer(sessionId);
       } else if (session) {
         await this._destroySession(sessionId, 'natural');
       }
@@ -222,6 +284,34 @@ export class PiSessionManager extends EventEmitter {
 
   private isHeld(sessionId: string): boolean {
     return (this.holds.get(sessionId) ?? 0) > 0;
+  }
+
+  /** 进入孤儿保活时布防超龄复核；重复布防先清旧（release/releaseHold 双入口可能先后触发） */
+  private armOrphanTimer(sessionId: string): void {
+    this.clearOrphanTimer(sessionId);
+    const timer = setTimeout(() => {
+      this.orphanTimers.delete(sessionId);
+      void this.reapStalledOrphan(sessionId);
+    }, effectiveOrphanGraceMs);
+    this.orphanTimers.set(sessionId, timer);
+  }
+
+  private clearOrphanTimer(sessionId: string): void {
+    const timer = this.orphanTimers.get(sessionId);
+    if (!timer) return;
+    clearTimeout(timer);
+    this.orphanTimers.delete(sessionId);
+  }
+
+  /** 到期复核四条件（仍在 map、refCount 0、未被 hold、仍 running）全满足才销毁；期间被 re-attach / settled 是正常出路 */
+  private async reapStalledOrphan(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    if (this.refCounts.get(sessionId) !== 0) return;
+    if (this.isHeld(sessionId)) return;
+    if (!session.isRunning()) return;
+    this.logger.warn(`orphan pi session ${sessionId.substring(0, 8)} 超龄（${effectiveOrphanGraceMs}ms）仍 running，强制销毁`);
+    await this._destroySession(sessionId, 'forced');
   }
 
   /** 直接关闭会话（忽略引用计数） */
@@ -245,12 +335,12 @@ export class PiSessionManager extends EventEmitter {
 
   bindConversation(conversationId: string, sessionId: string): void {
     this.conversationSessionMap.set(conversationId, sessionId);
-    this.broadcastAliveSet();
+    void this.broadcastAliveSet();
   }
 
   unbindConversation(conversationId: string): void {
     this.conversationSessionMap.delete(conversationId);
-    this.broadcastAliveSet();
+    void this.broadcastAliveSet();
   }
 
   getSessionIdByConversation(conversationId: string): string | undefined {
@@ -261,13 +351,22 @@ export class PiSessionManager extends EventEmitter {
   }
 
   /**
-   * 存活会话的 conversationId 集合：session 在内存即存活（绿条=会话被实例化、活着），
-   * 被 _destroySession 回收才灭。运行状态由 runningConversationIds（橙条）独立表达。
+   * 存活会话的 conversationId 集合（绿线语义）：running/pending 恒在；非 running 的收尾距今
+   * < aliveWindow 档位也亮，'off' 档仅 running。不依赖 session 在内存——销毁后窗内仍亮，
+   * 与 retain/release/orphan 生命周期判定（release/maybeCollectOrphan）零关联。
    */
   getAliveConversationIds(): string[] {
+    const windowMs = this.aliveWindowMs ?? ALIVE_WINDOW_DEFAULT_MS;
+    const now = Date.now();
     const alive: string[] = [];
     for (const [convId, sid] of this.conversationSessionMap) {
-      if (this.sessions.has(sid)) alive.push(convId);
+      if (this.sessions.get(sid)?.isRunning()) {
+        alive.push(convId);
+        continue;
+      }
+      if (windowMs === 0) continue;
+      const last = this.lastActivityAt.get(convId);
+      if (last !== undefined && now - last < windowMs) alive.push(convId);
     }
     return alive;
   }
@@ -281,12 +380,56 @@ export class PiSessionManager extends EventEmitter {
     return running;
   }
 
-  /** 存活集合变化才广播（全量列表，前端整体替换；失败不影响主链） */
-  private broadcastAliveSet(): void {
+  /** 掐灭/解除挂起时同步熄灭绿线：清「最近活跃」记录并重广播（broadcastAliveSet 自带无变化去重；下次活动照常重新点亮） */
+  clearConversationActivity(conversationId: string): void {
+    this.lastActivityAt.delete(conversationId);
+    void this.broadcastAliveSet();
+  }
+
+  /** 使用即兑现：发消息 settle 时自动清 pinnedAt，绿线转自动窗（刚活动本来就亮，视觉无跳变）；失败只影响钉住标记，不阻塞会话流转 */
+  private redeemConversationPin(conversationId: string): void {
+    void (async () => {
+      const found = await getByIdGlobal(conversationId);
+      if (!found?.conv.pinnedAt) return;
+      await setPinnedAt(found.workspaceId, conversationId, null);
+    })().catch((error) => {
+      this.logger.warn(`settle 兑现清挂起标记(${conversationId.substring(0, 8)})失败（已忽略）:`, error);
+    });
+  }
+
+  /** 存活集合变化才广播（全量列表，前端整体替换；失败不影响主链）；档位缓存未热时先异步读盘 */
+  private async broadcastAliveSet(): Promise<void> {
+    await this.resolveAliveWindowMs();
     const key = this.getAliveConversationIds().sort().join(',');
     if (key === this.lastAliveKey) return;
     this.lastAliveKey = key;
     broadcastAliveConversations(key ? key.split(',') : []);
+  }
+
+  private async resolveAliveWindowMs(): Promise<void> {
+    if (this.aliveWindowMs !== null) return;
+    try {
+      const settings = await loadSettings();
+      this.aliveWindowMs = ALIVE_WINDOW_MS[settings.ui?.aliveWindow ?? '1h'] ?? ALIVE_WINDOW_DEFAULT_MS;
+    } catch (error) {
+      this.logger.warn('读取 aliveWindow 档位失败（按缺省 1h 处理）:', error);
+      this.aliveWindowMs = ALIVE_WINDOW_DEFAULT_MS;
+    }
+  }
+
+  /** aliveWindow 档位变更接线点：失效缓存并立即按新窗重算广播（设置页保存走这里热生效） */
+  invalidateAliveWindowCache(): void {
+    this.aliveWindowMs = null;
+    void this.broadcastAliveSet();
+  }
+
+  /** 扫描顺手清理过窗条目（'off' 档全清）；缓存未热时跳过一轮，防按缺省档误删长档位记录 */
+  private pruneExpiredActivity(): void {
+    if (this.aliveWindowMs === null) return;
+    const now = Date.now();
+    for (const [convId, last] of this.lastActivityAt) {
+      if (now - last >= this.aliveWindowMs) this.lastActivityAt.delete(convId);
+    }
   }
 
   getConversationIdBySession(sessionId: string): string | undefined {
@@ -315,7 +458,8 @@ export class PiSessionManager extends EventEmitter {
     this.sessions.delete(sessionId);
     this.refCounts.delete(sessionId);
     this.holds.delete(sessionId);
-    this.broadcastAliveSet();
+    this.clearOrphanTimer(sessionId);
+    void this.broadcastAliveSet();
 
     try {
       await session.close();
@@ -338,7 +482,7 @@ export class PiSessionManager extends EventEmitter {
       }
     }
 
-    // 会话收尾清理扩展通道组内 tab；动态 import 对齐调度器模式，closeAll（应用退出）不走本方法天然豁免
+    // 会话收尾关闭 agent 窗口；动态 import 对齐调度器模式，closeAll（应用退出）不走本方法
     if (conversationIds.length > 0) {
       for (const conversationId of conversationIds) {
         void import('../../services/browser/session-tab-cleanup.js')
@@ -357,10 +501,13 @@ export class PiSessionManager extends EventEmitter {
    */
   closeAll(): void {
     const sessions = Array.from(this.sessions.values());
+    clearInterval(this.aliveScanTimer);
     this.conversationSessionMap.clear();
     this.sessions.clear();
     this.refCounts.clear();
     this.holds.clear();
+    for (const timer of this.orphanTimers.values()) clearTimeout(timer);
+    this.orphanTimers.clear();
 
     const CLOSE_ALL_TIMEOUT_MS = 5000;
     for (const session of sessions) {
@@ -417,6 +564,39 @@ export class PiSessionManager extends EventEmitter {
         this.logger.info(`设置快照域变更，会话 ${session.getSessionId().substring(0, 8)} 受影响`);
         session.markSnapshotDirty();
       }
+    }
+    if (diff.unattendedChanged) {
+      // 仅作用活跃 main 会话（子会话固定 autoExecute 不碰；执行会话语义重合叠加无冲突）；
+      // 权限判定链不改（decideToolPermission 首分支 autoExecute 即全放行），只做模式接管 + 欠账清偿
+      for (const session of this.sessions.values()) {
+        if (session.getRole() !== 'main') continue;
+        if (next.ai.unattended) {
+          const released = session.resolveAllPendingPermissions(true);
+          session.takeOverForUnattended();
+          if (released > 0) {
+            this.logger.info(`无人值守开启：会话 ${session.getSessionId().substring(0, 8)} 放行挂起权限请求 ${released} 条`);
+          }
+        } else {
+          session.restoreFromUnattended();
+        }
+      }
+      if (next.ai.unattended) {
+        const skipped = resolveAllPendingInterventionsUnattended();
+        if (skipped > 0) {
+          this.logger.info(`无人值守开启：批量跳过挂起介入 ${skipped} 条`);
+          void import('../../services/feishu/feishu-notify-outlet.js')
+            .then((m) => m.feishuNotifyOutlet.pushDirect({
+              title: '无人值守已开启',
+              summary: `已自动跳过 ${skipped} 条挂起人工介入，相关会话将自行换路`,
+            }))
+            .catch((error) => this.logger.warn('无人值守开启推送失败:', error));
+        }
+      } else {
+        void import('../unattended-retry.js')
+          .then((m) => m.releaseAllUnattendedRetries())
+          .catch((error) => this.logger.warn('无人值守关闭取消在途重试失败:', error));
+      }
+      this.logger.info(`无人值守开关切换为 ${next.ai.unattended}`);
     }
   }
 }

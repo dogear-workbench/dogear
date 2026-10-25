@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
-import { EXTERNAL_ANCHOR_PREFIX, EXTERNAL_TASKS_REL, resolveExternalRelPath } from '../data-registry.js';
+import { EXTERNAL_ANCHOR_PREFIX, resolveExternalRelPath } from '../data-registry.js';
 import { loadSettings, saveSettings, type AppSettings, type PairedDevice } from '../settings-service.js';
 import { normalizeSyncOptions, SETTINGS_SYNC_FIELDS, type SyncOptions } from '../settings-types.js';
 import { getOrCreateDeviceId } from './device.js';
@@ -441,10 +441,10 @@ const MERGE_PATTERNS: MergePattern[] = [
     merge: (local, remote) => mergeArrayFile(local, remote, 'groups', 'id'),
   },
   // task id 并集；同 id updatedAt（ISO 字符串）新者胜（结构 {version:2,tasks:[]}，已核对 task-store.ts）；
-  // 工作区任务虚拟条目同构（version 3），合并后 version 取较大者
+  // 工作区任务文件与 plans.json 同构，合并后 version 取较大者
   { test: (relPath) => relPath === 'plans.json', merge: (local, remote) => mergeArrayFile(local, remote, 'tasks', 'id') },
   {
-    test: (relPath) => relPath.startsWith(VIRTUAL_PREFIX) && relPath.endsWith(`/${EXTERNAL_TASKS_REL}`),
+    test: (relPath) => /^workspaces\/[^/]+\/tasks\.json$/.test(relPath),
     merge: (local, remote) => mergeArrayFile(local, remote, 'tasks', 'id'),
   },
   // 通知 id 并集；同 id 新者胜（条目无 updatedAt，按 createdAt 比较）

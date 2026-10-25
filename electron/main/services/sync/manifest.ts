@@ -4,8 +4,6 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
   EXTERNAL_ANCHOR_PREFIX,
-  EXTERNAL_ARTICLES_REL,
-  EXTERNAL_TASKS_REL,
   externalWorkspaceIndex,
   readRegisteredWorkspaces,
   resolveExternalRelPath,
@@ -25,7 +23,7 @@ export interface ManifestExcludes {
   conflictCopies: boolean;
   /** 任意层级 shadow-git/ 目录是否同步（false = 排除） */
   shadowGit: boolean;
-/** 关闭的同步项 id 集合（目录 7 项 + 文件 4 项；stocks/feishu 走 optionalDirs，不在此生效） */
+  /** 关闭的同步项 id 集合（可排除项由 ALWAYS_SYNC_DIRS/FILES 与工作区子树构成；stocks/feishu 走 optionalDirs，不在此生效） */
   disabledItems: Set<string>;
   /** 可选目录 stocks/feishu 是否同步（true = 同步，语义与其余开关同向） */
   optionalDirs: OptionalDirs;
@@ -44,12 +42,36 @@ export interface ManifestOptions {
   userSyncPaths?: Record<string, string[]>;
 }
 
-const ALWAYS_SYNC_DIRS = ['workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history'] as const;
-const ALWAYS_SYNC_FILES = ['settings.json', 'plans.json', 'notifications.json', 'agent.md'] as const;
+const ALWAYS_SYNC_DIRS = ['workspaces', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history', 'custom'] as const;
+const ALWAYS_SYNC_FILES = ['settings.json', 'plans.json', 'notifications.json', 'agent.md', 'preferences.md'] as const;
+
+/** 已退役同步目录（产品已摘除，不再参与任何同步）：对端（含旧版本）推来的条目一律排除防复活，同时豁免墓碑拦截以驱动对端跟随删除 */
+const RETIRED_SYNC_DIRS = new Set<string>(['conversations']);
+
+/**
+ * 已退役的虚拟声明路径（tasks/articles 固定声明摘除后的过渡防线）：
+ * 旧版本对端仍收集 __ws-external__/{wsid}/.dogear/{tasks.json*,articles} 条目，本端一律排除防旧位置孤儿文件；
+ * 墓碑通道豁免（tombstoneCandidates 按用户范围判定）驱动旧对端清理旧位置数据。userSyncPaths 勾选的 .dogear
+ * 子树若真实含同名路径会被一并拦，迁移后工作区根已无此数据，可接受
+ */
+function isRetiredVirtualDeclRelPath(segments: string[]): boolean {
+  if (segments[0] !== EXTERNAL_ANCHOR_PREFIX || segments.length < 4 || segments[2] !== '.dogear') return false;
+  const third = segments[3];
+  return third === 'articles' || third === 'tasks.json' || third.startsWith('tasks.json.conflict-');
+}
+
+/**
+ * 已退役的 configDir 实路径（文章迁工作区 dogear/articles 后的过渡防线）：
+ * 旧版本对端仍收集 configDir workspaces/{wsid}/articles 条目，本端一律排除（含磁盘留档不进清单）防旧位置孤儿文件；
+ * 墓碑通道豁免（tombstoneCandidates 按用户范围判定，不含退役检查）驱动旧对端清理旧位置数据
+ */
+function isRetiredConfigArticles(segments: string[]): boolean {
+  return segments[0] === 'workspaces' && segments.length >= 3 && segments[2] === 'articles';
+}
 
 const IGNORE_FILE_SUFFIXES = ['.bak', '.lock', '.tmp'];
 const IGNORE_DIR_NAMES = new Set(['__pycache__', 'browser-profile', 'logs', 'backups']);
-const IGNORE_BASENAMES = new Set(['sync-state.json']);
+const IGNORE_BASENAMES = new Set(['sync-state.json', '.ds_store']);
 
 const SHADOW_GIT_DIR = 'shadow-git';
 const EXCLUDABLE_FILE_ITEMS = new Set<string>(ALWAYS_SYNC_FILES);
@@ -91,11 +113,21 @@ export function excludesFromSyncOptions(sync?: SyncOptions): ManifestExcludes {
  * 同步范围排除唯一判定入口（纯函数）：清单生成 / 拉取（diff）/ 应用（apply）/ 推送接收（push guard）四处对称共用。
  * diff 是集合差语义——只在 buildManifest 单侧排除，对端清单仍会以 remote-only 判拉取，
  * 因此拉取与应用侧必须用本函数对对端条目再过滤一遍；push 接收端同理由 guard 调本函数（D1）。
- * excludes 缺省 = 全放行（现状行为）。stocks/feishu 由 optionalDirs 控制（F1），不受 disabledItems 影响。
+ * 已退役目录/虚拟声明路径无条件排除（不受 excludes 缺省影响）；其余 excludes 缺省 = 全放行（现状行为）。
+ * stocks/feishu 由 optionalDirs 控制（F1），不受 disabledItems 影响。
  */
 export function isExcluded(relPath: string, excludes?: ManifestExcludes): boolean {
-  if (!excludes) return false;
   const segments = relPath.split('/');
+  if (RETIRED_SYNC_DIRS.has(segments[0])) return true;
+  if (isRetiredVirtualDeclRelPath(segments)) return true;
+  if (isRetiredConfigArticles(segments)) return true;
+  return isUserScopeExcluded(relPath, excludes);
+}
+
+/** 用户范围排除（不含退役防线）：tombstoneCandidates 专用——关闭同步项是开关状态而非删除事实，不产墓碑；退役路径的墓碑豁免由调用方处理 */
+function isUserScopeExcluded(relPath: string, excludes?: ManifestExcludes): boolean {
+  const segments = relPath.split('/');
+  if (!excludes) return false;
   if (!excludes.shadowGit && segments.includes(SHADOW_GIT_DIR)) return true;
   if (!excludes.conflictCopies && isConflictCopyBasename(segments[segments.length - 1])) return true;
   const first = segments[0];
@@ -110,11 +142,16 @@ export function isExcluded(relPath: string, excludes?: ManifestExcludes): boolea
       // 目录项 = 第一段命中（前缀带 '/' 比较，workspaces/abc 命中而 workspaces.json 不命中）
       const dirSegment = relPath.slice(0, slash);
       if (EXCLUDABLE_DIR_ITEMS.has(dirSegment) && items.has(dirSegment)) return true;
-    }
-    // 虚拟路径条目：registry 声明的 tasks/articles 分别匹配；用户勾选子树（.dogear 之外）不在 disabledSyncItems 体系，勾选即开
-    if (first === EXTERNAL_ANCHOR_PREFIX && segments.length >= 4 && segments[2] === '.dogear') {
-      if (segments.length === 4 && segments[3] === 'tasks.json' && items.has('tasks')) return true;
-      if (segments[3] === 'articles' && items.has('articles')) return true;
+      // 工作区子树独立开关：tasks.json（含冲突副本）精确匹配，其余工作区子树不受牵连；
+      // articles 子树已退役（isExcluded 前置防线拦截），不再归属用户开关范围
+      if (dirSegment === 'workspaces' && segments.length >= 3) {
+        const third = segments[2];
+        if (items.has('tasks') && segments.length === 3 && (third === 'tasks.json' || third.startsWith('tasks.json.conflict-'))) return true;
+      }
+      // 退役虚拟声明路径仍按 tasks 开关归属用户范围（仅墓碑门控用：关开关不产墓碑；I/O 拦截由 isExcluded 的退役检查承担）
+      if (first === EXTERNAL_ANCHOR_PREFIX && segments.length === 4 && segments[2] === '.dogear' && segments[3] === 'tasks.json' && items.has('tasks')) {
+        return true;
+      }
     }
   }
   return false;
@@ -141,7 +178,7 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
     if (isExcluded(dir, excludes)) continue;
     jobs.push(walkDir(root, dir, entries, excludes));
   }
-  // 虚拟路径条目：workspaces.json 注册表 × registry 声明（tasks/articles）× userSyncPaths 勾选子树，
+  // 虚拟路径条目：userSyncPaths 勾选子树（tasks/articles 已归位 workspaces/{wsid}/ 由常规 walk 收集），
   // 按 per-peer 映射 enabled 过滤（未建映射的工作区外部数据不同步，与 workspaces/ 目录同一口径）
   jobs.push(collectVirtualEntries(root, options.userSyncPaths, options.enabledWorkspaceIds === undefined ? undefined : new Set(options.enabledWorkspaceIds), entries, excludes));
   await Promise.all(jobs);
@@ -150,7 +187,7 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
 }
 
 /**
- * 注册工作区的外部数据收集：读盘在工作区真实根（ws.path）下，产出 relPath 为 __ws-external__/{wsid}/ 虚拟形式。
+ * 注册工作区的用户勾选子树收集：读盘在工作区真实根（ws.path）下，产出 relPath 为 __ws-external__/{wsid}/ 虚拟形式。
  * 注册表不可读/工作区已注销时静默返回（清单条目来源驱动：注册表即全集）。
  */
 async function collectVirtualEntries(
@@ -169,9 +206,6 @@ async function collectVirtualEntries(
   await Promise.all(registered.map(async (ws) => {
     if (enabledIds && !enabledIds.has(ws.id)) return;
     const anchor = `${EXTERNAL_ANCHOR_PREFIX}/${ws.id}`;
-    const tasksAbs = path.join(ws.path, ...EXTERNAL_TASKS_REL.split('/'));
-    await statAbs(tasksAbs, `${anchor}/${EXTERNAL_TASKS_REL}`, out, excludes);
-    await walkAbsDir(path.join(ws.path, ...EXTERNAL_ARTICLES_REL.split('/')), `${anchor}/${EXTERNAL_ARTICLES_REL}`, out, excludes);
     for (const rel of userSyncPaths?.[ws.id] ?? []) {
       if (!isCleanRelSegs(rel)) continue;
       const abs = path.join(ws.path, ...rel.split('/'));
@@ -334,8 +368,10 @@ export function tombstoneCandidates(
     const relPath = entry.relPath;
     if (currentSet.has(relPath)) continue;
     if (relPath === 'settings.json') continue;
-    if (isExcluded(relPath, options?.excludes)) continue;
     const segs = relPath.split('/');
+    // 墓碑门控用用户范围判定（含旧虚拟声明的 tasks/articles 归属匹配）：关开关/可选目录是开关状态而非删除事实，不产墓碑；
+    // 退役路径的 I/O 拦截（isExcluded 前置退役检查）不影响此处，墓碑照常生成驱动对端删除
+    if (isUserScopeExcluded(relPath, options?.excludes)) continue;
     // 未 enabled 工作区的路径消失是开关/映射状态而非删除事实（含 __ws-external__ 虚拟条目），不产墓碑
     if (
       enabled !== undefined &&
@@ -364,14 +400,16 @@ export async function diffManifests(input: DiffInput): Promise<DiffResult> {
       result.skipped.push({ relPath, reason: 'unsafe path' });
       continue;
     }
-    if (isExcluded(relPath, input.excludes)) {
-      result.skipped.push({ relPath, reason: 'excluded by local sync scope' });
-      continue;
-    }
     const localEntry = localMap.get(relPath);
     if (!localEntry) {
+      // 墓碑检查须先于排除判定：退役目录条目被 isExcluded 恒排除，若排除在前则删除传播永远走不到；
+      // 排除项不进墓碑集（tombstoneCandidates 拦截），顺序对调对既有语义无影响
       if (input.localTombstones?.has(relPath)) {
         result.deletePropagation.push(remoteEntry);
+        continue;
+      }
+      if (isExcluded(relPath, input.excludes)) {
+        result.skipped.push({ relPath, reason: 'excluded by local sync scope' });
         continue;
       }
       result.pull.push(remoteEntry);

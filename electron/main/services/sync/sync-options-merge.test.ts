@@ -340,22 +340,24 @@ test('excludesFromSyncOptions：true=同步 直传（无翻转），disabledItem
 
 // ── SYNC_ITEM_IDS 白名单常量 ──
 
-test('SYNC_ITEM_IDS：15 项、id 唯一、settings.json 标必选、含 stocks/feishu/tasks/articles/agent.md', () => {
+test('SYNC_ITEM_IDS：15 项、id 唯一、settings.json 标必选、含 stocks/feishu/tasks/agent.md/preferences.md/custom；articles 已退役不存', () => {
   expect(SYNC_ITEM_IDS).toHaveLength(15);
   const ids = SYNC_ITEM_IDS.map((m) => m.id);
   expect(new Set(ids).size).toBe(15);
   for (const expected of [
-    'workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history',
-    'tasks', 'articles', 'settings.json', 'plans.json', 'notifications.json', 'agent.md', 'stocks', 'feishu',
+    'workspaces', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history',
+    'tasks', 'settings.json', 'plans.json', 'notifications.json', 'agent.md', 'preferences.md', 'stocks', 'feishu', 'custom',
   ]) {
     expect(ids).toContain(expected);
   }
+  expect(ids).not.toContain('conversations');
+  expect(ids).not.toContain('articles');
   expect(SYNC_ITEM_IDS.find((m) => m.id === 'settings.json')?.required).toBe(true);
 });
 
-// ── SETTINGS_SYNC_FIELDS 传播白名单常量（Step 5 逐字段核对定稿，17 顶层字段全覆盖） ──
+// ── SETTINGS_SYNC_FIELDS 传播白名单常量（Step 5 逐字段核对定稿，16 顶层字段全覆盖） ──
 
-test('SETTINGS_SYNC_FIELDS 定稿：9 项通用偏好，不含保本端字段', () => {
+test('SETTINGS_SYNC_FIELDS 定稿：8 项通用偏好，不含保本端字段', () => {
   expect([...SETTINGS_SYNC_FIELDS].sort()).toEqual([
     'ai',
     'appearance',
@@ -365,7 +367,6 @@ test('SETTINGS_SYNC_FIELDS 定稿：9 项通用偏好，不含保本端字段', 
     'paymentBlockedHosts',
     'subAgent',
     'update',
-    'webAiSites',
   ]);
   for (const localOnly of ['snapshot', 'backup', 'ui', 'profiles', 'browserProxyServer', 'webMcpApiKey', 'migrated', 'syncOptions']) {
     expect(SETTINGS_SYNC_FIELDS).not.toContain(localOnly);

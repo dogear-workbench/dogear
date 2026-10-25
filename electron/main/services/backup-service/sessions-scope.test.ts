@@ -26,32 +26,25 @@ async function latestZipEntries(scope: string, category: string): Promise<string
 
 beforeEach(async () => {
   process.env.DOGEAR_CONFIG_DIR = await fsp.mkdtemp(path.join(tmpdir(), 'dogear-sess-'));
-  await fsp.mkdir(cfg('conversations', 'conv-g'), { recursive: true });
-  await fsp.writeFile(cfg('conversations', 'conv-g', 'global.jsonl'), '{"id":"g"}', 'utf8');
   await fsp.mkdir(cfg('workspaces', 'ws-a', 'sessions'), { recursive: true });
   await fsp.writeFile(cfg('workspaces', 'ws-a', 'sessions', 's1.jsonl'), '{"id":1}', 'utf8');
   await fsp.writeFile(cfg('workspaces', 'workspaces.json'), JSON.stringify({ version: 1, workspaces: [{ id: 'ws-a', path: cfg('disk-ws-a') }] }), 'utf8');
 });
 
-test('runBackup sessions：workspace zip 只含本工作区会话，global zip 只含全局 conversations/', async () => {
+test('runBackup sessions：workspace zip 只含本工作区会话，global scope 已收敛不再支持（conversations 退役）', async () => {
   const wsResult = await runBackup('sessions', 'ws-a');
   expect(wsResult.fileName).not.toBeNull();
   const wsEntries = await latestZipEntries('ws-a', 'sessions');
   expect(wsEntries).toEqual(['workspaces/ws-a/sessions/s1.jsonl']);
 
-  const globalResult = await runBackup('sessions', 'global');
-  expect(globalResult.fileName).not.toBeNull();
-  const globalEntries = await latestZipEntries('global', 'sessions');
-  expect(globalEntries).toEqual(['conversations/conv-g/global.jsonl']);
+  await expect(runBackup('sessions', 'global')).rejects.toThrow('不支持 global scope');
 });
 
-test('runBackup sessions：last-run 记录 global:sessions 与 ws-a:sessions 且带签名', async () => {
+test('runBackup sessions：last-run 只记 ws-a:sessions 且带签名，global 无备份记录', async () => {
   await runBackup('sessions', 'ws-a');
-  await runBackup('sessions', 'global');
   const wsRun = await readCategoryRun('sessions', 'ws-a');
   const globalRun = await readCategoryRun('sessions', 'global');
   expect(wsRun?.ok).toBe(true);
-  expect(globalRun?.ok).toBe(true);
   expect(wsRun?.signature).toBeDefined();
-  expect(globalRun?.signature).toBeDefined();
+  expect(globalRun).toBeNull();
 });

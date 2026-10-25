@@ -11,8 +11,9 @@
  * 新增 attach 防线 recoverAlignedHarnessForConversation：有历史轮次但 sessionId 丢失时
  * 先对齐回填再走 open 恢复，堵死空壳覆盖的二次伤害。
  *
- * 不经 PiSessionRepository.list：其 cwd 过滤/路径解析在不同环境下行为不一致，
- * 直接扫 sessions/<flat-cwd>/<ts>_<sessionId>.jsonl 文件名（jsonl-repo 的稳定命名契约）。
+ * 不经 PiSessionRepository.list：其面向元数据列表，时间对齐需要直接轻量读各会话 sidecar，
+ * 直接扫 sessions/<sessionId>/session.json（目录名即 sessionId，pi-durable 布局；
+ * 迁移前的旧文件名契约已由 storage-migrator.ts 一次性转换，此处只见新布局）。
  */
 
 import fs from 'fs/promises';
@@ -29,36 +30,30 @@ interface HarnessCandidate {
   createdAtMs: number;
 }
 
-/** 文件名形如 2026-08-19T03-06-36-014Z_01a017fc-266e-....jsonl */
-function parseSessionFileName(name: string): HarnessCandidate | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z_([0-9a-f-]+)\.jsonl$/i.exec(name);
-  if (!match) return null;
-  const createdAtMs = Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${match[7]}Z`);
-  if (!Number.isFinite(createdAtMs)) return null;
-  return { sessionId: match[8], createdAtMs };
-}
-
 async function listHarnessCandidates(workspaceId: string): Promise<HarnessCandidate[]> {
   const sessionsRoot = path.join(getConfigDir(), 'workspaces', workspaceId, 'sessions');
   const candidates: HarnessCandidate[] = [];
-  let cwdDirs: string[];
+  let sessionDirs: import('fs').Dirent[];
   try {
-    cwdDirs = (await fs.readdir(sessionsRoot, { withFileTypes: true }))
-      .filter((e) => e.isDirectory())
-      .map((e) => path.join(sessionsRoot, e.name));
+    sessionDirs = (await fs.readdir(sessionsRoot, { withFileTypes: true }))
+      .filter((e) => e.isDirectory());
   } catch {
     return candidates;
   }
-  for (const dir of cwdDirs) {
-    let files: string[];
+  for (const dir of sessionDirs) {
+    let raw: string;
     try {
-      files = await fs.readdir(dir);
+      raw = await fs.readFile(path.join(sessionsRoot, dir.name, 'session.json'), 'utf-8');
     } catch {
       continue;
     }
-    for (const file of files) {
-      const parsed = parseSessionFileName(file);
-      if (parsed) candidates.push(parsed);
+    try {
+      const meta = JSON.parse(raw) as { id?: unknown; createdAt?: unknown };
+      if (typeof meta.id !== 'string' || meta.id !== dir.name) continue;
+      if (typeof meta.createdAt !== 'number' || !Number.isFinite(meta.createdAt)) continue;
+      candidates.push({ sessionId: dir.name, createdAtMs: meta.createdAt });
+    } catch {
+      continue;
     }
   }
   return candidates;

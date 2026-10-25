@@ -2,6 +2,7 @@ import { tipc } from '@egoist/tipc/main';
 import {
   createNote,
   getNote,
+  getTrashedNote,
   listNotes,
   updateNote,
   appendNote,
@@ -105,6 +106,16 @@ export const notesRouter = {
     .action(async ({ input }) => {
       try {
         return { notes: await listTrashNotes(input.workspaceId) };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  getTrashNote: t.procedure
+    .input<{ workspaceId: string; noteId: string }>()
+    .action(async ({ input }) => {
+      try {
+        return { note: await getTrashedNote(input.workspaceId, input.noteId) };
       } catch (e) {
         return { error: String(e) };
       }

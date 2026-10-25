@@ -85,9 +85,9 @@ test('默认模式：七个基础工具全部 allow 时全部放行', () => {
 });
 
 test('默认模式：工具包工具自动放行', () => {
-  const packMap = new Map([['dogear__RecallMemory', 'dogear-memory'], ['dogear__ReadArticle', 'article']]);
+  const packMap = new Map([['dogear__RecallMemory', 'dogear-memory'], ['dogear__SaveArticle', 'article']]);
   expect(decideToolPermission('dogear__RecallMemory', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
-  expect(decideToolPermission('dogear__ReadArticle', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
+  expect(decideToolPermission('dogear__SaveArticle', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
 });
 
 test('默认模式：未分类工具返回 ask', () => {
@@ -111,44 +111,39 @@ test('会话允许集不共享：不同 Set 实例互不影响', () => {
   expect(decideToolPermission('bash', 'default', emptyPackMap, allowedB, allAsk())).toBe('ask');
 });
 
-const browserPackMap = new Map(
+const extensionPackMap = new Map(
   [
-    'dogear__browser__readArticle',
-    'dogear__browser__search',
-    'dogear__browser__navigate',
-    'dogear__browser__observe_page',
-    'dogear__browser__click',
-    'dogear__browser__fill',
-    'dogear__browser__read_text',
-    'dogear__browser__wait_for',
-    'dogear__browser__screenshot',
-    'dogear__browser__close',
-  ].map((name) => [name, 'browser']),
+    'dogear__extension__navigate',
+    'dogear__extension__observe_page',
+    'dogear__extension__click',
+    'dogear__extension__fill',
+    'dogear__extension__read_text',
+    'dogear__extension__wait_for',
+    'dogear__extension__screenshot',
+  ].map((name) => [name, 'extension']),
 );
 
-test('默认模式：浏览器只读工具随工具包放行', () => {
+test('默认模式：扩展通道只读工具随工具包放行', () => {
   for (const tool of [
-    'dogear__browser__search',
-    'dogear__browser__navigate',
-    'dogear__browser__observe_page',
-    'dogear__browser__read_text',
-    'dogear__browser__wait_for',
-    'dogear__browser__screenshot',
-    'dogear__browser__close',
+    'dogear__extension__navigate',
+    'dogear__extension__observe_page',
+    'dogear__extension__read_text',
+    'dogear__extension__wait_for',
+    'dogear__extension__screenshot',
   ]) {
-    expect(decideToolPermission(tool, 'default', browserPackMap, emptyAllowed, allAsk())).toBe('allow');
+    expect(decideToolPermission(tool, 'default', extensionPackMap, emptyAllowed, allAsk())).toBe('allow');
   }
 });
 
-test('默认模式：readArticle/click/fill 逐次确认，工具包启用不覆盖', () => {
-  for (const tool of ['dogear__browser__readArticle', 'dogear__browser__click', 'dogear__browser__fill']) {
-    expect(decideToolPermission(tool, 'default', browserPackMap, emptyAllowed, allAsk())).toBe('ask');
+test('默认模式：扩展通道工具随工具包放行（click/fill 安全由 guard_submit 确认卡承担，不再走权限层逐次确认）', () => {
+  for (const tool of extensionPackMap.keys()) {
+    expect(decideToolPermission(tool, 'default', extensionPackMap, emptyAllowed, allAsk())).toBe('allow');
   }
 });
 
-test('autoExecute 模式：浏览器全部工具放行（含交互三工具）', () => {
-  for (const tool of browserPackMap.keys()) {
-    expect(decideToolPermission(tool, 'autoExecute', browserPackMap, emptyAllowed, allAsk())).toBe('allow');
+test('autoExecute 模式：扩展全部工具放行（含交互两工具）', () => {
+  for (const tool of extensionPackMap.keys()) {
+    expect(decideToolPermission(tool, 'autoExecute', extensionPackMap, emptyAllowed, allAsk())).toBe('allow');
   }
 });
 
@@ -186,6 +181,11 @@ test('默认模式：dogear__GitRevert 逐次确认，工具包启用不覆盖',
   expect(decideToolPermission('dogear__GitRevert', 'default', emptyPackMap, emptyAllowed, allAsk())).toBe('ask');
 });
 
-test('autoExecute 模式：dogear__GitRevert 放行（与浏览器交互工具同语义）', () => {
+test('autoExecute 模式：dogear__GitRevert 放行', () => {
   expect(decideToolPermission('dogear__GitRevert', 'autoExecute', gitPackMap, emptyAllowed, allAsk())).toBe('allow');
+});
+
+test('默认模式：tool_search 元工具无副作用自动放行，不受未分类 ask 兑底影响', () => {
+  expect(decideToolPermission('tool_search', 'default', emptyPackMap, emptyAllowed, allAsk())).toBe('allow');
+  expect(decideToolPermission('tool_search', 'autoExecute', emptyPackMap, emptyAllowed, allAsk())).toBe('allow');
 });

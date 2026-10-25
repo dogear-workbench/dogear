@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { toast } from 'sonner';
 import { setupSettingsSync } from '@/lib/setup-settings-sync';
+import { logToMain } from '@/lib/log-report';
 import './globals.css';
 
 setupSettingsSync();
@@ -27,17 +28,11 @@ window.onerror = (message, source, lineno, colno, error) => {
   });
 
   // 通过 IPC 发送到主进程写入日志
-  try {
-    if (window.ipcRenderer) {
-      window.ipcRenderer.invoke('logFromRenderer', {
-        level: 'error',
-        message: `[全局异常] ${String(message)} at ${source}:${lineno}:${colno}`,
-        stack: error?.stack,
-      });
-    }
-  } catch {
-    // IPC 不可用时忽略
-  }
+  logToMain(
+    'error',
+    `[全局异常] ${String(message)} at ${source}:${lineno}:${colno}`,
+    error?.stack
+  );
 };
 
 // 捕获未处理的 Promise 拒绝
@@ -51,17 +46,11 @@ window.addEventListener('unhandledrejection', (event) => {
     description: message,
   });
 
-  try {
-    if (window.ipcRenderer) {
-      window.ipcRenderer.invoke('logFromRenderer', {
-        level: 'error',
-        message: `[未处理的Promise拒绝] ${message}`,
-        stack: reason instanceof Error ? reason.stack : undefined,
-      });
-    }
-  } catch {
-    // IPC 不可用时忽略
-  }
+  logToMain(
+    'error',
+    `[未处理的Promise拒绝] ${message}`,
+    reason instanceof Error ? reason.stack : undefined
+  );
 });
 
 // ==================== React 渲染 ====================

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
-import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, TASKS_TAB_ID } from '@/stores/session-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { useWorkspaceId } from './workspace-id-context';
 import { useWorkspacePath } from './path-link';
@@ -78,7 +78,7 @@ export function TaskReportMessage({ toolInput, toolOutput, isError, searchHit = 
       toast.warning('任务不存在或已删除');
       return;
     }
-    useSessionStore.getState().switchTab(NOTES_TAB_ID);
+    useSessionStore.getState().switchTab(TASKS_TAB_ID);
     useTaskFocusStore.getState().requestTaskFocus(taskId);
   };
 

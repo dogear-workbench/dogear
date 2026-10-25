@@ -1,12 +1,31 @@
 /**
- * 场景总览冒烟：直调 buildSceneOverview 核对三态六行 + 两条提示词读取函数。
+ * 场景总览冒烟：直调 buildSceneOverview 核对三态七行 + 两条提示词读取函数。
  * 用法：DOGEAR_CONFIG_DIR=<.dogear 目录> bun scripts/scene-overview-smoke.ts
+ * ability-scene 依赖链上有 service 静态 import electron（只用到 app.isPackaged），纯 bun 下 plugin mock 掉
  */
-import { buildSceneOverview } from '../electron/main/tipc/ability-scene.js';
-import { loadStateExtractPrompt, STATE_EXTRACT_SYSTEM_PROMPT } from '../electron/main/services/memory/state-extract-prompt.js';
-import { loadArticleParseSkill, readArticleParseSkillMd } from '../electron/main/agents/tasks/parse-article-task.js';
-import { buildExecutionPrompt, EXECUTION_PROMPT_PREVIEW } from '../electron/main/services/task-execution-prompt.js';
-import { getAll as getAllWorkspaces } from '../electron/main/services/workspace-json-service.js';
+Bun.plugin({
+  name: 'mock-electron',
+  setup(build) {
+    build.module('electron', () => ({
+      loader: 'object' as const,
+      exports: {
+        default: { app: { isPackaged: false }, nativeTheme: {} },
+        app: { isPackaged: false },
+        nativeTheme: {},
+      },
+    }));
+  },
+});
+
+import path from 'path';
+import { existsSync } from 'fs';
+
+const { buildSceneOverview } = await import('../electron/main/tipc/ability-scene.js');
+const { ABILITY_PACKS } = await import('../electron/main/agents/ability-registry.js');
+const { loadStateExtractPrompt, STATE_EXTRACT_SYSTEM_PROMPT } = await import('../electron/main/services/memory/state-extract-prompt.js');
+const { loadArticleParseSkill, readArticleParseSkillMd } = await import('../electron/main/agents/tasks/parse-article-task.js');
+const { buildExecutionPrompt, EXECUTION_PROMPT_PREVIEW } = await import('../electron/main/services/task-execution-prompt.js');
+const { getAll: getAllWorkspaces } = await import('../electron/main/services/workspace-json-service.js');
 
 let failures = 0;
 function check(name: string, ok: boolean, detail?: string): void {
@@ -18,12 +37,14 @@ function check(name: string, ok: boolean, detail?: string): void {
 }
 
 const workspaces = await getAllWorkspaces();
-const ws = workspaces.find((w) => w.id !== 'personal' && w.path) ?? workspaces[0];
+const ws = workspaces.find((w) => w.path) ?? workspaces[0];
 if (!ws) {
   console.error('无工作区，冒烟终止');
   process.exit(1);
 }
 console.log(`工作区: ${ws.name} (${ws.id}) path=${ws.path ?? '(无)'}\n`);
+
+const wsHasGit = ws.path ? existsSync(path.join(ws.path, '.git')) : false;
 
 const result = await buildSceneOverview(ws.id);
 if ('error' in result) {
@@ -32,11 +53,11 @@ if ('error' in result) {
 }
 
 console.log('== 行结构 ==');
-check('共 7 行', result.rows.length === 7, `实际 ${result.rows.length}`);
+check('共 6 行', result.rows.length === 6, `实际 ${result.rows.length}`);
 const rowIds = result.rows.map((r) => r.id);
 check(
-  '行序 main→personal→sub→executor→scheduler-custom→scheduler-state→scheduler-parse',
-  JSON.stringify(rowIds) === JSON.stringify(['main', 'personal', 'sub', 'executor', 'scheduler-custom', 'scheduler-state', 'scheduler-parse']),
+  '行序 main→sub→executor→scheduler-custom→scheduler-state→scheduler-parse',
+  JSON.stringify(rowIds) === JSON.stringify(['main', 'sub', 'executor', 'scheduler-custom', 'scheduler-state', 'scheduler-parse']),
   rowIds.join(','),
 );
 
@@ -46,32 +67,23 @@ const cellOf = (rowId: string, key: string) => byId.get(rowId)!.packs.find((c) =
 console.log('\n== main 行（全 switchable） ==');
 const mainRow = byId.get('main')!;
 check('matrix 形态', mainRow.kind === 'matrix');
-check('13 包', mainRow.packs.length === 13, `实际 ${mainRow.packs.length}`);
+check('注册表包全量 + custom-skill 动态行', mainRow.packs.length === ABILITY_PACKS.length + result.rows[0].packs.filter((c) => c.key.startsWith('custom-skill:')).length, `实际 ${mainRow.packs.length}`);
 check('全 switchable 且无 editable 兼容字段', mainRow.packs.every((c) => c.state === 'switchable' && !('editable' in c)));
+check('switchable 正常态不输出 reason（名称自表达）', mainRow.packs.every((c) => c.reason === undefined));
+check('workspace-git loaded 与 .git 探测一致', cellOf('main', 'workspace-git')!.loaded === wsHasGit);
+check('workspace-snapshot loaded（绑定工作区）', cellOf('main', 'workspace-snapshot')!.loaded === !!ws.path);
 
-console.log('\n== personal 行 ==');
-const personalRow = byId.get('personal')!;
-check('workspace-rules forced', cellOf('personal', 'workspace-rules')?.state === 'forced');
-check('global-rules switchable', cellOf('personal', 'global-rules')?.state === 'switchable');
-for (const key of ['memory', 'notes', 'workspace-git', 'group-context', 'agent-collab', 'shunt']) {
-  const c = cellOf('personal', key)!;
-  check(`${key} excluded`, c.state === 'excluded', c.state);
-}
-check('扩展包全 switchable', personalRow.packs.filter((c) => c.category === 'extension').every((c) => c.state === 'switchable'));
-
-console.log('\n== sub 行（新增） ==');
+console.log('\n== sub 行 ==');
 const subRow = byId.get('sub')!;
 check('matrix 形态', subRow.kind === 'matrix' && !('editable' in subRow));
-const autonomous = ['stock', 'article', 'browser', 'web-mcp'];
-for (const key of autonomous) {
-  const c = cellOf('sub', key)!;
-  check(`${key} excluded+Profile 裁决`, c.state === 'excluded' && c.reason.includes('Profile'), c.reason);
-}
+check('扩展包格子不渲染（groupNotes 一句话替代）', ['stock', 'article', 'browser-extension', 'web-mcp', 'code-workflow'].every((k) => !cellOf('sub', k)) && !!subRow.groupNotes?.extension);
 const collabSub = cellOf('sub', 'agent-collab')!;
-check('agent-collab switchable+非对称文案', collabSub.state === 'switchable' && collabSub.reason.includes('非对称') && collabSub.reason.includes('契约段恒注入'), collabSub.reason);
+check('agent-collab switchable（reason 仅 excluded/forced 输出）', collabSub.state === 'switchable' && collabSub.reason === undefined);
 check('notes excluded（仅主会话）', cellOf('sub', 'notes')?.state === 'excluded');
 check('shunt excluded（仅主会话）', cellOf('sub', 'shunt')?.state === 'excluded');
 check('memory switchable（sub 不查 hasWorkspace）', cellOf('sub', 'memory')?.state === 'switchable');
+check('workspace-git 条件按满足计（sub 行约定）', cellOf('sub', 'workspace-git')?.loaded === true);
+check('workspace-snapshot switchable', cellOf('sub', 'workspace-snapshot')?.state === 'switchable');
 check('group-context switchable（占位组）', cellOf('sub', 'group-context')?.state === 'switchable');
 check('固定层 enabled=scenePackEnabled（首包 workspace-rules 默认 true）', cellOf('sub', 'workspace-rules')?.enabled === true);
 
@@ -79,13 +91,14 @@ console.log('\n== executor 行 ==');
 const executorRow = byId.get('executor')!;
 const shunt = cellOf('executor', 'shunt')!;
 check('shunt excluded+loaded=false', shunt.state === 'excluded' && !shunt.loaded);
-check('notes switchable+段级裁剪文案', cellOf('executor', 'notes')?.reason.includes('存卡纪律段不注入'));
+check('notes switchable（reason 仅 excluded/forced 输出）', cellOf('executor', 'notes')?.state === 'switchable' && cellOf('executor', 'notes')?.reason === undefined);
 check('memory switchable（有工作区路径）', ws.path ? cellOf('executor', 'memory')?.state === 'switchable' : cellOf('executor', 'memory')?.state === 'excluded');
-check('固定层默认全 enabled', ['workspace-rules', 'global-rules', 'notes', 'workspace-git'].every((k) => cellOf('executor', k)?.enabled === true));
+const execGitCell = cellOf('executor', 'workspace-git')!;
+check('executor workspace-git 排除态与 .git 探测一致', execGitCell.loaded === wsHasGit && execGitCell.state === (wsHasGit ? 'switchable' : 'excluded'), `state=${execGitCell.state} loaded=${execGitCell.loaded} wsHasGit=${wsHasGit}`);
+check('固定层默认全 enabled', ['workspace-rules', 'global-rules', 'notes', 'workspace-git', 'workspace-snapshot'].every((k) => cellOf('executor', k)?.enabled === true));
 check('带 extensionNote', !!executorRow.extensionNote && executorRow.extensionNote.includes('staged-execution'));
-check('两类执行提示词模板（default + code-impl）', executorRow.prompts?.length === 2 && executorRow.prompts.every((p) => p.content?.includes('<task-execution>')), JSON.stringify(executorRow.prompts?.map((p) => p.id)));
-check('code-impl 模板含 staged-execution 引用', executorRow.prompts?.some((p) => p.id === 'executor-code-impl' && p.content?.includes('staged-execution')) === true);
-check('default 模板无 staged-execution 引用', executorRow.prompts?.some((p) => p.id === 'executor-default' && p.content && !p.content.includes('staged-execution')) === true);
+check('单段通用执行模板（default 预览形态）', executorRow.prompts?.length === 1 && executorRow.prompts[0].id === 'executor-template' && !!executorRow.prompts[0].content?.includes('<task-execution>'), JSON.stringify(executorRow.prompts?.map((p) => p.id)));
+check('default 预览无 staged-execution 引用（code-impl 差异由 note 说明）', !!executorRow.prompts?.[0]?.content && !executorRow.prompts[0].content.includes('staged-execution') && executorRow.prompts[0].note.includes('代码实施'));
 check('模板含占位标题', executorRow.prompts?.[0]?.content?.includes('（任务标题）') === true);
 
 console.log('\n== scheduler-custom 行 ==');
@@ -96,10 +109,9 @@ for (const key of ['memory', 'notes']) {
   check(`${key} switchable`, c.state === 'switchable', JSON.stringify(c));
   check(`${key} loaded=enabled（buildCustomToolSet 语义）`, c.loaded === c.enabled);
 }
+check('git 与快照两包 excluded（后台任务不走能力包）', ['workspace-git', 'workspace-snapshot'].every((k) => cellOf('scheduler-custom', k)?.state === 'excluded'));
 check('无 subToggles（enabledToolPacks 编辑权已撤）', schedRow.packs.every((c) => !c.subToggles));
-const stockCell = cellOf('scheduler-custom', 'stock')!;
-check('可选包 excluded+指引任务编辑页', stockCell.state === 'excluded' && stockCell.reason.includes('toolPacksOverride'), stockCell.reason);
-check('code-workflow excluded（后台无 skill 挂载）', cellOf('scheduler-custom', 'code-workflow')?.state === 'excluded');
+check('扩展包格子不渲染（groupNotes 指引任务编辑页）', ['stock', 'article', 'browser-extension', 'web-mcp', 'code-workflow'].every((k) => !cellOf('scheduler-custom', k)) && !!schedRow.groupNotes?.extension);
 
 console.log('\n== summary 行 ==');
 const stateRow = byId.get('scheduler-state')!;

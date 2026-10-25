@@ -1,6 +1,5 @@
 // electron/main/tipc/index.ts
 import { registerIpcMain } from '@egoist/tipc/main';
-import { aiRouter } from './ai.js';
 import { fileRouter } from './file.js';
 import { workspaceRouter } from './workspace.js';
 import { agentRouter } from './agent.js';
@@ -11,6 +10,7 @@ import { gitRouter } from './git.js';
 import { settingsRouter } from './settings.js';
 import { backupRouter } from './backup.js';
 import { memoryRouter } from './memory.js';
+import { assetsRouter } from './assets.js';
 import { logRouter } from './log.js';
 import { claudeConfigRouter } from './claude-config.js';
 import { abilityRouter } from './ability.js';
@@ -31,13 +31,11 @@ import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
 import { focusRouter } from './focus.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
-import { browserRouter, registerBrowserActionBridge, registerExtensionInterventionBridge, registerExtensionStatusBridge, registerExtensionHandoffBridge } from './browser.js';
+import { browserRouter, registerHumanInterventionBridge, registerExtensionInterventionBridge, registerExtensionStatusBridge, registerExtensionHandoffBridge } from './browser.js';
 import { initExtensionWaitGate } from '../services/browser/extension-wait-gate.js';
-import { browserDataRouter } from './browser-data.js';
 import { syncRouter, registerSyncBroadcaster } from './sync.js';
 
 export const router = {
-  ...aiRouter,
   ...fileRouter,
   ...workspaceRouter,
   ...agentRouter,
@@ -48,6 +46,7 @@ export const router = {
   ...settingsRouter,
   ...backupRouter,
   ...memoryRouter,
+  ...assetsRouter,
   ...logRouter,
   ...claudeConfigRouter,
   ...abilityRouter,
@@ -69,7 +68,6 @@ export const router = {
   ...focusRouter,
   ...ptyRouter,
   ...browserRouter,
-  ...browserDataRouter,
   ...syncRouter,
 };
 
@@ -81,8 +79,8 @@ export function registerTipcHandlers() {
   registerArticleParseStatusListener();
   // 终端二期：PTY 事件 → 渲染层广播桥接
   registerPtyBroadcaster();
-  // 浏览器动作流：Agent 工具源接线 + 渲染层增量广播桥接
-  registerBrowserActionBridge();
+  // 人工等待：全量广播桥接 + 新卡打扰（intervention-notify）
+  registerHumanInterventionBridge();
   // 浏览器扩展连接状态：gateway → 渲染层广播桥接
   registerExtensionStatusBridge();
   // 扩展断连分流：已配置任务浏览器时自动拉起+等待连接卡（gateway not_connected gate 注册）

@@ -5,7 +5,6 @@ import { loadAllSkillEntries } from '../../agents/pi-session/skill-loader.js';
 
 export const KNOWN_TOOL_PACKS: readonly string[] = [
   'article',
-  'browser',
   'web-mcp',
   'stock-quote',
   'stock-analysis',

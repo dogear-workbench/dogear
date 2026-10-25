@@ -17,6 +17,10 @@ export interface SiteKnowledgeEntry {
   domain: string;
   updatedAt: number;
   size: number;
+  /** 正式地图（已验证）区条目数 */
+  verifiedCount: number;
+  /** 探索发现（未验证）区条目数 */
+  discoveryCount: number;
 }
 
 export interface AppendFindingResult {
@@ -26,6 +30,69 @@ export interface AppendFindingResult {
 }
 
 const recentFindings = new Map<string, number>();
+
+/** 多段后缀表：eTLD+1 判定用的常见复合后缀（未含的冷门后缀会多留一级，误差可接受） */
+const MULTI_PART_SUFFIXES = new Set([
+  'com.cn',
+  'net.cn',
+  'org.cn',
+  'gov.cn',
+  'edu.cn',
+  'ac.cn',
+  'mil.cn',
+  'co.uk',
+  'org.uk',
+  'ac.uk',
+  'gov.uk',
+  'net.uk',
+  'me.uk',
+  'co.jp',
+  'ne.jp',
+  'or.jp',
+  'ac.jp',
+  'go.jp',
+  'co.kr',
+  'or.kr',
+  'ne.kr',
+  'go.kr',
+  'ac.kr',
+  'com.hk',
+  'org.hk',
+  'edu.hk',
+  'gov.hk',
+  'com.tw',
+  'org.tw',
+  'edu.tw',
+  'gov.tw',
+  'com.au',
+  'net.au',
+  'org.au',
+  'edu.au',
+  'gov.au',
+  'com.br',
+  'net.br',
+  'org.br',
+  'com.sg',
+  'com.tr',
+  'com.mx',
+  'co.in',
+  'net.in',
+  'org.in',
+  'co.nz',
+  'net.nz',
+  'org.nz',
+  'co.za',
+]);
+
+/** host → 注册域（eTLD+1）；裸两段域名原样返回 */
+export function registeredDomain(rawDomain: string): string {
+  const domain = rawDomain.replace(/^\./, '').toLowerCase();
+  const labels = domain.split('.');
+  if (labels.length <= 2) return domain;
+  const lastTwo = labels.slice(-2).join('.');
+  if (MULTI_PART_SUFFIXES.has(lastTwo)) return labels.slice(-3).join('.');
+  return lastTwo;
+}
 
 export function normalizeDomain(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
@@ -111,12 +178,31 @@ export function listSiteKnowledge(): SiteKnowledgeEntry[] {
     if (!domain) continue;
     try {
       const st = fs.statSync(path.join(dir, d.name));
-      entries.push({ domain, updatedAt: st.mtimeMs, size: st.size });
+      const { verifiedCount, discoveryCount } = countSections(fs.readFileSync(path.join(dir, d.name), 'utf8'));
+      entries.push({ domain, updatedAt: st.mtimeMs, size: st.size, verifiedCount, discoveryCount });
     } catch (err) {
       console.warn('[site-knowledge] 档案信息读取失败，跳过:', d.name, err);
     }
   }
   return entries.sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+/** 统计两区条目数：按「## 正式地图 / ## 探索发现」标题切段，段内 `- ` 开头行计一条 */
+function countSections(content: string): { verifiedCount: number; discoveryCount: number } {
+  let section: 'verified' | 'discovery' | null = null;
+  let verifiedCount = 0;
+  let discoveryCount = 0;
+  for (const line of content.split('\n')) {
+    if (line.startsWith('## 正式地图')) {
+      section = 'verified';
+    } else if (line.startsWith('## 探索发现')) {
+      section = 'discovery';
+    } else if (section && line.startsWith('- ')) {
+      if (section === 'verified') verifiedCount += 1;
+      else discoveryCount += 1;
+    }
+  }
+  return { verifiedCount, discoveryCount };
 }
 
 export function deleteSiteKnowledge(domain: string): boolean {

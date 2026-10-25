@@ -1,13 +1,13 @@
 /**
- * 会话收尾自动清理：关闭扩展通道 Dogear 组内「agent 持有且未移交」的 tab，并释放通道独占。
+ * 会话收尾自动清理：直接关闭 agent 专属窗口（窗口内全部 tab 连带关闭），并释放通道独占。
  *
  * 挂载点在 PiSessionManager._destroySession（会话销毁唯一收口）；仅通道当前归属者触发
- * （多会话串行共用一组，非归属者不动组内 tab）；扩展断连或协议过旧时静默跳过。
- * 一键移交过的 tabId 在豁免集合内（page_handoff 帧上报，随 gateway 生命周期），保留不关。
+ * （多会话串行共用一通道，非归属者不动窗口）；扩展断连或协议过旧时静默跳过。
+ * 用户移交的 tab 留在用户窗口原地，不在 agent 窗口内，天然不受影响。
  */
 
 import { mainLogger } from '../../agents/logger.js';
-import { getExtensionStatus, getHandoffExemptTabIds, sendExtensionCommand } from './browser-gateway.js';
+import { getExtensionStatus, sendExtensionCommand } from './browser-gateway.js';
 import { getChannelOwner, releaseChannel } from './extension-ownership.js';
 import { recordBrowserAction } from './browser-action-stream.js';
 
@@ -26,19 +26,14 @@ export function cleanupSessionTabs(conversationId: string): void {
       logger.info(`会话收尾清理跳过（非扩展通道归属者）: conv=${conversationId}`);
       return;
     }
-    const exemptTabIds = getHandoffExemptTabIds();
     try {
-      const result = await sendExtensionCommand(
-        'close_group_tabs',
-        exemptTabIds.length > 0 ? { exemptTabIds } : {},
-        CLEANUP_COMMAND_TIMEOUT_MS,
-      );
+      const result = await sendExtensionCommand('close_agent_window', {}, CLEANUP_COMMAND_TIMEOUT_MS);
       const data = (result.data ?? {}) as { closedTabIds?: unknown };
       const closedTabIds = Array.isArray(data.closedTabIds)
         ? data.closedTabIds.filter((v): v is number => typeof v === 'number')
         : [];
       if (closedTabIds.length === 0) {
-        logger.info(`会话收尾清理：组内无可清理标签页: conv=${conversationId}`);
+        logger.info(`会话收尾清理：agent 窗口为空，无标签页可清理: conv=${conversationId}`);
         return;
       }
       logger.info(`会话收尾清理 ${closedTabIds.length} 个标签页: conv=${conversationId}`);

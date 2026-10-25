@@ -5,7 +5,7 @@ import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 import TurndownService from 'turndown';
 import { v4 as uuidv4 } from 'uuid';
-import { detectPlatform, fetchRawHtml } from './fetch.js';
+import { fetchRawHtml } from './fetch.js';
 import type { ArticleMeta } from './types.js';
 
 // Turndown 实例（HTML → Markdown 转换器）
@@ -28,15 +28,13 @@ export interface ParsedArticleData {
 type LinkedomDocument = ReturnType<typeof parseHTML>['document'];
 
 /**
- * 核心解析管线：DOM 预处理 → Readability → Turndown → 结果组装
- * rawHtml 需与 document 同源（微信短内容正则从原始 HTML 提取）；解析失败抛错
+ * 核心解析管线：DOM 预处理 → Readability → Turndown → 结果组装；解析失败抛错
  */
 export function parseArticleDocument(params: {
   document: LinkedomDocument;
-  rawHtml: string;
   url: string;
 }): ParsedArticleData {
-  const { document, rawHtml: html, url } = params;
+  const { document, url } = params;
 
   // 预处理：移除隐藏样式（微信公众号等平台通过 JS 控制内容可见性，
   // 静态解析时内容 div 带有 visibility:hidden/display:none，需要移除）
@@ -67,90 +65,41 @@ export function parseArticleDocument(params: {
   const reader = new Readability(document);
   const article = reader.parse();
 
-  // 微信短内容（随笔）正文不在 DOM 中，嵌在 JS 变量 text_page_info.content 里
-  const isWechat = detectPlatform(url) === 'wechat';
-  let wechatShortContent: string | null = null;
-  let wechatTitle: string | null = null;
-  let wechatAuthor: string | null = null;
-
-  if (isWechat) {
-    const contentMatch = html.match(/text_page_info:\s*\{[\s\S]*?content:\s*JsDecode\('([\s\S]*?)'\)/);
-    if (contentMatch) {
-      // 解码 \x0a 等转义字符，将换行符转为段落分隔
-      wechatShortContent = contentMatch[1]
-        .replace(/\\x0a/g, '\n')
-        .replace(/\\x26/g, '&')
-        .replace(/\\x27/g, "'")
-        .replace(/\\x22/g, '"')
-        .replace(/\\x3c/g, '<')
-        .replace(/\\x3e/g, '>');
-    }
-    const titleMatch = html.match(/window\.msg_title\s*=\s*window\.title\s*=\s*'([^']*)'/);
-    if (titleMatch) {
-      wechatTitle = titleMatch[1];
-    }
-    const authorMatch = html.match(/nick_name:\s*JsDecode\('([^']*)'\)/);
-    if (authorMatch) {
-      wechatAuthor = authorMatch[1];
-    }
-  }
-
   // 用 trim 后文本长度判断 Readability 是否有效，避免空白换行误判
   const trimmedTextLength = article?.textContent?.replace(/\s+/g, '').length || 0;
-  const readabilityValid = article
-    && trimmedTextLength > 100
-    && (!wechatShortContent || trimmedTextLength > wechatShortContent.length);
+  const readabilityValid = article && trimmedTextLength > 100;
 
-  if (!readabilityValid && !wechatShortContent) {
+  if (!readabilityValid) {
     throw new Error('无法解析文章内容，页面可能不是标准文章格式');
   }
 
-  let markdown: string;
-  let finalTitle: string;
-  let finalAuthor: string | null;
-  let finalExcerpt: string | null;
-  let finalWordCount: number;
-
-  if (readabilityValid && article) {
-    // 正文中的相对路径图片转换为绝对 URL
-    const baseUrl = new URL(url);
-    const articleContent = (article.content || '').replace(
-      /(<img\s[^>]*\bsrc\s*=\s*)(["'])([^"']+)\2/gi,
-      (_match, prefix, quote, src) => {
-        try {
-          const absoluteUrl = new URL(src, baseUrl.origin).href;
-          return `${prefix}${quote}${absoluteUrl}${quote}`;
-        } catch {
-          return _match;
-        }
+  // 正文中的相对路径图片转换为绝对 URL
+  const baseUrl = new URL(url);
+  const articleContent = (article.content || '').replace(
+    /(<img\s[^>]*\bsrc\s*=\s*)(["'])([^"']+)\2/gi,
+    (_match, prefix, quote, src) => {
+      try {
+        const absoluteUrl = new URL(src, baseUrl.origin).href;
+        return `${prefix}${quote}${absoluteUrl}${quote}`;
+      } catch {
+        return _match;
       }
-    );
-    markdown = turndown.turndown(articleContent);
-    finalTitle = article.title || wechatTitle || '未知标题';
-    finalAuthor = article.byline || wechatAuthor || null;
-    finalExcerpt = article.excerpt || null;
-    finalWordCount = article.textContent?.length || 0;
-  } else {
-    // 微信短内容 fallback：直接使用 JS 中提取的纯文本
-    markdown = wechatShortContent!;
-    finalTitle = wechatTitle || article?.title || '未知标题';
-    finalAuthor = wechatAuthor || article?.byline || null;
-    finalExcerpt = wechatShortContent!.slice(0, 200);
-    finalWordCount = wechatShortContent!.length;
-  }
+    }
+  );
+  const markdown = turndown.turndown(articleContent);
 
   return {
-    title: finalTitle,
-    author: finalAuthor,
-    siteName: article?.siteName || (isWechat ? '微信公众平台' : null),
-    excerpt: finalExcerpt,
-    wordCount: finalWordCount,
-    language: article?.lang || null,
+    title: article.title || '未知标题',
+    author: article.byline || null,
+    siteName: article.siteName || null,
+    excerpt: article.excerpt || null,
+    wordCount: article.textContent?.length || 0,
+    language: article.lang || null,
     content: markdown,
   };
 }
 
-/** 便捷入口：输入 HTML 字符串，内部用 linkedom 解析后走 parseArticleDocument；containerHtml 提供时（扩展通道 readArticle 的 selector 容器）用它替换 body，让 Readability 聚焦该容器（微信短内容等 rawHtml 特判仍基于完整 html） */
+/** 便捷入口：输入 HTML 字符串，内部用 linkedom 解析后走 parseArticleDocument；containerHtml 提供时（扩展通道 readArticle 的 selector 容器）用它替换 body，让 Readability 聚焦该容器 */
 export function parseArticleHtml(html: string, url: string, containerHtml?: string): ParsedArticleData {
   const { document } = parseHTML(html);
   if (containerHtml) {
@@ -162,7 +111,7 @@ export function parseArticleHtml(html: string, url: string, containerHtml?: stri
       document.documentElement.appendChild(body);
     }
   }
-  return parseArticleDocument({ document, rawHtml: html, url });
+  return parseArticleDocument({ document, url });
 }
 
 /**

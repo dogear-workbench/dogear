@@ -8,9 +8,6 @@ interface TaskState {
   loading: boolean;
   /** 当前已加载的工作区路径，用于惰性加载去重与 tasksChanged 事件匹配 */
   loadedWorkspacePath: string | null;
-  /** 当前打开详情的任务 id，null = 停留在列表 */
-  activeTaskId: string | null;
-
   loadTasks: (workspacePath: string) => Promise<void>;
   /** backlog 任务入队执行；成功后立即重拉分组，广播兜底 */
   executeTask: (workspacePath: string, taskId: string) => Promise<string | null>;
@@ -26,14 +23,12 @@ interface TaskState {
   updateExecProfile: (workspacePath: string, taskId: string, execProfile: ExecProfile) => Promise<string | null>;
   /** 监听主进程 tasksChanged 广播，工作区匹配时重新拉取分组；返回取消订阅函数 */
   subscribeTasksChanged: () => () => void;
-  setActiveTaskId: (taskId: string | null) => void;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
   groups: null,
   loading: false,
   loadedWorkspacePath: null,
-  activeTaskId: null,
 
   loadTasks: async (workspacePath) => {
     set({ loading: true });
@@ -150,6 +145,4 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     });
     return () => unsub();
   },
-
-  setActiveTaskId: (taskId) => set({ activeTaskId: taskId }),
 }));

@@ -23,7 +23,7 @@ const RECONNECT_WAIT_TIMEOUT_MS = 90_000;
 const EXTENSION_WAIT_TAB_ID = 'extension-wait';
 
 /** 收尾清理与会话卡 go_page 副作用不触发拉起：前者会话已销毁，后者失败保持卡片是既有语义 */
-const NO_LAUNCH_KINDS: readonly CommandKind[] = ['close_group_tabs', 'focus_tab'];
+const NO_LAUNCH_KINDS: readonly CommandKind[] = ['close_agent_window', 'focus_tab'];
 
 const logger = mainLogger.child('extension-wait-gate');
 
@@ -64,7 +64,7 @@ async function launchAndWait(config: TaskBrowserConfig): Promise<NotConnectedGat
   const message = processAlive
     ? `检测到 ${browserLabel} 已在运行，正在等待 Dogear 扩展恢复连接…扩展恢复后任务会自动继续，无需操作；也可点「取消」放弃本次等待。`
     : `正在启动 ${browserLabel}（${config.profileName}），等待浏览器扩展连接…连接成功后任务会自动继续，无需操作；也可点「取消」放弃本次等待。`;
-  const request = raiseHumanIntervention({
+  const request = await raiseHumanIntervention({
     tabId: EXTENSION_WAIT_TAB_ID,
     reason: 'extension_wait',
     message,
@@ -84,6 +84,12 @@ async function launchAndWait(config: TaskBrowserConfig): Promise<NotConnectedGat
     `等待扩展连接结束: outcome=${outcome} processAlive=${processAlive} browser=${config.browser} profile=${config.profileDirectory}`,
   );
   if (outcome === 'auto') return { ok: true };
+  if (outcome === 'unattended') {
+    return {
+      ok: false,
+      error: '用户不在（无人值守），已跳过等待浏览器扩展连接，命令未执行；请改用其他路径（换源/降级/跳过并在收尾报告注明）',
+    };
+  }
   if (outcome === 'denied') {
     return { ok: false, error: '用户已取消等待，命令未执行' };
   }

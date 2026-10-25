@@ -17,7 +17,7 @@ export function UserActionsCard({ toolInput, toolUseId, searchHit = false, activ
   const actions: string[] = Array.isArray(toolInput?.actions)
     ? toolInput.actions.filter((a: unknown): a is string => typeof a === 'string' && a.trim().length > 0)
     : [];
-  const { checked, busyIndex, toggle } = useUserActionChecklist(actions, toolUseId);
+  const { checked, toggle } = useUserActionChecklist(toolUseId);
 
   return (
     <div
@@ -33,7 +33,7 @@ export function UserActionsCard({ toolInput, toolUseId, searchHit = false, activ
         <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 flex-shrink-0">
           待你完成
         </span>
-        <span className="truncate">勾选完成后自动记入话题状态卡「已完成」</span>
+        <span className="truncate">勾选标记完成，同组会话以对话确认为准</span>
         {searchHit && activeMatchCount > 0 && <SearchHitBadge count={activeMatchCount} />}
       </div>
       {actions.length === 0 ? (
@@ -45,20 +45,15 @@ export function UserActionsCard({ toolInput, toolUseId, searchHit = false, activ
             return (
               <label
                 key={index}
-                className={cn(
-                  'flex items-start gap-2 rounded px-1 py-1 -mx-1 cursor-pointer hover:bg-muted/50 transition-colors',
-                  busyIndex === index && 'opacity-60 cursor-wait',
-                )}
+                className="flex items-start gap-2 rounded px-1 py-1 -mx-1 cursor-pointer hover:bg-muted/50 transition-colors"
               >
                 <Checkbox
                   className="mt-0.5"
                   checked={isChecked}
-                  disabled={isChecked || busyIndex !== null}
-                  onCheckedChange={() => { void toggle(index, action); }}
+                  disabled={isChecked}
+                  onCheckedChange={() => toggle(index)}
                 />
-                <span className={cn('text-sm leading-5 break-all', isChecked && 'line-through text-muted-foreground')}>
-                  {action}
-                </span>
+                <span className="text-sm leading-5 break-all">{action}</span>
               </label>
             );
           })}

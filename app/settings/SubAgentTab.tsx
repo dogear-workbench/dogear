@@ -1,329 +1,43 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Check, X, RotateCw, Send } from 'lucide-react';
+import type { Dispatch, SetStateAction } from 'react';
+import { Copy, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { client } from '@/lib/client';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { ModelSelector } from '@/components/ModelSelector';
+import { client } from '@/lib/client';
+import { showConfirm } from '@/stores/confirm-store';
 import type { AbilityPackView } from '../../electron/main/tipc/ability';
-import { AbilityBlockRow, SkillCheckItem } from './subagent/AbilityBlockRow';
+import { ProfileEditor, type SkillEntry, type SkillTemplateMeta } from './subagent/ProfileEditor';
 import {
   createDefaultSubAgentProfile,
-  BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
+  BUILTIN_SUB_AGENT_PROFILE_IDS,
   type AppSettings,
-  type ModelSelection,
   type SubAgentProfile,
-  type SubAgentEnabledAbilities,
 } from '@/types/settings';
+import type { SettingsSearchEntry } from './search-index';
+
+export const SUB_AGENT_SEARCH_ENTRIES: SettingsSearchEntry[] = [
+  { label: '子会话派遣 Profile', description: '定义子会话可用的工具、能力域和模型，派遣时选用' },
+  { label: '交付通信', description: '子会话向派出会话回传结果的固定启用能力' },
+  { label: '内置预设', description: 'default/browser-parse/explore/stock 四个内置子会话预设', keywords: ['预设'] },
+];
 
 interface SubAgentTabProps {
   local: AppSettings;
-  setLocal: (updater: (prev: AppSettings) => AppSettings) => void;
+  setLocal: Dispatch<SetStateAction<AppSettings>>;
 }
 
-const BASIC_TOOLS = [
-  { name: 'read', label: 'Read' },
-  { name: 'write', label: 'Write' },
-  { name: 'edit', label: 'Edit' },
-  { name: 'bash', label: 'Bash' },
-  { name: 'Glob', label: 'Glob' },
-  { name: 'Grep', label: 'Grep' },
-] as const;
+const isBuiltinProfile = (id: string) => BUILTIN_SUB_AGENT_PROFILE_IDS.includes(id);
 
-const MIN_TIMEOUT = 1;
-const MAX_TIMEOUT = 180;
-
-/** 子会话无独立配置维度的包：主会话专属、场景层裁决（memory）或按触发条件自动注入，不出块 */
-const NON_PROFILE_PACK_KEYS = new Set(['notes', 'group-context', 'agent-collab', 'memory']);
-
-/** 单 Switch 块的包 key → enabledAbilities 字段（web-mcp 包字段名是 web，浏览器扩展沿用 extension 字段） */
-const SINGLE_FIELD_BY_PACK: Partial<Record<string, 'article' | 'web' | 'browser' | 'extension'>> = {
-  article: 'article',
-  'web-mcp': 'web',
-  browser: 'browser',
-  'browser-extension': 'extension',
-};
-
-/** skill 细选块的包 key：块开关批量勾/取消包内全部 skill，细项在 Popover 单选 */
-const SKILL_BLOCK_PACK_KEYS = new Set(['code-workflow', 'browser-methodology']);
-
-interface SkillTemplateMeta { name: string; description: string; }
-interface SkillEntry {
-  source: 'builtin' | 'custom' | 'user'; name: string; description?: string;
-  dir: string; enabled: boolean;
-}
-
-function clampTimeout(n: number): number {
-  if (!Number.isFinite(n)) return 30;
-  return Math.min(MAX_TIMEOUT, Math.max(MIN_TIMEOUT, Math.round(n)));
-}
-
-function resolveModelLabel(local: AppSettings, sel: ModelSelection | null | undefined): string {
-  if (!sel) return '默认模型';
-  const profile = local.profiles[sel.profileId];
-  if (!profile) return '默认模型';
-  const matched = (profile.piModels ?? []).find(m => m.id === sel.tier);
-  return matched ? (matched.label ?? matched.id) : '默认模型';
-}
-
-function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
-  let n = 1;
-  if (ab.stock) n++;
-  if (ab.article) n++;
-  if (ab.skills?.length) n++;
-  if (ab.customSkills?.length) n++;
-  if (ab.web) n++;
-  if (ab.browser) n++;
-  if (ab.extension) n++;
-  return n;
-}
-
-// ── Profile Editor ───────────────────────────────────
-
-function ProfileEditor({
-  draft,
-  updateDraft,
-  templates,
-  skills,
-  packs,
-  onRetryPacks,
-  local,
-}: {
-  draft: SubAgentProfile;
-  updateDraft: (updater: (prev: SubAgentProfile) => SubAgentProfile) => void;
-  templates: SkillTemplateMeta[];
-  skills: SkillEntry[];
-  packs: AbilityPackView[] | null;
-  onRetryPacks: () => void;
-  local: AppSettings;
-}) {
-  const updateField = <K extends keyof SubAgentProfile>(key: K, value: SubAgentProfile[K]) => {
-    updateDraft((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const updateAbility = (key: keyof SubAgentEnabledAbilities, value: boolean | string[]) => {
-    updateDraft((prev) => ({
-      ...prev,
-      enabledAbilities: { ...prev.enabledAbilities, [key]: value },
-    }));
-  };
-
-  const ab = draft.enabledAbilities;
-  const enabledSkills = ab.skills ?? [];
-  const enabledCustomSkills = ab.customSkills ?? [];
-
-  const templateNames = new Set(templates.map((t) => t.name));
-  const customSkillList = skills.filter(
-    (s) => (s.source === 'custom' || s.source === 'user') && !templateNames.has(s.name),
-  );
-
-  // 只增删给定名字：存量 skills 里其他域的 skill 名原样保留
-  const writeArrayField = (field: 'skills' | 'customSkills', names: string[], on: boolean) => {
-    const current = field === 'skills' ? enabledSkills : enabledCustomSkills;
-    const next = on ? [...new Set([...current, ...names])] : current.filter((n) => !names.includes(n));
-    updateAbility(field, next);
-  };
-
-  const skillCheckItems = (pack: AbilityPackView) =>
-    pack.skillMetas.map((meta) => (
-      <SkillCheckItem
-        key={meta.name}
-        name={meta.name}
-        title={meta.title}
-        description={meta.description}
-        checked={enabledSkills.includes(meta.name)}
-        onToggle={() => writeArrayField('skills', [meta.name], !enabledSkills.includes(meta.name))}
-      />
-    ));
-
-  const packDetailCount = (pack: AbilityPackView) =>
-    `${pack.skillMetas.filter((m) => enabledSkills.includes(m.name)).length}/${pack.skillMetas.length}`;
-
-  const renderPackBlock = (pack: AbilityPackView) => {
-    if (pack.key === 'stock') {
-      return (
-        <AbilityBlockRow
-          key={pack.key}
-          title={pack.label}
-          description={pack.description}
-          checked={ab.stock === true}
-          onCheckedChange={(v) => updateAbility('stock', v)}
-        />
-      );
-    }
-    if (SKILL_BLOCK_PACK_KEYS.has(pack.key)) {
-      return (
-        <AbilityBlockRow
-          key={pack.key}
-          title={pack.label}
-          description={pack.description}
-          checked={pack.skillMetas.some((m) => enabledSkills.includes(m.name))}
-          onCheckedChange={(v) => writeArrayField('skills', pack.skillMetas.map((m) => m.name), v)}
-          detailCount={packDetailCount(pack)}
-          details={skillCheckItems(pack)}
-        />
-      );
-    }
-    const field = SINGLE_FIELD_BY_PACK[pack.key];
-    if (!field) return null;
-    return (
-      <AbilityBlockRow
-        key={pack.key}
-        title={pack.label}
-        description={
-          pack.key === 'article' ? `${pack.description}；article-parser skill 随开关直通` : pack.description
-        }
-        checked={ab[field] === true}
-        onCheckedChange={(v) => updateAbility(field, v)}
-      />
-    );
-  };
-
-  const profilePacks = (packs ?? []).filter(
-    (p) => p.type !== 'prompt-only' && !NON_PROFILE_PACK_KEYS.has(p.key),
-  );
-
-  const customNames = customSkillList.map((s) => s.name);
-
-  return (
-    <div className="space-y-4 p-4 rounded-lg border bg-muted/20">
-      <div className="flex gap-4">
-        <div className="flex-1 space-y-1.5">
-          <label className="text-xs font-medium">名称</label>
-          <input
-            type="text"
-            className="h-9 w-full px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            value={draft.name}
-            onChange={(e) => updateField('name', e.target.value)}
-          />
-        </div>
-        <div className="w-32 space-y-1.5">
-          <label className="text-xs font-medium">超时（分钟）</label>
-          <input
-            type="number"
-            min={MIN_TIMEOUT}
-            max={MAX_TIMEOUT}
-            step={1}
-            className="h-9 w-full px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-            value={draft.timeoutMinutes}
-            onChange={(e) => {
-              const raw = e.target.value.trim();
-              if (raw === '') return;
-              updateField('timeoutMinutes', clampTimeout(Number(raw)));
-            }}
-            onBlur={(e) => updateField('timeoutMinutes', clampTimeout(Number(e.target.value)))}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium">描述</label>
-        <textarea
-          className="w-full px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-y min-h-[60px]"
-          value={draft.description}
-          onChange={(e) => updateField('description', e.target.value)}
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium">模型</label>
-        <p className="text-xs text-muted-foreground">
-          子会话使用的模型。不指定时跟随主会话当前使用的模型，主会话未设置时用全局默认模型。
-        </p>
-        <ModelSelector
-          settings={local}
-          value={draft.modelSelection ?? null}
-          onChange={(v) => updateField('modelSelection', v)}
-          allowUnset={true}
-          triggerVariant="block"
-        />
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium">基础工具</label>
-        <div className="flex flex-wrap gap-3">
-          {BASIC_TOOLS.map((tool) => (
-            <label key={tool.name} className="flex items-center gap-1.5 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={draft.enabledBasicTools.includes(tool.name)}
-                onChange={(e) => {
-                  const tools = e.target.checked
-                    ? [...draft.enabledBasicTools, tool.name]
-                    : draft.enabledBasicTools.filter((t) => t !== tool.name);
-                  updateField('enabledBasicTools', tools);
-                }}
-              />
-              {tool.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <label className="text-xs font-medium">能力域</label>
-        <p className="text-xs text-muted-foreground">
-          此处为子会话侧子开关。股票、文章、联网与浏览器双通道由这里独立裁决，工作区能力包总开关（设置 → 能力）不约束子会话；代码工作流与浏览器方法论还需工作区对应包开启且勾选 skill。记忆等固定层能力归场景页「子会话」行配置。
-        </p>
-        <div className="space-y-2">
-          {!packs && (
-            <div className="p-2 rounded-md border bg-background text-xs text-muted-foreground flex items-center gap-2">
-              <span className="flex-1">能力包数据读取失败，无法渲染能力块</span>
-              <button
-                type="button"
-                onClick={onRetryPacks}
-                className="shrink-0 flex items-center gap-1 px-2 h-7 rounded-md border text-xs hover:bg-muted/50 transition-colors"
-              >
-                <RotateCw className="w-3 h-3" />
-                重试
-              </button>
-            </div>
-          )}
-          {packs && profilePacks.map((pack) => renderPackBlock(pack))}
-          {packs && customSkillList.length > 0 && (
-            <AbilityBlockRow
-              title="自定义 Skill"
-              description="工作区内自定义的 skill（非内置模板）"
-              checked={customNames.some((n) => enabledCustomSkills.includes(n))}
-              onCheckedChange={(v) => writeArrayField('customSkills', customNames, v)}
-              detailCount={`${customNames.filter((n) => enabledCustomSkills.includes(n)).length}/${customNames.length}`}
-              details={customSkillList.map((sk) => (
-                <SkillCheckItem
-                  key={sk.dir}
-                  name={sk.name}
-                  description={sk.description}
-                  checked={enabledCustomSkills.includes(sk.name)}
-                  onToggle={() => writeArrayField('customSkills', [sk.name], !enabledCustomSkills.includes(sk.name))}
-                />
-              ))}
-            />
-          )}
-          {packs && (
-            <div className="p-2 rounded-md border bg-muted/30">
-              <div className="flex items-center gap-2.5">
-                <Send className="w-4 h-4 shrink-0 text-muted-foreground" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">交付通信</div>
-                  <div className="text-xs text-muted-foreground">dogear-delegation（固定启用，不可关闭）</div>
-                </div>
-                <Switch className="shrink-0" checked disabled aria-label="交付通信（固定启用）" />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Main Component ───────────────────────────────────
+const navItemCls =
+  'flex items-center gap-2 text-left text-sm px-3 py-1.5 rounded-md transition-colors w-full';
 
 export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
   const [templates, setTemplates] = useState<SkillTemplateMeta[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [packs, setPacks] = useState<AbilityPackView[] | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<SubAgentProfile | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const loadPacks = useCallback(async () => {
     try {
@@ -332,7 +46,7 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
       setPacks(res.packs);
     } catch (e) {
       setPacks(null);
-      toast.error('能力包数据读取失败，请在编辑器能力域区点击重试', { description: String(e) });
+      toast.error('能力包数据读取失败，请在右侧能力域区点击重试', { description: String(e) });
     }
   }, []);
 
@@ -349,8 +63,8 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
           : list[0]?.id ?? null;
 
       const [t, s] = await Promise.all([
-        client.listSkillTemplates().then((r: any) => (r?.templates ?? []) as SkillTemplateMeta[]),
-        client.listSkills({ workspaceId: initial }).then((r: any) => (r?.skills ?? []) as SkillEntry[]),
+        client.listSkillTemplates().then((r) => (r?.templates ?? []) as SkillTemplateMeta[]),
+        client.listSkills({ workspaceId: initial }).then((r) => (r?.skills ?? []) as SkillEntry[]),
       ]);
       if (cancelled) return;
       setTemplates(t);
@@ -361,8 +75,19 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
 
   const profiles = local.subAgent.profiles;
 
-  const updateDraft = (updater: (prev: SubAgentProfile) => SubAgentProfile) => {
-    setDraft((prev) => (prev ? updater(prev) : prev));
+  // 选中项不存在（被删/初始）时回退到第一个 Profile
+  useEffect(() => {
+    if (profiles.length === 0) return;
+    if (!profiles.some((p) => p.id === selectedId)) setSelectedId(profiles[0].id);
+  }, [profiles, selectedId]);
+
+  const updateProfile = (id: string, updater: (prev: SubAgentProfile) => SubAgentProfile) => {
+    setLocal((prev) => ({
+      ...prev,
+      subAgent: {
+        profiles: prev.subAgent.profiles.map((p) => (p.id === id ? updater(p) : p)),
+      },
+    }));
   };
 
   const addProfile = () => {
@@ -377,192 +102,157 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
       ...prev,
       subAgent: { profiles: [...prev.subAgent.profiles, newProfile] },
     }));
-    setEditingId(newProfile.id);
-    setDraft({ ...newProfile, enabledAbilities: { ...newProfile.enabledAbilities } });
+    setSelectedId(newProfile.id);
   };
 
-  const deleteProfile = (id: string) => {
+  const duplicateProfile = (profile: SubAgentProfile) => {
+    const baseName = `${profile.name}副本`;
+    const existing = new Set(profiles.map((p) => p.name));
+    let name = baseName;
+    let n = 2;
+    while (existing.has(name)) name = `${baseName} ${n++}`;
+    const copy: SubAgentProfile = { ...structuredClone(profile), id: crypto.randomUUID(), name };
     setLocal((prev) => ({
       ...prev,
-      subAgent: { profiles: prev.subAgent.profiles.filter((p) => p.id !== id) },
+      subAgent: { profiles: [...prev.subAgent.profiles, copy] },
     }));
-    if (editingId === id) {
-      setEditingId(null);
-      setDraft(null);
-    }
+    setSelectedId(copy.id);
   };
 
-  const startEdit = (profile: SubAgentProfile) => {
-    setEditingId(profile.id);
-    setDraft({ ...profile, enabledAbilities: { ...profile.enabledAbilities } });
+  const deleteProfile = async (profile: SubAgentProfile) => {
+    const ok = await showConfirm(
+      '删除 Profile',
+      `「${profile.name}」将立即删除且无法恢复，确定继续？`,
+    );
+    if (!ok) return;
+    setLocal((prev) => ({
+      ...prev,
+      subAgent: { profiles: prev.subAgent.profiles.filter((p) => p.id !== profile.id) },
+    }));
   };
 
   const setProfileEnabled = (id: string, enabled: boolean) => {
-    setLocal((prev) => ({
-      ...prev,
-      subAgent: {
-        profiles: prev.subAgent.profiles.map((p) => (p.id === id ? { ...p, enabled } : p)),
-      },
-    }));
+    updateProfile(id, (prev) => ({ ...prev, enabled }));
   };
 
-  const commitDraft = () => {
-    if (!draft) return;
-    setLocal((prev) => ({
-      ...prev,
-      subAgent: {
-        profiles: prev.subAgent.profiles.map((p) => (p.id === draft.id ? draft : p)),
-      },
-    }));
-    setEditingId(null);
-    setDraft(null);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setDraft(null);
-  };
+  const selected = profiles.find((p) => p.id === selectedId) ?? null;
+  const selectedBuiltin = selected ? isBuiltinProfile(selected.id) : false;
+  const selectedEnabled = selected?.enabled !== false;
 
   return (
-    <div className="max-w-2xl mx-auto py-6 px-6 space-y-4">
-      <div>
+    <div className="h-full flex flex-col">
+      <div className="px-6 pt-6 pb-4 shrink-0">
         <h2 className="text-lg font-semibold mb-1">子会话派遣</h2>
-        <p className="text-sm text-muted-foreground">
-          管理子会话派遣 Profile。每个 Profile 定义一组工具、能力和模型配置，派遣子会话时可选择对应 Profile。
-        </p>
+        <p className="text-sm text-muted-foreground">定义派遣子会话可用的工具、能力域和模型</p>
       </div>
 
-      <div className="space-y-3">
-        {profiles.map((profile) => {
-          if (editingId === profile.id && draft) {
-            return (
-              <div key={profile.id} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-semibold">编辑 Profile</span>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={commitDraft}
-                      className="flex items-center gap-1 px-3 h-8 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      保存
-                    </button>
-                    <button
-                      type="button"
-                      onClick={cancelEdit}
-                      className="flex items-center gap-1 px-3 h-8 rounded-md border text-xs hover:bg-muted/50 transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      取消
-                    </button>
-                  </div>
-                </div>
-                <ProfileEditor
-                  draft={draft}
-                  updateDraft={updateDraft}
-                  templates={templates}
-                  skills={skills}
-                  packs={packs}
-                  onRetryPacks={() => void loadPacks()}
-                  local={local}
-                />
-              </div>
-            );
-          }
-
-          const modelLabel = resolveModelLabel(local, profile.modelSelection);
-          const toolCount = profile.enabledBasicTools.length;
-          const domainCount = countAbilityDomains(profile.enabledAbilities);
-
-          return (
-            <div
-              key={profile.id}
-              className={cn(
-                'flex items-start gap-3 p-3 rounded-lg border bg-background hover:border-foreground/20 transition-colors',
-                profile.enabled === false && 'opacity-60',
-              )}
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold">{profile.name}</span>
-                  {profile.id === 'default' && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                      默认
-                    </span>
-                  )}
-                  {profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                      内置
-                    </span>
-                  )}
-                  {profile.enabled === false && (
-                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                      已停用
-                    </span>
-                  )}
-                </div>
-                {profile.description && (
-                  <p className="text-xs text-muted-foreground mt-0.5">{profile.description}</p>
-                )}
-                <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
-                  <span>工具 {toolCount}</span>
-                  <span>能力域 {domainCount}</span>
-                  <span>{modelLabel}</span>
-                  <span>超时 {profile.timeoutMinutes}m</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {profile.id !== 'default' && (
-                  <Switch
-                    className="mr-1"
-                    checked={profile.enabled !== false}
-                    onCheckedChange={(v) => setProfileEnabled(profile.id, v)}
-                    aria-label={profile.enabled !== false ? '停用该 Profile' : '启用该 Profile'}
-                  />
-                )}
+      <div className="flex-1 min-h-0 flex items-stretch">
+        <nav aria-label="Profile 列表" className="w-[220px] shrink-0 border-r border-border/40">
+          <div className="py-3 pr-3 flex flex-col gap-0.5">
+            {profiles.map((profile) => {
+              const enabled = profile.enabled !== false;
+              const isSelected = profile.id === selectedId;
+              return (
                 <button
+                  key={profile.id}
                   type="button"
-                  onClick={() => startEdit(profile)}
-                  className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-muted/50 transition-colors"
-                  title="编辑"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => deleteProfile(profile.id)}
-                  disabled={profile.id === 'default' || profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID}
                   className={cn(
-                    'flex items-center justify-center w-8 h-8 rounded-md transition-colors',
-                    profile.id === 'default' || profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID
-                      ? 'opacity-30 cursor-not-allowed'
-                      : 'hover:bg-destructive/10 hover:text-destructive',
+                    navItemCls,
+                    isSelected
+                      ? 'bg-primary/10 text-foreground font-medium'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+                    !enabled && 'opacity-55',
                   )}
-                  title={
-                    profile.id === 'default'
-                      ? '默认 Profile 不可删除'
-                      : profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID
-                        ? '内置 Profile 不可删除'
-                        : '删除'
-                  }
+                  onClick={() => setSelectedId(profile.id)}
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'w-[7px] h-[7px] rounded-full shrink-0',
+                      enabled ? 'bg-emerald-500' : 'bg-muted-foreground/40',
+                    )}
+                  />
+                  <span className="truncate">{profile.name}</span>
+                  {isBuiltinProfile(profile.id) && (
+                    <span className="text-[10px] leading-none bg-muted text-muted-foreground px-1.5 py-1 rounded shrink-0">
+                      {profile.id === 'default' ? '默认' : '内置'}
+                    </span>
+                  )}
                 </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+            <Button variant="outline" size="sm" className="mt-2 justify-start" onClick={addProfile}>
+              <Plus className="w-4 h-4 mr-1" />
+              新建 Profile
+            </Button>
+          </div>
+        </nav>
 
-      <button
-        type="button"
-        onClick={addProfile}
-        className="flex items-center gap-1.5 px-3 h-9 rounded-md border border-dashed text-sm text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-      >
-        <Plus className="w-4 h-4" />
-        添加 Profile
-      </button>
+        <div className="flex-1 min-w-0 max-w-[820px] pl-6 pr-6 py-3 overflow-y-auto">
+          {selected ? (
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <input
+                  type="text"
+                  className={cn(
+                    'h-9 w-[200px] px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring',
+                    selectedBuiltin && 'opacity-60 cursor-not-allowed',
+                  )}
+                  value={selected.name}
+                  disabled={selectedBuiltin}
+                  onChange={(e) => updateProfile(selected.id, (prev) => ({ ...prev, name: e.target.value }))}
+                />
+                {selectedBuiltin && (
+                  <span className="text-[10px] leading-none bg-muted text-muted-foreground px-1.5 py-1 rounded shrink-0">
+                    内置 · 文案随版本更新
+                  </span>
+                )}
+                <div className="flex-1" />
+                {selected.id !== 'default' && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                    {selectedEnabled ? '启用' : '停用'}
+                    <Switch
+                      checked={selectedEnabled}
+                      onCheckedChange={(v) => setProfileEnabled(selected.id, v)}
+                      aria-label={selectedEnabled ? '停用该 Profile' : '启用该 Profile'}
+                    />
+                  </label>
+                )}
+                {selectedBuiltin && (
+                  <Button variant="outline" size="sm" onClick={() => duplicateProfile(selected)}>
+                    <Copy className="w-3.5 h-3.5 mr-1" />
+                    复制为副本
+                  </Button>
+                )}
+                {!selectedBuiltin && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => void deleteProfile(selected)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    删除
+                  </Button>
+                )}
+              </div>
+              <ProfileEditor
+                key={selected.id}
+                profile={selected}
+                updateProfile={(updater) => updateProfile(selected.id, updater)}
+                templates={templates}
+                skills={skills}
+                packs={packs}
+                onRetryPacks={() => void loadPacks()}
+                local={local}
+                builtin={selectedBuiltin}
+              />
+            </>
+          ) : (
+            <div className="py-12 text-sm text-muted-foreground">在左侧选择或新建 Profile</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

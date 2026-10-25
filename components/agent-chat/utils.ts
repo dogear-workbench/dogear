@@ -156,6 +156,9 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   }
   content = content.replace(/<quoted_snippet\s+source="[^"]+">[\s\S]*?<\/quoted_snippet>/g, '');
 
+  // 指针类引用发送时追加的引导提示，取稳定前缀匹配到行尾剥除，后缀措辞变化不影响
+  content = content.replace(/\n?（引用提示：[^\n]*/g, '');
+
   // 检测 <local-command-stdout>Set model to xxx</local-command-stdout>
   const stdoutMatch = content.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
   if (stdoutMatch) {

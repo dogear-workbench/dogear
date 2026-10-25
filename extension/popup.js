@@ -1,6 +1,11 @@
 const disconnectButton = document.getElementById('disconnect')
+const reconnectButton = document.getElementById('reconnect')
 const handoffButton = document.getElementById('handoff')
 const statusEl = document.getElementById('status')
+const hintEl = document.getElementById('hint')
+
+const MANUAL_DISCONNECT_KEY = 'manualDisconnected'
+let manualDisconnected = false
 
 let handoffTimer = null
 const HANDOFF_LABEL = '发送当前页到 Dogear'
@@ -26,6 +31,16 @@ disconnectButton.addEventListener('click', () => {
   window.close()
 })
 
+reconnectButton.addEventListener('click', async () => {
+  reconnectButton.disabled = true
+  try {
+    await chrome.runtime.sendMessage({ type: 'dogear_connect' })
+  } catch {
+  }
+  reconnectButton.disabled = false
+  refresh()
+})
+
 function render(state) {
   if (state.status === 'connected') {
     statusEl.className = 'ok'
@@ -41,14 +56,22 @@ function render(state) {
     statusEl.textContent = '未连接'
   }
   disconnectButton.hidden = state.status !== 'connected'
+  const manualOff = manualDisconnected && state.status !== 'connected'
+  reconnectButton.hidden = !manualOff
+  hintEl.hidden = !manualOff
 }
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'dogear_state') render(message)
 })
 
-function refresh() {
-  chrome.runtime.sendMessage({ type: 'dogear_get_state' }).then(render).catch(() => {})
+async function refresh() {
+  const [data, state] = await Promise.all([
+    chrome.storage.session.get(MANUAL_DISCONNECT_KEY).catch(() => ({})),
+    chrome.runtime.sendMessage({ type: 'dogear_get_state' }).catch(() => null)
+  ])
+  manualDisconnected = data[MANUAL_DISCONNECT_KEY] === true
+  if (state) render(state)
 }
 
 refresh()

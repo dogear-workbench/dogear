@@ -31,7 +31,7 @@ export interface CategoryDef {
 }
 
 const CATEGORY_NAMES: Record<BackupCategoryKey, string> = {
-  'notes-groups': '笔记与工作区',
+  'notes-groups': '话题与会话',
   memory: '记忆',
   tasks: '任务',
   sessions: '会话',
@@ -63,7 +63,7 @@ export function isWorkspaceScope(scope: BackupScope): boolean {
   return scope !== GLOBAL_SCOPE;
 }
 
-// 只备份 workspaces.json 注册过的工作区目录（personal 等未注册目录不在备份范围）
+// 只备份 workspaces.json 注册过的工作区目录（未注册目录不在备份范围）
 export async function listWorkspaceIds(): Promise<string[]> {
   const dir = path.join(getConfigDir(), 'workspaces');
   try {

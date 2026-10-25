@@ -39,8 +39,10 @@ export function SyncPanel() {
             <CardContent className="py-8 text-center text-sm text-muted-foreground space-y-2">
               <MonitorSmartphone className="w-6 h-6 mx-auto text-muted-foreground/50" />
               <p>局域网内暂未发现其他设备。</p>
-              <p className="text-xs">点右上「寻找设备」会同时扫 mDNS 与本机网段（默认端口 47210）；已配对设备会常驻显示，离线也可发起同步。</p>
-              <p className="text-xs">请确认另一台设备已打开 Dogear 且与本机在同一网络；若对端服务端口非默认值，只能靠 mDNS 发现。首次可能被系统防火墙拦截，放行后重试。</p>
+              <p className="text-xs">
+                点右上「寻找设备」扫描（mDNS + 本机网段，默认端口 47210），已配对设备常驻显示、离线也可发起同步；请确认对端已打开
+                Dogear 且在同一网络，首次可能被防火墙拦截，放行后重试。
+              </p>
             </CardContent>
           </Card>
         ) : (

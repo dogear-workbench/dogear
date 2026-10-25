@@ -44,14 +44,14 @@ afterAll(async () => {
   await fs.rm(configDir, { recursive: true, force: true });
 });
 
-function harnessFileName(createdAtMs: number, sessionId: string): string {
-  return `${new Date(createdAtMs).toISOString().replace(/:/g, '-').replace('.', '-')}_${sessionId}.jsonl`;
-}
-
 async function seedHarness(workspaceId: string, createdAtMs: number, sessionId: string): Promise<void> {
-  const dir = path.join(configDir, 'workspaces', workspaceId, 'sessions', 'ws');
+  const dir = path.join(configDir, 'workspaces', workspaceId, 'sessions', sessionId);
   await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(path.join(dir, harnessFileName(createdAtMs, sessionId)), '[]', 'utf-8');
+  const meta = { id: sessionId, createdAt: createdAtMs, cwd: path.join(configDir, 'workspaces', workspaceId), conversationId: 2 };
+  await Promise.all([
+    fs.writeFile(path.join(dir, 'session.json'), JSON.stringify(meta), 'utf-8'),
+    fs.writeFile(path.join(dir, 'main.jsonl'), '', 'utf-8'),
+  ]);
 }
 
 interface SeedConv {

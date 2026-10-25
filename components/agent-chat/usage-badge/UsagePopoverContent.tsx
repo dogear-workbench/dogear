@@ -76,8 +76,8 @@ export function UsagePopoverContent({ usage, context, lastEntry, isStreaming, co
           {sessionCost != null && ` · ${formatCost(sessionCost)}`}
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 tabular-nums text-muted-foreground">
-          <Row label="Input" value={formatTokens(totals.inputTokens)} />
-          <Row label="Output" value={formatTokens(totals.outputTokens)} />
+          <Row label="输入" value={formatTokens(totals.inputTokens)} />
+          <Row label="输出" value={formatTokens(totals.outputTokens)} />
           <Row label="缓存读" value={formatTokens(totals.cacheReadInputTokens)} />
           <Row label="缓存写" value={formatTokens(totals.cacheCreationInputTokens)} />
         </div>

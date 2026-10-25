@@ -152,3 +152,39 @@ describe('extractPiUsageEntry lastContextTokens', () => {
     expect(entry.lastContextTokens).toBeUndefined();
   });
 });
+
+describe('durationMs / durationApiMs', () => {
+  it('单条消息：durationApiMs = durationMs，entry.durationMs = 首末差值', () => {
+    const accum = createPiUsageAccumulator();
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 1000, durationMs: 2500 }));
+    const entry = extractPiUsageEntry(accum, [], 0);
+    expect(entry.durationApiMs).toBe(2500);
+    expect(entry.durationMs).toBe(2500);
+  });
+
+  it('多轮串行：durationApiMs 求和，entry.durationMs 覆盖首次请求到末次响应（含中间间隔）', () => {
+    const accum = createPiUsageAccumulator();
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 1000, durationMs: 2000 }));
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 8000, durationMs: 3000 }));
+    const entry = extractPiUsageEntry(accum, [], 0);
+    expect(entry.durationApiMs).toBe(5000);
+    expect(entry.durationMs).toBe(10000);
+  });
+
+  it('durationMs 缺失（legacy 消息）时不产生负值，durationApiMs 保持 0', () => {
+    const accum = createPiUsageAccumulator();
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 5000, durationMs: undefined }));
+    const entry = extractPiUsageEntry(accum, [], 0);
+    expect(entry.durationApiMs).toBe(0);
+    expect(entry.durationMs).toBe(0);
+  });
+
+  it('时间戳乱序到达时取 min/max 包络', () => {
+    const accum = createPiUsageAccumulator();
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 9000, durationMs: 1000 }));
+    accumulatePiUsage(accum, makeAssistant({ timestamp: 1000, durationMs: 500 }));
+    const entry = extractPiUsageEntry(accum, [], 0);
+    expect(entry.durationApiMs).toBe(1500);
+    expect(entry.durationMs).toBe(9000);
+  });
+});

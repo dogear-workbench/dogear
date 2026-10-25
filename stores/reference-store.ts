@@ -1,8 +1,5 @@
 import { create } from 'zustand';
-import type { ArticleMeta, QuoteSnippet } from '@/types/article';
-
-/** 带锚定归属的文章引用（ArticleMeta 为主进程存储格式，锚定字段只在渲染层附加） */
-export type AnchoredArticle = ArticleMeta & { anchorConversationId: string };
+import type { QuoteSnippet } from '@/types/article';
 
 /** 文件/文件夹引用 */
 export interface FileReference {
@@ -37,6 +34,15 @@ export interface MessageSnippetRef {
   anchorConversationId: string;
 }
 
+/** 文件/速览内容选中片段（阅读面板 file/inline 目标选中文字 → 引用） */
+export interface FileSnippetRef {
+  id: string;
+  fileName: string;
+  text: string;
+  timestamp: number;
+  anchorConversationId: string;
+}
+
 /** 笔记引用 */
 export interface NoteReference {
   noteId: string;
@@ -45,25 +51,19 @@ export interface NoteReference {
   anchorConversationId: string;
 }
 
-interface ReferenceState {
+export interface ReferenceState {
   // --- 状态 ---
-  referencedArticles: AnchoredArticle[];
   quotedSnippets: QuoteSnippet[];
   messageSnippets: MessageSnippetRef[];
+  fileSnippets: FileSnippetRef[];
   referencedFiles: FileReference[];
   referencedConversations: ConversationReference[];
   referencedSharedFiles: SharedFileReference[];
   referencedNotes: NoteReference[];
 
   // --- Actions ---
-  /** 引用/取消引用文章 */
-  toggleReferenceArticle: (article: ArticleMeta, anchorConversationId: string) => void;
-  /** 移除单篇引用文章 */
-  removeReferencedArticle: (articleId: string) => void;
-  /** 清空锚定指定会话的引用文章 */
-  clearReferencedArticlesFor: (conversationId: string) => void;
   /** 添加引用片段 */
-  addQuotedSnippet: (params: { articleId: string; articleTitle: string; text: string }, anchorConversationId: string) => void;
+  addQuotedSnippet: (params: { articlePath: string; articleTitle: string; text: string }, anchorConversationId: string) => void;
   /** 移除单条引用片段 */
   removeQuotedSnippet: (snippetId: string) => void;
   /** 清空锚定指定会话的引用片段 */
@@ -74,6 +74,12 @@ interface ReferenceState {
   removeMessageSnippet: (snippetId: string) => void;
   /** 清空锚定指定会话的会话消息片段 */
   clearMessageSnippetsFor: (conversationId: string) => void;
+  /** 添加文件内容选中片段 */
+  addFileSnippet: (params: { fileName: string; text: string; timestamp: number }, anchorConversationId: string) => void;
+  /** 移除单条文件内容片段 */
+  removeFileSnippet: (snippetId: string) => void;
+  /** 清空锚定指定会话的文件内容片段 */
+  clearFileSnippetsFor: (conversationId: string) => void;
   /** 添加文件引用 */
   addReferencedFile: (file: Omit<FileReference, 'anchorConversationId'>, anchorConversationId: string) => void;
   /** 移除文件引用 */
@@ -100,42 +106,21 @@ interface ReferenceState {
   clearReferencedNotesFor: (conversationId: string) => void;
   /** 清掉锚定指定会话的全部引用项（会话 tab 关闭时调用） */
   clearAllFor: (conversationId: string) => void;
+  /** 把锚定 fromId 的全部引用项改锚 toId（草稿伪锚落盘迁移）；fromId 无匹配时各数组引用原样返回 */
+  reanchorAllFor: (fromId: string, toId: string) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
 
 export const useReferenceStore = create<ReferenceState>((set) => ({
-  referencedArticles: [],
   quotedSnippets: [],
   messageSnippets: [],
+  fileSnippets: [],
   referencedFiles: [],
   referencedConversations: [],
   referencedSharedFiles: [],
   referencedNotes: [],
 
-
-  toggleReferenceArticle: (article, anchorConversationId) => {
-    set((state) => {
-      const exists = state.referencedArticles.some((a) => a.id === article.id);
-      if (exists) {
-        return { referencedArticles: state.referencedArticles.filter((a) => a.id !== article.id) };
-      } else {
-        return { referencedArticles: [...state.referencedArticles, { ...article, anchorConversationId }] };
-      }
-    });
-  },
-
-  removeReferencedArticle: (articleId) => {
-    set((state) => ({
-      referencedArticles: state.referencedArticles.filter((a) => a.id !== articleId),
-    }));
-  },
-
-  clearReferencedArticlesFor: (conversationId) => {
-    set((state) => ({
-      referencedArticles: state.referencedArticles.filter((a) => a.anchorConversationId !== conversationId),
-    }));
-  },
 
   addQuotedSnippet: (params, anchorConversationId) => {
     const snippet: QuoteSnippet = {
@@ -180,6 +165,29 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   clearMessageSnippetsFor: (conversationId) => {
     set((state) => ({
       messageSnippets: state.messageSnippets.filter((s) => s.anchorConversationId !== conversationId),
+    }));
+  },
+
+  addFileSnippet: (params, anchorConversationId) => {
+    const snippet: FileSnippetRef = {
+      id: `file-snippet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ...params,
+      anchorConversationId,
+    };
+    set((state) => ({
+      fileSnippets: [...state.fileSnippets, snippet],
+    }));
+  },
+
+  removeFileSnippet: (snippetId) => {
+    set((state) => ({
+      fileSnippets: state.fileSnippets.filter((s) => s.id !== snippetId),
+    }));
+  },
+
+  clearFileSnippetsFor: (conversationId) => {
+    set((state) => ({
+      fileSnippets: state.fileSnippets.filter((s) => s.anchorConversationId !== conversationId),
     }));
   },
 
@@ -262,9 +270,9 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
 
   clearAllFor: (conversationId) => {
     set((state) => ({
-      referencedArticles: state.referencedArticles.filter((a) => a.anchorConversationId !== conversationId),
       quotedSnippets: state.quotedSnippets.filter((s) => s.anchorConversationId !== conversationId),
       messageSnippets: state.messageSnippets.filter((s) => s.anchorConversationId !== conversationId),
+      fileSnippets: state.fileSnippets.filter((s) => s.anchorConversationId !== conversationId),
       referencedFiles: state.referencedFiles.filter((f) => f.anchorConversationId !== conversationId),
       referencedConversations: state.referencedConversations.filter((c) => c.anchorConversationId !== conversationId),
       referencedSharedFiles: state.referencedSharedFiles.filter((f) => f.anchorConversationId !== conversationId),
@@ -272,10 +280,28 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
+  reanchorAllFor: (fromId, toId) => {
+    set((state) => {
+      const reanchor = <T extends { anchorConversationId: string }>(items: T[]) =>
+        items.some((i) => i.anchorConversationId === fromId)
+          ? items.map((i) => (i.anchorConversationId === fromId ? { ...i, anchorConversationId: toId } : i))
+          : items;
+      return {
+        quotedSnippets: reanchor(state.quotedSnippets),
+        messageSnippets: reanchor(state.messageSnippets),
+        fileSnippets: reanchor(state.fileSnippets),
+        referencedFiles: reanchor(state.referencedFiles),
+        referencedConversations: reanchor(state.referencedConversations),
+        referencedSharedFiles: reanchor(state.referencedSharedFiles),
+        referencedNotes: reanchor(state.referencedNotes),
+      };
+    });
+  },
+
   reset: () => set({
-    referencedArticles: [],
     quotedSnippets: [],
     messageSnippets: [],
+    fileSnippets: [],
     referencedFiles: [],
     referencedConversations: [],
     referencedSharedFiles: [],

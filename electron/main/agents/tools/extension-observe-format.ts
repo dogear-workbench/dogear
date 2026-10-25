@@ -1,12 +1,6 @@
 /**
  * 扩展通道页面命令的 payload 类型、解析与观察结果格式化
- *
- * 与内嵌协议（embedded/ax-tree.ts 的 ObservePayload/FindPayload）同构：
- * 扩展侧信息量可少于内嵌（无 box/AX name），字段名与截断策略保持一致。
  */
-
-import { pageStateHint } from '../../services/browser/embedded/page-state.js';
-import type { EmbeddedPageState } from '../../services/browser/embedded/types.js';
 
 export interface ObserveElement {
   ref: string;
@@ -153,16 +147,27 @@ export function parseFindPayload(data: unknown): FindPayload {
   return { ...parsePageMeta(raw), elements: parseElements(raw.elements) };
 }
 
-/** 非常规 pageState 的输出尾注（ready 不打扰）；登录/验证墙不再复用 embedded 提示（扩展通道已由 loginWallGate 弹卡，此处只描述机制不虚构状态） */
+/** 非常规 pageState 的输出尾注（ready 不打扰）；登录/验证墙已由 loginWallGate 弹卡，此处只描述机制不虚构状态 */
 export function pageStateSuffix(pageState?: string): string {
   if (!pageState || pageState === 'ready') return '';
   if (pageState === 'login_required' || pageState === 'verification_required') {
     return pageState === 'login_required'
-      ? '\n⚠️ 页面处于登录墙，自动操作无法继续；navigate/observe 等操作命中此状态时会自动弹出等待人工卡（会话消息流内），用户完成登录后自动继续。请引导用户处理卡片，不要反复自动重试'
-      : '\n⚠️ 页面处于人机验证/挑战页，自动操作无法继续；navigate/observe 等操作命中此状态时会自动弹出等待人工卡（会话消息流内），用户完成验证后自动继续。请引导用户处理卡片，不要反复自动重试';
+      ? '\n⚠️ 页面处于登录墙，自动操作无法继续；已弹出等待人工卡（会话消息流内），请引导用户处理；用户跳过或超时后按返回指引换源并如实告知，不要反复自动重试'
+      : '\n⚠️ 页面处于人机验证/挑战页，自动操作无法继续；已弹出等待人工卡（会话消息流内），请引导用户处理；用户跳过或超时后按返回指引换源并如实告知，不要反复自动重试';
   }
-  const hint = pageStateHint(pageState as EmbeddedPageState);
+  const hint = pageStateHint(pageState);
   return hint ? `\n⚠️ ${hint}` : `\n页面状态: ${pageState}`;
+}
+
+/** 非常规状态给 agent 的下一步引导（登录/验证墙已在 pageStateSuffix 单独分支，不会走到） */
+function pageStateHint(state: string): string | null {
+  if (state === 'rate_limited') {
+    return '页面疑似触发访问频率限制，请停止自动操作并等待，或告知用户人工处理';
+  }
+  if (state === 'crashed') {
+    return '页面渲染进程已退出，请重新导航后操作';
+  }
+  return null;
 }
 
 export function formatObserveElement(el: ObserveElement): string {

@@ -18,15 +18,11 @@ export function getBasicToolPermission(
 
 export type ToolPermissionDecision = 'allow' | 'ask';
 
-// 浏览器交互三工具：default 模式逐次确认，工具包启用不覆盖；autoExecute 模式在函数入口已全放行
-const BROWSER_INTERACTIVE_TOOLS: ReadonlySet<string> = new Set([
-  'dogear__browser__readArticle',
-  'dogear__browser__click',
-  'dogear__browser__fill',
-]);
+// 破坏性 git 操作：整仓 revert 会产生反向提交改写工作区，逐次确认（工具包启用不覆盖）
+const PERMISSION_ASK_TOOLS: ReadonlySet<string> = new Set(['dogear__GitRevert']);
 
-// 破坏性 git 操作：整仓 revert 会产生反向提交改写工作区，与浏览器交互工具同语义（工具包启用不覆盖）
-const PERMISSION_ASK_TOOLS: ReadonlySet<string> = new Set([...BROWSER_INTERACTIVE_TOOLS, 'dogear__GitRevert']);
+// harness 内建元工具：仅检索工具元数据，无副作用，不弹确认
+const PERMISSION_META_ALLOW_TOOLS: ReadonlySet<string> = new Set(['tool_search']);
 
 export function decideToolPermission(
   toolName: string,
@@ -37,6 +33,7 @@ export function decideToolPermission(
 ): ToolPermissionDecision {
   if (mode === 'autoExecute') return 'allow';
   if (PERMISSION_ASK_TOOLS.has(toolName)) return 'ask';
+  if (PERMISSION_META_ALLOW_TOOLS.has(toolName)) return 'allow';
   if (toolPackMap.has(toolName)) return 'allow';
   if (isBasicToolName(toolName)) {
     if (sessionAllowedTools.has(toolName) || basicToolPermissions[toolName] === 'allow') {

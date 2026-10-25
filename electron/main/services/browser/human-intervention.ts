@@ -1,5 +1,6 @@
 import type { BrowserTaskMeta } from './browser-task-meta.js';
 import { recordBrowserAction } from './browser-action-stream.js';
+import { loadSettings } from '../settings-service.js';
 import { mainLogger } from '../../agents/logger.js';
 
 const logger = mainLogger.child('human-intervention');
@@ -34,7 +35,7 @@ export interface HumanInterventionRequest {
   actions?: HumanInterventionAction[];
   /** 用户处理结果（确认/拒绝/已手动操作）；「完成后继续」单按钮与 auto 解除不填 */
   result?: InterventionResult;
-  /** 完整解除结果（含 auto/timeout/missing），供会话卡片渲染 resolved 态文案 */
+  /** 完整解除结果（含 auto/timeout/missing/unattended），供会话卡片渲染 resolved 态文案 */
   outcome?: InterventionWaitOutcome;
   /** 触发解除的按钮 key（denied 时区分 skip/block 等副作用） */
   actionKey?: string;
@@ -61,7 +62,7 @@ interface PendingIntervention extends HumanInterventionRequest {
 
 type InterventionBroadcaster = (pending: HumanInterventionRequest[], resolved?: HumanInterventionRequest) => void;
 
-export type InterventionWaitOutcome = InterventionResult | 'auto' | 'timeout' | 'missing';
+export type InterventionWaitOutcome = InterventionResult | 'auto' | 'timeout' | 'missing' | 'unattended';
 
 export interface InterventionWaitResult {
   outcome: InterventionWaitOutcome;
@@ -74,6 +75,8 @@ type InterventionWaiter = (result: InterventionWaitResult) => void;
 const pendingById = new Map<string, PendingIntervention>();
 const pendingIdByTab = new Map<string, string>();
 const waitersById = new Map<string, Set<InterventionWaiter>>();
+/** 无人值守下 raise 即跳过的预置结果：不入 pending 映射不挂卡，等待方首次 wait 时直接取走 */
+const unattendedSkips = new Map<string, InterventionWaitResult>();
 let broadcaster: InterventionBroadcaster | null = null;
 
 export function setHumanInterventionBroadcaster(fn: InterventionBroadcaster | null): void {
@@ -107,8 +110,56 @@ function record(action: 'raised' | 'resolved', request: PendingIntervention | nu
   });
 }
 
-/** 上报等待人工：同 tab 只保留最新一条（重复触发刷新时间与文案，不堆卡片） */
-export function raiseHumanIntervention(input: {
+/** 无人值守下不创建挂起卡：直接产出已解除形态的请求，等待方拿到 outcome='unattended' 后自行换路 */
+function raiseUnattendedSkip(input: Parameters<typeof raiseHumanIntervention>[0]): HumanInterventionRequest {
+  const request: HumanInterventionRequest = {
+    id: `hi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    tabId: input.tabId,
+    reason: input.reason,
+    message: input.message,
+    url: input.url ?? null,
+    createdAt: Date.now(),
+    ...(input.confirmMode ? { confirmMode: true } : {}),
+    ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+    ...(input.actions ? { actions: input.actions } : {}),
+    outcome: 'unattended',
+  };
+  logger.warn(`无人值守自动跳过人工等待: id=${request.id} tabId=${request.tabId} reason=${request.reason}`);
+  unattendedSkips.set(request.id, { outcome: 'unattended', request });
+  record('resolved', request as PendingIntervention);
+  void notifyUnattendedSkipPush(input);
+  return request;
+}
+
+const INTERVENTION_REASON_LABELS: Record<HumanInterventionReason, string> = {
+  login_required: '登录等待',
+  verification_required: '人工验证',
+  guard_password: '密码确认',
+  guard_submit: '提交确认',
+  extension_wait: '浏览器扩展连接等待',
+};
+
+/** 无人值守介入跳过的飞书直连推送（不进通知中心）；fire-and-forget，失败仅记日志 */
+function notifyUnattendedSkipPush(input: { conversationId?: string; reason: HumanInterventionReason }): Promise<void> {
+  return (async () => {
+    const [{ feishuNotifyOutlet }, conversationService] = await Promise.all([
+      import('../feishu/feishu-notify-outlet.js'),
+      import('../conversation-service.js'),
+    ]);
+    const lookup = input.conversationId ? await conversationService.getByIdGlobal(input.conversationId) : null;
+    await feishuNotifyOutlet.pushDirect({
+      conversationId: input.conversationId,
+      workspaceId: lookup?.workspaceId,
+      title: lookup?.conv.title || '会话',
+      summary: `已自动跳过人工介入（${INTERVENTION_REASON_LABELS[input.reason]}），工具已收到换路指引`,
+    });
+  })().catch((err) => {
+    logger.warn('无人值守介入跳过推送失败:', err);
+  });
+}
+
+/** 上报等待人工：同 tab 只保留最新一条（重复触发刷新时间与文案，不堆卡片）；无人值守开启时直接跳过不挂卡 */
+export async function raiseHumanIntervention(input: {
   tabId: string;
   reason: HumanInterventionReason;
   message: string;
@@ -117,7 +168,8 @@ export function raiseHumanIntervention(input: {
   confirmMode?: boolean;
   conversationId?: string;
   actions?: HumanInterventionAction[];
-}): HumanInterventionRequest {
+}): Promise<HumanInterventionRequest> {
+  if ((await loadSettings()).ai.unattended) return raiseUnattendedSkip(input);
   const existingId = pendingIdByTab.get(input.tabId);
   const existing = existingId ? pendingById.get(existingId) : undefined;
   if (existingId && existing) {
@@ -153,8 +205,13 @@ export function raiseHumanIntervention(input: {
   return toPublic(request);
 }
 
-/** 工具层等待用户处理结果：resolve 时唤醒 waiter（timeout 兜底防永久挂起） */
+/** 工具层等待用户处理结果：resolve 时唤醒 waiter（timeout 兜底防永久挂起）；无人值守跳过的请求立即返回预置结果 */
 export function waitForInterventionResult(id: string, timeoutMs: number): Promise<InterventionWaitResult> {
+  const preset = unattendedSkips.get(id);
+  if (preset) {
+    unattendedSkips.delete(id);
+    return Promise.resolve(preset);
+  }
   return new Promise((resolve) => {
     let settled = false;
     const settle = (result: InterventionWaitResult): void => {
@@ -233,6 +290,13 @@ export function resolveHumanIntervention(
 export function resolveInterventionsForTab(tabId: string): void {
   const id = pendingIdByTab.get(tabId);
   if (id) resolveHumanIntervention(id, 'auto');
+}
+
+/** 无人值守开启瞬间：全量挂起介入按 'unattended' 解除并广播（工具等待方拿到换路指令、前端卡同步变 resolved），返回处理数 */
+export function resolveAllPendingInterventionsUnattended(): number {
+  const ids = [...pendingById.keys()];
+  for (const id of ids) resolveHumanIntervention(id, 'auto', undefined, 'unattended');
+  return ids.length;
 }
 
 export function listPendingHumanInterventions(): HumanInterventionRequest[] {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { AlertTriangle, ChevronDown, Copy, FolderOpen, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Button } from '@/components/ui/button';
 import { client } from '@/lib/client';
 import { useSyncStore } from '@/stores/sync-store';
+import { SYNC_ITEM_IDS } from '@/electron/main/services/settings-types';
+import { EXTERNAL_ANCHOR_PREFIX } from '@/electron/main/services/data-items';
 import { formatDateTimeShort, formatDuration } from './history-utils';
 import { copyRelPath } from './sync-utils';
 
@@ -16,21 +18,25 @@ const REPORT_BADGE: Record<string, { label: string; cls: string }> = {
   blocked: { label: '已拦截待确认', cls: 'bg-amber-500/10 text-amber-700 dark:text-amber-400' },
 };
 
-/** 冲突分组显示名（顶层目录 → 中文），未命中原样展示 */
-const GROUP_LABELS: Record<string, string> = {
-  workspaces: '工作区数据',
-  conversations: '会话记录',
-  memory: '记忆',
-  usage: '用量数据',
-  'article-parser': '文章解析',
-  'site-knowledge': '站点知识',
-  'run-history': '运行历史',
-};
+/** 冲突分组显示名从数据字典派生（同步项 id → 展示名），未命中原样展示 */
+const GROUP_LABELS: Record<string, string> = Object.fromEntries(SYNC_ITEM_IDS.map((m) => [m.id, m.name]));
 
-/** 按顶层目录/文件分组：`workspaces/xxx` → `workspaces`，顶层文件自成一组 */
+/** 按顶层目录/文件分组：`workspaces/xxx` → `workspaces`，顶层文件自成一组；工作区外部勾选子树按工作区分组 */
 function topGroup(relPath: string): string {
+  const segs = relPath.split('/');
+  if (segs[0] === EXTERNAL_ANCHOR_PREFIX && segs.length >= 2) return `${EXTERNAL_ANCHOR_PREFIX}/${segs[1]}`;
   const slash = relPath.indexOf('/');
   return slash >= 0 ? relPath.slice(0, slash) : relPath;
+}
+
+/** 分组显示名：用户文件勾选子树（__ws-external__/{wsid}）带工作区名，其余查字典派生表 */
+function groupLabel(group: string, wsNameById: Map<string, string>): string {
+  if (group.startsWith(`${EXTERNAL_ANCHOR_PREFIX}/`)) {
+    const wsid = group.slice(EXTERNAL_ANCHOR_PREFIX.length + 1);
+    const name = wsNameById.get(wsid);
+    return name ? `工作区文件·${name}` : `工作区文件·${wsid.slice(0, 8)}`;
+  }
+  return GROUP_LABELS[group] ?? group;
 }
 
 /**
@@ -188,6 +194,20 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
   const runSync = useSyncStore((s) => s.runSync);
   const runningSync = useSyncStore((s) => s.runningSync);
   const [choices, setChoices] = useState<Record<string, 'local' | 'remote'>>({});
+  const [wsNameById, setWsNameById] = useState<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    let alive = true;
+    client
+      .getAll({})
+      .then((r) => {
+        if (alive) setWsNameById(new Map((r.workspaces ?? []).map((w) => [w.id, w.name] as const)));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const groups = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -252,7 +272,7 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
           <div key={group} className="rounded-md border bg-background/60">
             <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-b bg-muted/30 flex-wrap">
               <span className="text-sm font-medium leading-6">
-                {GROUP_LABELS[group] ?? group}（{paths.length}）
+                {groupLabel(group, wsNameById)}（{paths.length}）
               </span>
               <div className="flex items-center gap-1">
                 <Button

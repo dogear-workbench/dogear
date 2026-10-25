@@ -1,4 +1,3 @@
-// 判定规则同步自 electron/main/services/browser/embedded/page-state.ts（两通道协议数据，改动需双侧同步）
 const VERIFICATION_URL_PATTERNS = [
   /google\.[a-z.]+\/sorry/i,
   /\/captcha/i,

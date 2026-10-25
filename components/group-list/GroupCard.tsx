@@ -5,44 +5,73 @@ import {
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { client } from '@/lib/client';
 import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useDraftStore } from '@/stores/draft-store';
 import { useSectionCollapseStore } from '@/stores/section-collapse-store';
+import { useSessionStore, DRAFT_VIEW_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Group } from '@/types/group';
 import type { ConversationTreeNode } from '@/lib/conversation-sort';
 import { ConversationRow } from '@/components/conversation-list/ConversationRow';
-import { openOrFocusConversation } from '@/components/conversation-list/utils';
+import { DraftRow } from '@/components/conversation-list/DraftRow';
 import { deriveGroupTitle } from './utils';
 
 interface GroupCardProps {
   group: Group;
   tree: ConversationTreeNode[];
   mode?: 'active' | 'archived';
+  /** 过滤场景：无视折叠状态全部展开，让命中会话可见 */
+  forceExpanded?: boolean;
 }
 
 function countTreeConversations(nodes: ConversationTreeNode[]): number {
   return nodes.reduce((total, node) => total + 1 + countTreeConversations(node.children), 0);
 }
 
-function hasAliveInTree(nodes: ConversationTreeNode[], aliveIds: Set<string>): boolean {
-  return nodes.some((node) => aliveIds.has(node.conv.id) || hasAliveInTree(node.children, aliveIds));
+function hasLitSessionInTree(nodes: ConversationTreeNode[], aliveIds: Set<string>): boolean {
+  return nodes.some(
+    (node) => aliveIds.has(node.conv.id) || !!node.conv.pinnedAt || hasLitSessionInTree(node.children, aliveIds),
+  );
 }
 
-export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
+function collectTreeConvIds(nodes: ConversationTreeNode[], acc: string[]): string[] {
+  for (const node of nodes) {
+    acc.push(node.conv.id);
+    collectTreeConvIds(node.children, acc);
+  }
+  return acc;
+}
+
+export function GroupCard({ group, tree, mode = 'active', forceExpanded = false }: GroupCardProps) {
   const expandedGroupIds = useGroupStore((s) => s.expandedGroupIds);
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
-  const isExpanded = expandedGroupIds.has(group.id);
+  const isExpanded = forceExpanded || expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
   const runningIds = useConversationStore((s) => s.runningConversationIds);
+  const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const aliveIds = useConversationStore((s) => s.aliveConversationIds);
   const subExpandedConvIds = useSectionCollapseStore((s) => s.subExpandedConvIds);
   const toggleSubExpand = useSectionCollapseStore((s) => s.toggleSubExpand);
   const isArchived = mode === 'archived';
+  const workspaceId = useWorkspaceStore((s) => s.workspace?.id) ?? '';
+  const draftSlot = useDraftStore((s) => s.slots[workspaceId]);
+  // activeTabId === DRAFT_VIEW_ID 即草稿视图激活（槽可能不存在，行由顶部承接）；槽无 groupId 时组内不显示
+  const isDraftView = useSessionStore((s) => s.activeTabId) === DRAFT_VIEW_ID;
+  const showGroupDraft = !isArchived && (isDraftView || !!draftSlot?.draftActive)
+    && (draftSlot?.groupId ?? null) === group.id;
   const totalCount = useMemo(() => countTreeConversations(tree), [tree]);
-  const hasAlive = useMemo(() => hasAliveInTree(tree, aliveIds), [tree, aliveIds]);
+  const hasLitSession = useMemo(() => hasLitSessionInTree(tree, aliveIds), [tree, aliveIds]);
+  const treeConvIds = useMemo(() => collectTreeConvIds(tree, []), [tree]);
+  const activeCount = useMemo(
+    () => treeConvIds.filter((id) => runningIds.has(id) || pendingIds.has(id)).length,
+    [treeConvIds, runningIds, pendingIds],
+  );
+  const hasPending = useMemo(
+    () => treeConvIds.some((id) => pendingIds.has(id)),
+    [treeConvIds, pendingIds],
+  );
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -70,21 +99,15 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
     useGroupStore.getState().setCurrentGroup(group.id);
   }, [group.id]);
 
-  const handleNewConversation = useCallback(async () => {
+  const handleNewConversation = useCallback(() => {
     const workspace = useWorkspaceStore.getState().workspace;
     if (!workspace) return;
-    const result = await client.create({ workspaceId: workspace.id, groupId: group.id });
-    if (result.conversationId) {
-      const detail = await client.getById({ conversationId: result.conversationId, workspaceId: workspace.id });
-      if (detail.conversation) {
-        await useConversationStore.getState().selectConversation(detail.conversation);
-        openOrFocusConversation(detail.conversation, `topic:${group.id}:${detail.conversation.id}`);
-      }
-      if (!useGroupStore.getState().expandedGroupIds.has(group.id)) {
-        useGroupStore.getState().toggleExpand(group.id);
-      }
+    useDraftStore.getState().enterDraft(workspace.id, group.id, deriveGroupTitle(group));
+    useSessionStore.getState().switchTab(DRAFT_VIEW_ID);
+    if (!useGroupStore.getState().expandedGroupIds.has(group.id)) {
+      useGroupStore.getState().toggleExpand(group.id);
     }
-  }, [group.id]);
+  }, [group]);
 
   const handleArchive = useCallback(async () => {
     const confirmed = await showConfirm(
@@ -111,7 +134,7 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
   const renderNodes = (nodes: ConversationTreeNode[], indent: number): ReactNode[] =>
     nodes.map((node) => {
       const hasChildren = node.children.length > 0;
-      const subExpanded = hasChildren && subExpandedConvIds.has(node.conv.id);
+      const subExpanded = hasChildren && (forceExpanded || subExpandedConvIds.has(node.conv.id));
       const childRunning = hasChildren && node.children.some((child) => runningIds.has(child.conv.id));
       return (
         <Fragment key={node.conv.id}>
@@ -143,10 +166,10 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
             )}
             onClick={handleHeaderClick}
           >
-            {hasAlive && (
+            {hasLitSession && (
               <span
                 className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-emerald-500"
-                title="话题内有存活会话"
+                title="话题内有开着的会话"
               />
             )}
             <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
@@ -176,6 +199,23 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
                 </div>
               )}
             </div>
+            {!isArchived && !isExpanded && activeCount > 0 && (
+              <span
+                className={cn(
+                  'flex items-center gap-1 text-xs flex-shrink-0',
+                  hasPending ? 'text-blue-600 dark:text-blue-400' : 'text-orange-600 dark:text-orange-400',
+                )}
+                title={hasPending ? '话题内有待确认的会话' : '话题内有运行中的会话'}
+              >
+                <span
+                  className={cn(
+                    'w-1.5 h-1.5 rounded-full animate-pulse',
+                    hasPending ? 'bg-blue-500' : 'bg-orange-500',
+                  )}
+                />
+                {activeCount}
+              </span>
+            )}
             <span className="text-xs text-muted-foreground flex-shrink-0">{totalCount}</span>
             {!isEditing && (
               <div
@@ -188,7 +228,7 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
                     className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                     onClick={(event) => {
                       event.stopPropagation();
-                      void handleNewConversation();
+                      handleNewConversation();
                     }}
                     title="在话题内新建对话"
                   >
@@ -231,7 +271,7 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
           ) : (
             <>
               <ContextMenuItem onClick={startEditing}>重命名话题</ContextMenuItem>
-              <ContextMenuItem onClick={() => void handleNewConversation()}>在话题内新建对话</ContextMenuItem>
+              <ContextMenuItem onClick={handleNewConversation}>在话题内新建对话</ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => void handleArchive()}>
                 <Archive className="w-3.5 h-3.5 mr-2" />
@@ -245,7 +285,12 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
         </ContextMenuContent>
       </ContextMenu>
 
-      {isExpanded && renderNodes(tree, 8)}
+      {isExpanded && (
+        <>
+          {showGroupDraft && <DraftRow groupTitle={deriveGroupTitle(group)} />}
+          {renderNodes(tree, 8)}
+        </>
+      )}
     </div>
   );
 }

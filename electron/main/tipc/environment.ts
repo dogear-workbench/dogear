@@ -108,7 +108,7 @@ export const environmentRouter = {
         version: gitVersion,
         installed: !!gitOutput,
         required: true,
-        description: 'Agent SDK 依赖',
+        description: '快照安全网依赖',
       });
 
       // 3. Python

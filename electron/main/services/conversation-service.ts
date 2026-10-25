@@ -10,7 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { mainLogger } from '../agents/logger.js';
 import { readUsage } from './usage/usage-service.js';
-import { getGroup, listActiveGroups, requireActiveGroup, updateGroup } from './group-service.js';
+import { listActiveGroups, requireActiveGroup } from './group-service.js';
 import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
 import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
@@ -55,9 +55,13 @@ export interface ConversationIndex {
   role?: 'main' | 'sub';    // P1 只产生 'main'
   /** 任务系统创建的无人值守执行会话；启动时据此裁剪 systemPrompt（跳过话题状态段与笔记纪律） */
   executor?: boolean;
+  /** 定时任务运行会话标记（值为任务 id）；渲染层列表按此过滤，on_session_close 触发据此跳过 */
+  schedulerTaskId?: string;
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
-  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除；只在状态翻转时落盘 */
-  unread?: boolean;
+  /** 未读标记：会话一轮跑完且非当前焦点时置位，成为全局焦点时清除；'error' = 上一轮执行失败（红点）；只在状态翻转时落盘 */
+  unread?: boolean | 'error';
+  /** 挂起标记（毫秒时间戳）：钉住（稍后继续）时置位；掐灭/解除/发消息 settle 兑现时清除；绿线常亮 + 组内置顶，不受活跃窗约束 */
+  pinnedAt?: number;
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
   usageSummary?: {
@@ -216,6 +220,16 @@ export async function getByWorkspaceId(
 
 
 /**
+ * 列出指定话题下的所有对话（按 updatedAt 倒序）
+ */
+export async function getByGroupId(workspaceId: string, groupId: string): Promise<ConversationIndex[]> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  return sortedList(Object.fromEntries(
+    Object.entries(file.conversations).filter(([, conversation]) => conversation.groupId === groupId),
+  ));
+}
+
+/**
  * 根据 ID 获取单条对话，不存在则返回 null
  */
 export async function getById(workspaceId: string, id: string): Promise<ConversationIndex | null> {
@@ -301,6 +315,7 @@ export async function create(
     parentConversationId?: string;
     contractMetadata?: ContractMetadata;
     executor?: boolean;
+    schedulerTaskId?: string;
     userInitiated?: boolean;
   },
 ): Promise<string> {
@@ -320,6 +335,7 @@ export async function create(
       groupId,
       role: options?.role ?? 'main',
       executor: options?.executor,
+      schedulerTaskId: options?.schedulerTaskId,
       contractMetadata: options?.contractMetadata,
       createdAt: now,
       updatedAt: now,
@@ -394,17 +410,6 @@ const DEFAULT_TITLE = '新对话';
 /** 自动生成 title 时截取的最大长度 */
 const AUTO_TITLE_MAX_LENGTH = 30;
 
-/** 组无正式名时用会话自动标题占坑（autoTitle 标记，AI 提炼/用户改名可覆盖转正）；失败不影响会话标题写入 */
-async function seedGroupAutoTitle(workspaceId: string, groupId: string, title: string): Promise<void> {
-  try {
-    const group = await getGroup(workspaceId, groupId);
-    if (!group || group.title?.trim()) return;
-    await updateGroup(workspaceId, groupId, { title, autoTitle: true });
-  } catch (err) {
-    mainLogger.warn('[conversation] 话题初始名占坑失败:', err);
-  }
-}
-
 /**
  * 从用户第一条消息自动生成 title。
  *
@@ -418,7 +423,7 @@ export async function autoUpdateTitleFromFirstMessage(
   id: string,
   messageText: string,
 ): Promise<boolean> {
-  const seeded = await withConversationsTxn(workspaceId, async (file) => {
+  const updated = await withConversationsTxn(workspaceId, async (file) => {
     const conv = file.conversations[id];
     if (!conv) return null;
     if (!conv.groupId) return null;
@@ -437,8 +442,7 @@ export async function autoUpdateTitleFromFirstMessage(
     conv.title = truncated;
     return { groupId: conv.groupId, title: truncated };
   });
-  if (!seeded) return false;
-  await seedGroupAutoTitle(workspaceId, seeded.groupId, seeded.title);
+  if (!updated) return false;
   broadcastConversationListChanged(workspaceId, 'debounced');
   return true;
 }
@@ -518,7 +522,7 @@ export async function updateModelSelection(
  * 不更新 updatedAt（未读不参与列表排序），不做 requireActiveGroup（归档话题里的会话同样可标记）。
  * 置为未读（会话完成）时刷新话题 lastBackgroundActivityAt：归档保鲜但不扰动列表位置。
  */
-export async function setUnread(conversationId: string, unread: boolean): Promise<void> {
+export async function setUnread(conversationId: string, unread: boolean | 'error'): Promise<void> {
   const found = await getByIdGlobal(conversationId);
   if (!found) return;
   const { workspaceId, conv } = found;
@@ -526,7 +530,7 @@ export async function setUnread(conversationId: string, unread: boolean): Promis
   await withConversationsTxn(workspaceId, async (file) => {
     const conv = file.conversations[conversationId];
     if (!conv || conv.unread === unread) return;
-    if (unread) conv.unread = true;
+    if (unread) conv.unread = unread;
     else delete conv.unread;
     changed = true;
   });
@@ -542,7 +546,29 @@ export async function setUnread(conversationId: string, unread: boolean): Promis
   }
 }
 
-function broadcastUnreadChanged(conversationId: string, unread: boolean): void {
+/**
+ * 设置/清除会话挂起标记（pinnedAt）。
+ * 值未变化时不写盘不广播；会话不存在时静默跳过（settle 兑现时可能已被删除）；
+ * 不做 requireActiveGroup（归档话题的挂起标记随数据保留）；不更新 updatedAt（置顶由排序级承载，不走活跃键）。
+ */
+export async function setPinnedAt(workspaceId: string, id: string, at: number | null): Promise<void> {
+  let changed = false;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (at === null) {
+      if (conv.pinnedAt === undefined) return;
+      delete conv.pinnedAt;
+    } else {
+      if (conv.pinnedAt === at) return;
+      conv.pinnedAt = at;
+    }
+    changed = true;
+  });
+  if (changed) broadcastConversationListChanged(workspaceId);
+}
+
+function broadcastUnreadChanged(conversationId: string, unread: boolean | 'error'): void {
   void (async () => {
     try {
       const { broadcastToWindows } = await import('./renderer-broadcast.js');
@@ -554,14 +580,15 @@ function broadcastUnreadChanged(conversationId: string, unread: boolean): void {
 }
 
 /**
- * 会话完成/任务终态的未读置位入口：全局焦点正是该会话则跳过，否则落盘（值未变 no-op）。
- * 焦点查询动态 import：focused-conversation-service 静态依赖 @egoist/tipc/main，避免 worker/测试环境加载失败
+ * 会话完成/任务终态的未读置位入口：全局焦点正是该会话则跳过，否则落盘（值未变 no-op）；
+ * kind='error' 置为失败态未读（列表/红点）。焦点查询动态 import：focused-conversation-service
+ * 静态依赖 @egoist/tipc/main，避免 worker/测试环境加载失败
  */
-export async function markUnreadIfNotFocused(conversationId: string): Promise<void> {
+export async function markUnreadIfNotFocused(conversationId: string, kind: 'reply' | 'error' = 'reply'): Promise<void> {
   try {
     const { getFocusedConversation } = await import('./focused-conversation-service.js');
     if (getFocusedConversation()?.conversationId === conversationId) return;
-    await setUnread(conversationId, true);
+    await setUnread(conversationId, kind === 'error' ? 'error' : true);
   } catch (err) {
     mainLogger.warn('[conversation] 置未读失败:', err);
   }

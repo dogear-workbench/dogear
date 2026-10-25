@@ -3,12 +3,16 @@ import { getConfigDir } from '../../services/settings-service.js';
 
 /**
  * 禁写区清单（相对 configDir 顶层），原则=有专用写工具或 app 独占高频写：
- * - 专用工具域：notes/、memory/（dogear__ 工具）、tasks.json/plans.json（任务系统）、stocks/（行情/自选股服务）
- * - app 独占高频写：usage/、logs/、run-history/、tmp/、workspaces/（含会话 JSONL 与各区 config）、conversations/
+ * - 专用工具域：notes/、memory/（dogear__ 工具）、preferences.md（偏好层熔断闸）、
+ *   tasks.json/plans.json（任务系统）、stocks/（行情/自选股服务）
+ * - app 独占高频写：usage/、logs/、run-history/、tmp/、workspaces/（含会话 JSONL 与各区 config）、
+ *   memory-stats.json（召回使用统计）
  */
 const WRITE_EXCLUDED_TOP_LEVEL = [
   'notes',
   'memory',
+  'memory-stats.json',
+  'preferences.md',
   'tasks.json',
   'plans.json',
   'usage',
@@ -16,7 +20,6 @@ const WRITE_EXCLUDED_TOP_LEVEL = [
   'run-history',
   'tmp',
   'workspaces',
-  'conversations',
   'stocks',
 ];
 

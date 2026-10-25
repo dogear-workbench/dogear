@@ -1,17 +1,22 @@
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import { useSessionStore, isSentinelTabId } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, DRAFT_VIEW_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useInputFocusStore } from '@/stores/input-focus-store';
+import { draftAnchorId } from '@/stores/draft-store';
 
-/** 当前焦点会话 id；哨兵 tab（笔记/数据中心）返回 null；独立窗口回退到其唯一会话 */
+/** 当前焦点会话 id；哨兵 tab（笔记/数据中心）返回 null；独立窗口回退到其唯一会话；草稿视图返回当前工作区伪锚 */
 export function getFocusConversationId(): string | null {
   const { activeTabId } = useSessionStore.getState();
-  if (activeTabId && !isSentinelTabId(activeTabId)) return activeTabId;
+  if (activeTabId && activeTabId !== DRAFT_VIEW_ID && !isSentinelTabId(activeTabId)) return activeTabId;
   if (window.location.hash.startsWith('#/session-window/')) {
     return useConversationStore.getState().selectedConversation?.id ?? null;
+  }
+  if (activeTabId === DRAFT_VIEW_ID) {
+    const wsId = useWorkspaceStore.getState().workspace?.id;
+    if (wsId) return draftAnchorId(wsId);
   }
   return null;
 }
@@ -26,14 +31,15 @@ export function requireAnchorConversationId(): string | null {
 }
 
 /**
- * 取可写入引用的锚定会话：会话 tab / 独立窗口焦点优先，哨兵 tab（文章等）回退最近活跃会话；
- * 无可用目标时 toast 拒绝并返回 null
+ * 取可写入引用的锚定会话：会话 tab / 独立窗口焦点优先，草稿视图直接锚当前工作区伪 ID（不回退，
+ * 避免错锚最近活跃会话），哨兵 tab（文章等）回退切哨兵前开着的会话（prevConversationView，弹窗中/已关均视为失效）
+ * → 无则当前工作区草稿；无工作区才拒绝
  */
 export function requireReferenceAnchorId(): string | null {
   const direct = getFocusConversationId();
   if (direct) return direct;
-  const { lastActiveConversationTabId, getTab, isInSessionWindow } = useSessionStore.getState();
-  const tab = lastActiveConversationTabId ? getTab(lastActiveConversationTabId) : undefined;
+  const { prevConversationView, getTab, isInSessionWindow } = useSessionStore.getState();
+  const tab = prevConversationView !== null ? getTab(prevConversationView) : undefined;
   if (tab && !isInSessionWindow(tab.conversationId)) {
     if (tab.workspaceId !== useWorkspaceStore.getState().workspace?.id) {
       toast.warning('无法引用', { description: '最近活跃会话属于其他工作区，请先切换到该会话再引用' });
@@ -41,6 +47,8 @@ export function requireReferenceAnchorId(): string | null {
     }
     return tab.conversationId;
   }
+  const wsId = useWorkspaceStore.getState().workspace?.id;
+  if (wsId) return draftAnchorId(wsId);
   toast.warning('请先打开会话再引用');
   return null;
 }
@@ -48,7 +56,7 @@ export function requireReferenceAnchorId(): string | null {
 /** 校验右栏引用项能否进当前焦点会话；放行返回 true，跨工作区 toast 拒绝并返回 false */
 export function guardReferenceIntoFocus(): boolean {
   const { activeTabId, getTab } = useSessionStore.getState();
-  const tab = getTab(activeTabId ?? '');
+  const tab = getTab(activeTabId);
   // 首页 tab 无焦点会话可被污染，按设计放行
   if (!tab) return true;
   if (tab.workspaceId === useWorkspaceStore.getState().workspace?.id) return true;
@@ -86,14 +94,49 @@ async function resolveNoteTitle(workspaceId: string, noteId: string, title: stri
 }
 
 /**
- * 笔记卡一键引用进会话：工作区守卫 → 锚定最近活跃会话 → 激活该 tab + 聚焦输入框。
- * 锚定目标以 session-store.lastActiveConversationTabId 为权威（哨兵 tab 下 selectedConversation 有残留）
+ * 锚定笔记到当前工作区草稿：工作区缺失或笔记跨区时 toast 拒绝并返回 false；
+ * 成功则加引用芯片到草稿伪锚、切草稿视图、聚焦草稿输入框
+ */
+async function anchorNoteToDraft(note: { noteId: string; title: string; workspaceId: string }): Promise<boolean> {
+  const workspace = useWorkspaceStore.getState().workspace;
+  if (!workspace) {
+    toast.warning('请先打开一个工作区，再引用笔记');
+    return false;
+  }
+  if (note.workspaceId !== workspace.id) {
+    toast.warning('无法引用', { description: '该笔记属于其他工作区，无法引用到当前草稿' });
+    return false;
+  }
+  const anchorId = draftAnchorId(workspace.id);
+  useReferenceStore.getState().addReferencedNote(
+    {
+      noteId: note.noteId,
+      title: await resolveNoteTitle(note.workspaceId, note.noteId, note.title),
+      workspaceId: note.workspaceId,
+    },
+    anchorId,
+  );
+  useSessionStore.getState().switchTab(DRAFT_VIEW_ID);
+  useInputFocusStore.getState().requestFocus(anchorId);
+  return true;
+}
+
+/**
+ * 笔记卡一键引用进会话：草稿视图锚当前工作区伪 ID 并保持草稿视图；实体 tab 锚切哨兵前开着的会话
+ * （以 session-store.prevConversationView 为权威，哨兵 tab 下 selectedConversation 有残留；已关则回草稿），
+ * 无可锚会话时回退当前工作区草稿；无工作区才拒绝
  */
 export async function referenceNoteIntoFocus(note: { noteId: string; title: string; workspaceId: string }): Promise<void> {
-  const { lastActiveConversationTabId, getTab, isInSessionWindow } = useSessionStore.getState();
-  const tab = lastActiveConversationTabId ? getTab(lastActiveConversationTabId) : undefined;
+  const { activeTabId } = useSessionStore.getState();
+
+  if (activeTabId === DRAFT_VIEW_ID) {
+    await anchorNoteToDraft(note);
+    return;
+  }
+  const { prevConversationView, getTab, isInSessionWindow } = useSessionStore.getState();
+  const tab = prevConversationView !== null ? getTab(prevConversationView) : undefined;
   if (!tab) {
-    toast.warning('请先打开一个会话，再引用笔记');
+    await anchorNoteToDraft(note);
     return;
   }
   if (isInSessionWindow(tab.conversationId)) {

@@ -11,12 +11,13 @@
  * - 开启 = 注册 MCP server + `mcp__<server>__*` 进 allowedTools
  * - 关闭 = 完全不注册，Tool Search 也搜不到
  *
- * 常驻工具（如 memory、article-parse）不在此表，由 conversation-runtime-service 直接注册。
+ * 常驻工具（memory）与解析工具集（article-parse 8 工具，由 PARSE_ARTICLE 任务 runOnce / 浏览器解析子会话内联注入）不在此表；
+ * article 工具组在本表，经 registerToolGroup 注册为 dogear-article server。
  *
  * extension 工具组不在本表：由 browser-extension 能力包总闸 gate（见 ability-registry），
  * enabledToolPacks 残留 'extension' 一律静默忽略。
  *
- * 详见 docs/plans/2026-05/2026-05-09/skill-tool-search-migration.md
+ * 详见 dogear/plans/2026-05/2026-05-09/skill-tool-search-migration.md
  */
 
 export interface ToolPackMeta {
@@ -42,10 +43,10 @@ export interface ToolPackMeta {
 export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   {
     name: 'article',
-    label: '文章管理',
-    description: '已抓取文章的读取与列举（读取 Markdown 全文、列出工作区文章）',
+    label: '文章解析',
+    description: '文章解析入库：URL 抓取解析后落工作区文章库（dogear/articles/ 一文一 md），正文用 Read 按返回路径读取',
     mcpServerName: 'dogear-article',
-    toolCount: 2,
+    toolCount: 1,
     requiresWorkspace: true,
   },
   {
@@ -81,14 +82,6 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
     toolCount: 2,
     requiresWorkspace: false,
     requirements: '需要 Python 3.10+（复用股票分析计算层）',
-  },
-  {
-    name: 'browser',
-    label: '内嵌浏览器',
-    description: '内嵌浏览器读取网页（无人值守 + 隔离环境）：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具 + present 页面交付',
-    mcpServerName: 'dogear-browser',
-    toolCount: 15,
-    requiresWorkspace: false,
   },
   {
     name: 'web-mcp',

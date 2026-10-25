@@ -1,46 +1,41 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConversationList } from '@/components/ConversationList';
-import { AgentChat } from '@/components/agent-chat';
+import { AgentChat, DraftChat } from '@/components/agent-chat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';
-import { Button } from '@/components/ui/button';
-import { Loader2, Settings, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FeishuPanel } from '@/components/feishu/FeishuPanel';
-import { WebAiPanel } from '@/components/webai/WebAiPanel';
-import feishuLogo from '@/assets/feishu-logo.png';
-import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
+import { TopBar } from '@/components/TopBar';
+import { ActivityRail } from '@/components/ActivityRail';
 import { TitleBar } from '@/components/TitleBar';
-import { NotificationCenter } from '@/components/NotificationCenter';
 import DataCenterPage from '@/app/data-center/page';
+import TasksPanelPage from '@/app/tasks-panel/page';
 import { ArchivePage } from '@/components/archive/ArchivePage';
-import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { FileHistoryPanel } from '@/components/FileHistoryPanel';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
-import { ArticlePreview } from '@/components/ArticlePreview';
+import SettingsPage from '@/app/settings/page';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, isInConversationMode, DRAFT_VIEW_ID, NOTES_TAB_ID, TASKS_TAB_ID, DATA_CENTER_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, SETTINGS_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useDraftStore } from '@/stores/draft-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { useInterventionFocusStore } from '@/stores/intervention-focus-store';
-import { EmptyFocusState } from '@/components/EmptyFocusState';
+import { applyStoredConversationListWidth, useConversationListDrag, useThreeColumnLinkage, resolveThreeColumnLinkage } from '@/hooks/use-panel-linkage';
 
 export default function Home() {
-  const openSettings = useUIStore((s) => s.openSettings);
-  const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
-  const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
-  const workbenchWindowOpen = useUIStore((s) => s.workbenchWindowOpen);
-  const leftPanelOpen = useUIStore((s) => s.leftPanelOpen);
-  const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
+  const conversationListOpen = useUIStore((s) => s.conversationListOpen);
+  const conversationListWidth = useUIStore((s) => s.conversationListWidth);
+  const listDrag = useConversationListDrag();
+  useThreeColumnLinkage();
 
   // 工作台窗口互斥：开窗收右栏并隐藏开关，关窗恢复；广播驱动，重启即单窗口态
   useEffect(() => {
@@ -89,6 +84,14 @@ export default function Home() {
     }
   }, [settingsLoaded, loadSettings]);
 
+  // 设置加载后初始化运行时宽度（clamp 180~420），后续设置变化同步跟进
+  const storedConversationListWidth = useSettingsStore((s) => s.settings.ui?.conversationListWidth);
+  useEffect(() => {
+    if (settingsLoaded) {
+      applyStoredConversationListWidth(storedConversationListWidth);
+    }
+  }, [settingsLoaded, storedConversationListWidth]);
+
   // 工作区状态
   const workspace = useWorkspaceStore((s) => s.workspace);
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
@@ -119,14 +122,10 @@ export default function Home() {
       setLoadingDefaultWs(false);
     }
   }, []);
-  const openFeishuTab = useSessionStore((s) => s.openFeishuTab);
   const feishuTabOpen = useSessionStore((s) => s.feishuTabOpen);
-  const webAiTabOpen = useSessionStore((s) => s.webAiTabOpen);
 
-  // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
-  const selectedArticle = useArticleStore((s) => s.selectedArticle);
 
-  // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
+  // 多标签页状态（内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const openTab = useSessionStore((s) => s.openTab);
@@ -135,14 +134,54 @@ export default function Home() {
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
   const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
   const archiveTabOpen = useSessionStore((s) => s.archiveTabOpen);
-  const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
   const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
+
+  // 整页模式判定（rail 非对话项激活）：tab 栏隐藏、对话列表动画收起，会话 tab 状态与 AgentChat 挂载不动
+  const inConversationMode = isInConversationMode(activeTabId);
+
+  // 模式翻转瞬时收展（抑制过渡两帧），手动收开/设置改宽仍走 200ms 过渡：模式切换叠加页面大变化，过渡动画抢眼
+  const prevModeRef = useRef(inConversationMode);
+  const [modeFlipSuppress, setModeFlipSuppress] = useState(false);
+  if (prevModeRef.current !== inConversationMode) {
+    prevModeRef.current = inConversationMode;
+    setModeFlipSuppress(true);
+  }
+  useEffect(() => {
+    if (!modeFlipSuppress) return;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setModeFlipSuppress(false));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, [modeFlipSuppress]);
+
+  // 三栏保底联动不只拖动/resize 触发：手动收开任一侧也跑判定，展开压破保底即收另一侧
+  const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
+  const leftVisible = conversationListOpen && inConversationMode;
+  const rightVisible = rightPanelOpen && inConversationMode;
+  const prevVisibleRef = useRef({ left: leftVisible, right: rightVisible });
+  useEffect(() => {
+    const prev = prevVisibleRef.current;
+    prevVisibleRef.current = { left: leftVisible, right: rightVisible };
+    // 只响展开方向：收起不判定（中间只会更宽），并切断联动收起引发的回声误收另一侧
+    const leftOpened = !prev.left && leftVisible;
+    const rightOpened = !prev.right && rightVisible;
+    if (!leftOpened && !rightOpened) return;
+    resolveThreeColumnLinkage(leftOpened ? 'left' : 'right');
+  }, [leftVisible, rightVisible]);
 
   // 当前激活对话对应的组 ID（哨兵 tab 或 groupId 空时为 null）
   const activeConv = useConversationStore((s) =>
     s.conversations.find((c) => c.id === activeTabId) ?? null
   );
   const currentGroupId = activeConv?.groupId || null;
+
+  // 草稿语境：伴随面板与中间语境行的数据源（读当前工作区槽，无槽即空态）
+  const isDraft = activeTabId === DRAFT_VIEW_ID;
+  const draftSlot = useDraftStore((s) => s.slots[workspace?.id ?? '']);
 
   // 内容区渲染顺序与 tabs（LRU 顺序）解耦：重排只动 tab 栏 UI，内容容器按打开顺序稳定渲染，
   // 避免 React Placement 移动 DOM 触发 Chromium 重置滚动位置
@@ -155,11 +194,14 @@ export default function Home() {
     return order.map((id) => allTabs.find((t) => t.conversationId === id)!);
   }, [allTabs]);
 
-  // 伴随面板跟随活动会话 tab 的工作区（临时会话 tab 聚焦时 workspaceId=personal，文件树/话题/附加自然空态）
+  // 伴随面板跟随活动会话 tab 的工作区
   const activeTab = activeTabId && !isSentinelTabId(activeTabId)
     ? allTabs.find((t) => t.conversationId === activeTabId) ?? null
     : null;
-  const companionWorkspaceId = activeTab?.workspaceId ?? workspace?.id ?? '';
+  const companionWorkspaceId = isDraft
+    ? workspace?.id ?? ''
+    : activeTab?.workspaceId ?? workspace?.id ?? '';
+  const companionGroupId = isDraft ? draftSlot?.groupId ?? null : currentGroupId;
 
   // 监听独立窗口关闭事件，恢复 Tab 到主窗口
   // 独立窗口关闭时：主进程 detachByWebContentsId 释放独立窗口的 attachment，
@@ -176,26 +218,8 @@ export default function Home() {
     return () => unsub();
   }, [openTab, removeSessionWindow]);
 
-  // 通知点击/人工介入卡跳转共用的定位：顺序等待工作区切换完成再查找/选中对话，避免写入旧分片
-  const locateConversation = useCallback(
-    async (workspaceId: string, conversationId: string) => {
-      try {
-        const allResult = await client.getAll();
-        const targetWorkspace = allResult.workspaces?.find((w) => w.id === workspaceId);
-        if (!targetWorkspace) return;
-        const currentWs = useWorkspaceStore.getState().workspace;
-        if (currentWs?.id !== workspaceId) {
-          await setWorkspace(targetWorkspace);
-        }
-        const convResult = await client.getById({ workspaceId, conversationId });
-        if (!convResult.conversation) return;
-        useConversationStore.getState().selectConversation(convResult.conversation);
-      } catch (err) {
-        console.error('[locateConversation] 定位对话失败:', err);
-      }
-    },
-    [setWorkspace],
-  );
+  // 通知点击/人工介入卡跳转共用定位（实现已 store 化到 conversation-store，供顶栏搜索等入口复用）
+  const locateConversation = useConversationStore((s) => s.locateConversation);
 
   // 通知点击后定位到目标对话
   useEffect(() => {
@@ -226,7 +250,7 @@ export default function Home() {
     return () => unsub();
   }, [locateConversation]);
 
-  // 任务通知点击：确保工作区就绪后切到笔记页任务视图并选中该任务
+  // 任务通知点击：确保工作区就绪后切到任务面板并选中该任务（面板 CollabTaskSection 消费焦点请求）
   useEffect(() => {
     const unsub = rendererEvents.focusTask.listen(({ taskId, workspaceId }) => {
       (async () => {
@@ -238,7 +262,7 @@ export default function Home() {
           if (currentWs?.id !== workspaceId) {
             await setWorkspace(targetWorkspace);
           }
-          useSessionStore.getState().switchTab(NOTES_TAB_ID);
+          useSessionStore.getState().switchTab(TASKS_TAB_ID);
           useTaskFocusStore.getState().requestTaskFocus(taskId);
         } catch (err) {
           console.error('[focusTask] 定位任务失败:', err);
@@ -251,8 +275,11 @@ export default function Home() {
   // 正在加载默认工作区时显示加载状态
   if (loadingDefaultWs) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="h-full">
+        <TitleBar />
+        <div className="h-full flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+        </div>
       </div>
     );
   }
@@ -263,18 +290,26 @@ export default function Home() {
   //   让用户重新从 Popover 选择（A2.7 设置页的工作区管理 Tab 提供完整列表/删除/恢复）
   if (!workspace) {
     if (totalWorkspaceCount === 0) {
-      return <WelcomeFirstRun />;
+      return (
+        <div className="h-full">
+          <TitleBar />
+          <WelcomeFirstRun />
+        </div>
+      );
     }
     // 有历史工作区但当前未激活 → 简单提示并提供 Popover 入口
     return (
-      <div className="h-full flex items-center justify-center bg-muted/20">
-        <div className="max-w-md w-full bg-background rounded-xl border shadow-lg p-8 space-y-4 text-center">
-          <h2 className="text-lg font-semibold">请选择一个工作区继续</h2>
-          <p className="text-sm text-muted-foreground">
-            检测到 {totalWorkspaceCount ?? 0} 个已有工作区，点击下方选择。
-          </p>
-          <div className="flex justify-center">
-            <WorkspaceSwitcherPopover />
+      <div className="h-full">
+        <TitleBar />
+        <div className="h-full flex items-center justify-center bg-muted/20">
+          <div className="max-w-md w-full bg-background rounded-xl border shadow-lg p-8 space-y-4 text-center">
+            <h2 className="text-lg font-semibold">请选择一个工作区继续</h2>
+            <p className="text-sm text-muted-foreground">
+              检测到 {totalWorkspaceCount ?? 0} 个已有工作区，点击下方选择。
+            </p>
+            <div className="flex justify-center">
+              <WorkspaceSwitcherPopover />
+            </div>
           </div>
         </div>
       </div>
@@ -283,93 +318,38 @@ export default function Home() {
 
   return (
     <main className="h-full flex flex-col">
-      <TitleBar title="Dogear" />
-      {/* 顶部导航栏：左 = 面板折叠 + 工作区切换 + 设置 + 消息；右 = 自选股/数据中心/工作台/微信/右栏折叠 */}
-      <header className="h-10 border-b flex items-center justify-between px-3 bg-background">
-        <div className="flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-7 p-0"
-            onClick={toggleLeftPanel}
-            title={leftPanelOpen ? '折叠左侧面板' : '展开左侧面板'}
-          >
-            {leftPanelOpen ? (
-              <PanelLeftClose className="w-4 h-4" />
-            ) : (
-              <PanelLeftOpen className="w-4 h-4" />
-            )}
-          </Button>
-          <WorkspaceSwitcherPopover />
-          <div className="w-px h-5 bg-border mx-1" />
-          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openSettings}>
-            <Settings className="w-3.5 h-3.5 mr-1.5" />
-            设置
-          </Button>
-          <NotificationCenter />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openDataCenterTab}>
-            <Database className="w-3.5 h-3.5 mr-1.5" />
-            数据中心
-          </Button>
-          <Button
-            variant={workbenchWindowOpen ? 'default' : 'outline'}
-            size="sm"
-            className="h-7 px-2.5"
-            onClick={() => {
-              client.openWorkbenchWindow().catch((err) => console.error('打开工作台失败:', err));
-            }}
-            title={workbenchWindowOpen ? '聚焦工作台窗口' : '打开工作台窗口'}
-          >
-            <PictureInPicture2 className="w-3.5 h-3.5 mr-1.5" />
-            工作台
-          </Button>
-          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openFeishuTab}>
-            <img src={feishuLogo} alt="飞书" className="w-3.5 h-3.5 mr-1.5 rounded-[3px]" />
-            飞书
-          </Button>
-          {!workbenchWindowOpen && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 w-7 p-0"
-              onClick={toggleRightPanel}
-              title={rightPanelOpen ? '折叠右侧面板' : '展开右侧面板'}
-            >
-              {rightPanelOpen ? (
-                <PanelRightClose className="w-4 h-4" />
-              ) : (
-                <PanelRightOpen className="w-4 h-4" />
-              )}
-            </Button>
-          )}
-        </div>
-      </header>
+      <TopBar />
 
-      {/* 主内容区域：三栏布局 */}
+      {/* 主内容区域：rail + 三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：对话列表，可折叠（里程碑 1.5 Step A2.5） */}
+        <ActivityRail />
+
+        {/* 左侧：对话列表（conversationListOpen；整页模式动画收起但不覆写，切回会话模式按原状态恢复） */}
         <aside
           className={cn(
-            'border-r bg-sidebar flex flex-col transition-all duration-200 overflow-hidden',
-            leftPanelOpen ? 'w-64' : 'w-0 border-r-0',
+            'relative border-r bg-sidebar flex flex-col overflow-hidden',
+            listDrag.dragging || modeFlipSuppress ? 'transition-none' : 'transition-all duration-200',
+            conversationListOpen && inConversationMode ? 'border-r' : 'border-r-0',
           )}
+          style={{ width: conversationListOpen && inConversationMode ? conversationListWidth : 0 }}
         >
           <ConversationList />
+          {conversationListOpen && inConversationMode && (
+            <div
+              className="absolute right-0 top-0 bottom-0 w-[3px] z-10 cursor-col-resize hover:bg-primary/40"
+              onMouseDown={listDrag.startDrag}
+            />
+          )}
         </aside>
 
         {/* 中间：对话窗口 */}
         <section className="flex-1 flex flex-col min-w-0">
-          {/* 标签页头（抽取为独立组件：里程碑 1.5 Step A2.3） */}
-          <WorkspaceTabBar />
-
-          {/* 标签页内容：笔记 + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
+          {/* 内容区：笔记 + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
           <div className="flex-1 overflow-hidden relative">
-            {/* 空态：所有 tab 关闭/不可见后不再兑底回笔记 */}
-            {activeTabId === null && (
+            {/* 草稿视图：可直接打字，首条消息发送后落盘成会话 */}
+            {activeTabId === DRAFT_VIEW_ID && (
               <div className="absolute inset-0 flex flex-col">
-                <EmptyFocusState />
+                <DraftChat />
               </div>
             )}
             {/* 笔记：常驻 tab，弹出独立窗口期间卸载 */}
@@ -390,6 +370,13 @@ export default function Home() {
                 <DataCenterPage />
               </div>
             )}
+            {/* 任务：常驻 tab，rail 入口进入 */}
+            <div
+              className="absolute inset-0 flex flex-col"
+              style={{ display: activeTabId === TASKS_TAB_ID ? 'flex' : 'none' }}
+            >
+              <TasksPanelPage />
+            </div>
             {/* 归档：可开关 Tab，打开期间常驻挂载，关闭即卸载 */}
             {archiveTabOpen && (
               <div
@@ -408,25 +395,14 @@ export default function Home() {
                 <FeishuPanel />
               </div>
             )}
-            {/* 网页 AI：可开关 Tab，打开期间常驻挂载，关闭即卸载；隐藏时 bounds 归零触发主进程 detach */}
-            {webAiTabOpen && (
-              <div
-                className="absolute inset-0 flex flex-col"
-                style={{ display: activeTabId === WEB_AI_TAB_ID ? 'flex' : 'none' }}
-              >
-                <WebAiPanel />
-              </div>
-            )}
+            {/* 设置：常驻 tab，rail 底部入口进入 */}
+            <div
+              className="absolute inset-0 flex flex-col"
+              style={{ display: activeTabId === SETTINGS_TAB_ID ? 'flex' : 'none' }}
+            >
+              <SettingsPage />
+            </div>
             {/* 文章：选中即挂载（切会话 tab 保持挂载不重加载），清空选中即卸载 */}
-            {selectedArticle !== null && (
-              <div
-                className="absolute inset-0 flex flex-col"
-                style={{ display: activeTabId === ARTICLE_TAB_ID ? 'flex' : 'none' }}
-              >
-                <ArticlePreview />
-              </div>
-            )}
-            {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载（渲染用 orderedTabs 稳定序，不随 LRU 重排移动 DOM） */}
             {orderedTabs.map((tab) => (
               <div
                 key={tab.conversationId}
@@ -445,14 +421,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：伴随面板（仅会话 tab 显示；开关状态保留，切回会话 tab 按原状态恢复） */}
-        {activeTabId !== null && !isSentinelTabId(activeTabId) && (
-          <CompanionPanel workspaceId={companionWorkspaceId} groupId={currentGroupId} />
+        {/* 右侧：伴随面板（会话 tab 与草稿视图显示；开关状态保留，切走按原状态恢复） */}
+        {(activeTabId === DRAFT_VIEW_ID || !isSentinelTabId(activeTabId)) && (
+          <CompanionPanel workspaceId={companionWorkspaceId} groupId={companionGroupId} />
         )}
       </div>
-
-      {/* Markdown 文件预览 Dialog */}
-      <MarkdownFileDialog />
 
       {/* 文件历史 Dialog */}
       <FileHistoryPanel />
