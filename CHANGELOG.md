@@ -4,6 +4,12 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.2.1] - 2026-10-25
+
+### 修复
+
+- 文件树重建窗口 loading 态缺占位数据导致整页崩溃（补 createLoadingItemData 占位与 TreeItemRow 空值防护）。0.2.0 安装包首发即带此缺陷，建议直接使用 0.2.1
+
 ## [0.2.0] - 2026-10-25
 
 ### 新增

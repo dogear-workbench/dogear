@@ -54,7 +54,10 @@ export function TreeItemRow({
   const gitAvailable = useGitHistoryStore(s => s.gitAvailable);
   const openHistory = useGitHistoryStore(s => s.openHistory);
 
-  const originalNode = data.originalNode;
+  const originalNode = data?.originalNode;
+
+  // loading 态占位无意义不渲染（null 防护必须在全部 hooks 之后，避免 hooks 数量不一致）
+  if (!data) return null;
 
   // 判断是否选中
   const isSelected =

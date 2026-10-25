@@ -338,6 +338,14 @@ export function WorkspaceExplorer() {
     },
     isItemFolder: (item) => item.getItemData().isFolder,
     getItemName: (item) => item.getItemData().name,
+    // async loader 的 itemData 缓存缺项窗口（树重建瞬间）库返回此占位而非 null；无 originalNode → TreeItemRow 渲染为空行
+    createLoadingItemData: () => ({
+      id: '',
+      name: '',
+      isFolder: false,
+      childrenIds: [],
+      nodeType: 'file',
+    }),
     onDrop: handleDrop,
     onRename: handleRename,
     onPrimaryAction: handlePrimaryAction,
